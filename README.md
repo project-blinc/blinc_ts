@@ -27,12 +27,13 @@ xwindow, [owned layout trees](docs/native.md#owned-layout-trees),
 [scene encoding, text and images](docs/native.md#owned-scenes-and-images),
 [a native scene renderer](docs/native.md#drawing-a-scene) with gradients, clipping,
 shadows, group filters and masks, blur and liquid glass,
-[custom GPU canvases](docs/native.md#gpu-canvases), [TypeScript shaders](docs/shaders.md), Vite HMR,
+[custom GPU canvases](docs/native.md#gpu-canvases), [native scene windows](docs/native.md#native-scene-windows),
+[TypeScript shaders](docs/shaders.md), Vite HMR,
 and [offscreen visual and motion inspection](docs/snapshots.md): clean/debug
 filmstrips, dotted trails, pixel/geometry diffs and per-element curve sheets.
 
-The package is private. Native layout and reactivity are connected; the complete
-UI renderer, CSS, themes and components are upcoming.
+The package is private. Native scenes render in windows and offscreen;
+full-render benchmarks, CSS, themes and components remain in progress.
 Native execution is currently validated on macOS with Metal.
 
 ## Architecture

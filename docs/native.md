@@ -52,7 +52,7 @@ instructions; the package is not yet a published SDK installation.
 - Generated TypeScript and native code exchange a schema fingerprint at load.
   Rebuild both when the native API changes.
 
-The probe host pumps bounded event batches and draws when dirty. GPU surfaces
+The native window host pumps bounded event batches and draws when dirty. GPU surfaces
 are destroyed before their windows. macOS/Metal is verified locally; Windows
 and Linux execution still require platform validation.
 
@@ -285,9 +285,71 @@ the current record format samples the first, middle and last stops.
 Content textures are pooled by nesting depth; sequential blur and shadow passes
 share scratch textures, allocated only when needed.
 
-Window presentation and full-render benchmarks remain in progress. CSS, themes
+Full-render benchmarks remain in progress. CSS, themes
 and the component layer are separate work. See [shader authoring](shaders.md) for
 the TypeScript sources and their build path.
+
+## Native scene windows
+
+`NativeWindowHost` keeps the window, surface and GPU device alive while scenes are
+replaced. Await `ready`, build an owned layout, then attach its root:
+
+```ts
+import { Brush, loadNative } from 'blinc_ts/native';
+import { NativeWindowHost } from 'blinc_ts/native/window';
+
+const native = loadNative();
+const host = new NativeWindowHost(native, { title: 'Hello', width: 640, height: 360 });
+await host.ready;
+const layout = native.createLayout();
+const root = layout.createNode({ width: '100%', height: '100%', padding: 24 });
+root.setPaint({ background: Brush.solid(0x142535), textColor: [1, 1, 1, 1] });
+root.setChildren([layout.createText('Native pixels', { fontSize: 28 })]);
+const renderer = host.attachScene(layout, root, { cornerShape: 2 });
+// renderer.setImage(...) and renderer.registerCanvas(...) use this same device.
+// On teardown: host.dispose(); layout.dispose();
+```
+
+The window supplies physical target dimensions and display scale. Layout uses
+logical pixels; glyphs rasterize at the actual display scale. Surface formats
+prefer BGRA8/RGBA8 unorm to avoid encoding UI colors twice. A transparent window
+requires a surface supporting premultiplied alpha. Unsupported formats fail
+explicitly during initialization. Local execution is verified on macOS/Metal.
+
+Successful node edits automatically request a frame. Synchronous edits coalesce;
+paint-only edits skip layout, while geometry/text changes and viewport changes
+recompute it. `Layout.onChange` exposes `'paint'`, `'layout'` and `'disposed'`
+notifications for other hosts. Failed native edits emit nothing. Unattached node
+creation does not trigger a frame; attaching it to the tree does.
+
+The host draws only when dirty. Hidden, minimized or occluded windows defer work;
+a temporarily unavailable surface is retried on a later event pump. The pump
+processes at most 64 events per turn and leaves Node free to run timers and Vite.
+Idle event polling uses a 16 ms timer. New edit bursts wake it immediately;
+continuous painting yields between frames and lets FIFO pace the GPU, without
+applying that idle polling interval as a frame-rate cap.
+Call `host.requestFrame()` for changes outside the layout, such as canvas buffers
+or image uploads. Requests made during painting survive for the next frame.
+`host.frames` counts successful presentations and `host.stats` reports the last
+scene render. `host.render()` attempts a pending frame synchronously. An encoding
+or presentation failure releases the host and is available through `host.error`.
+
+`host.onEvent(listener, scope?)` exposes native input; pointer coordinates are
+physical pixels, so divide by `host.window.scaleFactor()` for layout hit testing.
+The SDK does not prescribe a component event system here.
+
+`attachScene(layout, root, options, scope?)` owns the returned renderer. Replacing
+or detaching the scene disposes its renderer; the layout remains caller-owned.
+A supplied `Scope` releases it during HMR while retaining the last presented
+frame until the replacement attaches, avoiding a blank flash during module
+evaluation. Stale cleanup cannot detach the replacement. Disposing the layout also detaches it. See the
+[native example](../examples/native/app.ts) and [HMR setup](tooling.md).
+
+`tests/native-scene-window.mjs` verifies real presentation, resize, idle behavior,
+paint/layout invalidation and replacement, and captures the same demo offscreen.
+`tests/native-hmr.mjs` verifies scene replacement through actual Vite updates while
+the window and device survive. The lower-level `NativeProbeHost` uses the same
+surface lifecycle for the GPU smoke test.
 
 ## GPU canvases
 

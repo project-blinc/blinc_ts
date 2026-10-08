@@ -1,19 +1,34 @@
-import { createHmrSession } from '../../src/hmr.js';
-import { loadNative } from '../../src/native/index.js';
-import { NativeProbeHost } from '../../src/native/probe.js';
+import { createHmrSession } from 'blinc_ts/hmr';
+import { loadNative, window } from 'blinc_ts/native';
+import { NativeWindowHost } from 'blinc_ts/native/window';
+import { createScene } from './scene.js';
 
-export const session = createHmrSession(import.meta.hot, () => new NativeProbeHost(loadNative()));
+const native = loadNative();
+export const session = createHmrSession(
+  import.meta.hot,
+  () => new NativeWindowHost(native, { minWidth: 480 }),
+);
 await session.host.ready;
 session.mount((host, scope) => {
-  scope.onCleanup(
-    host.onEvent((event) => {
-      if (event.kind === 'KeyboardInput') {
-        host.requestFrame();
+  const { layout, root, glass, toggle } = createScene(native, scope);
+  host.attachScene(layout, root, { cornerShape: 2 }, scope);
+  let x = 0,
+    y = 0;
+  host.onEvent((event) => {
+    if (event.kind === 'CursorMoved') {
+      const ratio = host.window.scaleFactor();
+      x = event.x / ratio;
+      y = event.y / ratio;
+    } else if (
+      event.kind === 'MouseInput' &&
+      host.stats !== undefined &&
+      event.state === window.MouseElementState.Pressed
+    ) {
+      if (layout.hitTest(root, x, y).some((hit) => hit.nodeId === glass.id)) {
+        toggle();
       }
-    }),
-  );
-  host.requestFrame();
-  console.log('Native root mounted; edit this file to test HMR.');
+    }
+  }, scope);
 });
 
 if (import.meta.hot) {

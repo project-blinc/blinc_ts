@@ -3,7 +3,12 @@
   "compilerOptions": {
     "rootDir": ".",
     "noEmit": true,
-    "types": ["node", "@webgpu/types", "vite/client"]
+    "types": ["node", "@webgpu/types", "vite/client"],
+    "paths": {
+      "blinc_ts/native": ["./src/native/index.ts"],
+      "blinc_ts/native/window": ["./src/native/window.ts"],
+      "blinc_ts/hmr": ["./src/hmr.ts"]
+    }
   },
   "include": ["src/**/*.ts", "shaders/**/*.ts", "vite.shaders.config.ts", "examples/**/*.ts"]
 }

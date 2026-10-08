@@ -103,7 +103,11 @@ export class SceneRenderer {
   };
   readonly #canvasFrame: CanvasFrame;
 
-  constructor(device: gpu.GpuDevice, layout: Layout, format = gpu.TextureFormat.Rgba8unorm) {
+  constructor(
+    device: gpu.GpuDevice,
+    layout: Layout,
+    format: gpu.TextureFormat = gpu.TextureFormat.Rgba8unorm,
+  ) {
     this.#device = device;
     this.#canvasFrame = new CanvasFrame({
       device,

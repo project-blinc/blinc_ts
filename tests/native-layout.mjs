@@ -154,6 +154,29 @@ try {
 } finally {
   enums.dispose();
 }
+// Invalidation follows successful native edits, distinguishes paint from geometry,
+// and still reaches the host when another observer fails.
+const observed = native.createLayout();
+const changes = [];
+const item = observed.createText('Initial');
+const failing = observed.onChange(() => {
+  throw new Error('observer failed');
+});
+const remove = observed.onChange((kind) => changes.push(kind));
+assert.throws(() => item.setPaint({ opacity: 0.5 }), AggregateError);
+assert.deepEqual(changes, ['paint']);
+failing();
+item.setStyle({ width: 20 });
+item.setText('Label');
+assert.deepEqual(changes, ['paint', 'layout', 'layout']);
+assert.throws(() => item.setStyle({ width: 'invalid' }));
+assert.equal(changes.length, 3);
+observed.dispose();
+observed.dispose();
+assert.deepEqual(changes, ['paint', 'layout', 'layout', 'disposed']);
+remove();
+assert.throws(() => observed.onChange(() => {}), /disposed/);
+
 // Schema mismatch fails at load, before a style can be interpreted differently.
 const { bind, bindingSchema } = await import('../dist/native/generated/layout.js');
 assert.equal(addon.layoutCall(0xffffffff, []), bindingSchema);

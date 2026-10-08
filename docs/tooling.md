@@ -27,15 +27,19 @@ scope. Register subscriptions, nodes, timers and animation cleanup on that scope
 
 ```ts
 import { createHmrSession } from 'blinc_ts/hmr';
-import { loadNative } from 'blinc_ts/native';
-import { NativeProbeHost } from 'blinc_ts/native/probe';
+import { Brush, loadNative } from 'blinc_ts/native';
+import { NativeWindowHost } from 'blinc_ts/native/window';
 
-export const app = createHmrSession(import.meta.hot, () => new NativeProbeHost(loadNative()));
+const native = loadNative();
+export const app = createHmrSession(import.meta.hot, () => new NativeWindowHost(native));
 
 await app.host.ready;
 app.mount((host, scope) => {
-  scope.onCleanup(host.onEvent(() => host.requestFrame()));
-  host.requestFrame();
+  const layout = native.createLayout(scope);
+  const root = layout.createNode({ width: '100%', height: '100%', padding: 24 });
+  root.setPaint({ background: Brush.solid(0x142535), textColor: [1, 1, 1, 1] });
+  root.setChildren([layout.createText('Edit me', { fontSize: 24 })]);
+  host.attachScene(layout, root, { cornerShape: 2 }, scope);
 });
 
 if (import.meta.hot) {
@@ -49,8 +53,9 @@ the previous root's cleanup runs before the new root mounts. Failed mounts
 release partial resources. Pruning, full reloads and `app.dispose()` destroy
 the host. Native addon changes require a process restart.
 
-The probe renders a shader to exercise this lifecycle. A full UI mount will
-use the same scope contract once the node and renderer APIs are implemented.
+The [native scene example](../examples/native/app.ts) uses this lifecycle for
+text, gradients and interactive glass. See [scene windows](native.md#native-scene-windows)
+for invalidation, scale, input and renderer ownership.
 
 ## Other tooling
 

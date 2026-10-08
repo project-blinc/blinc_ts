@@ -17,6 +17,8 @@ import type {
 } from './generated/layout.js';
 import type { Scope } from '../hmr.js';
 
+export type LayoutChange = 'layout' | 'paint' | 'disposed';
+
 export type LayoutLength = number | `${number}%` | 'auto';
 /** Initial native flex layout surface. Values use logical pixels. */
 export interface LayoutStyle {
@@ -77,11 +79,40 @@ export interface NativeLayout extends BrushFactory {
 /** An owned native tree. A mounted root's Scope can release it during HMR. */
 export class Layout {
   readonly #native: NativeLayout;
+  readonly #listeners = new Set<(change: LayoutChange) => void>();
 
   /** @internal Use loadNative().createLayout(scope). */
   constructor(native: NativeLayout, scope?: Scope) {
     this.#native = native;
     scope?.onCleanup(() => this.dispose());
+  }
+
+  /** Successful edits notify synchronously; hosts coalesce them into one frame. */
+  onChange(listener: (change: LayoutChange) => void, scope?: Scope): () => void {
+    if (this.disposed) {
+      throw new Error('Layout disposed');
+    }
+    const callback = (change: LayoutChange) => listener(change);
+    this.#listeners.add(callback);
+    const remove = () => {
+      this.#listeners.delete(callback);
+    };
+    scope?.onCleanup(remove);
+    return remove;
+  }
+  /** @internal Nodes notify only after a native edit succeeds. */
+  changed(change: LayoutChange): void {
+    let errors: unknown[] | undefined;
+    for (const listener of this.#listeners) {
+      try {
+        listener(change);
+      } catch (error) {
+        (errors ??= []).push(error);
+      }
+    }
+    if (errors) {
+      throw new AggregateError(errors, 'Layout change listener failed');
+    }
   }
 
   get size(): number {
@@ -98,6 +129,7 @@ export class Layout {
   /** Bind a source/fit to the renderer's prepared image slot; null removes it. */
   setImageSource(source: string, fit: ImageFit, slot: number | null): void {
     this.#native.setImageSource(source, fit, slot);
+    this.changed('paint');
   }
 
   /** @internal */
@@ -148,7 +180,15 @@ export class Layout {
 
   /** Release the tree and invalidate every node. Safe to call more than once. */
   dispose(): void {
+    if (this.disposed) {
+      return;
+    }
     this.#native.dispose();
+    try {
+      this.changed('disposed');
+    } finally {
+      this.#listeners.clear();
+    }
   }
 }
 
@@ -192,15 +232,19 @@ export class LayoutNode {
       patch.filter = filter;
     }
     this.#native.setPaint(patch);
+    this.#layout.changed('paint');
   }
   clearPaint(): void {
     this.#native.clearPaint();
+    this.#layout.changed('paint');
   }
   setText(content: string, style: TextStyle = {}): void {
     this.#native.setText(content, style);
+    this.#layout.changed('layout');
   }
   setVisual(bounds: VisualBounds | null): void {
     this.#native.setVisual(bounds);
+    this.#layout.changed('paint');
   }
   setPointerEvents(enabled: boolean): void {
     this.#native.setPointerEvents(enabled);
@@ -208,23 +252,28 @@ export class LayoutNode {
   /** Reference a renderer-owned image or canvas slot; null removes the reference. */
   setResource(slot: number | null, canvas = false): void {
     this.#native.setResource(slot, canvas);
+    this.#layout.changed('paint');
   }
   setScroll(x: number, y: number): void {
     this.#native.setScroll(x, y);
+    this.#layout.changed('paint');
   }
 
   /** Merge the supplied style fields; omitted fields retain their values. */
   setStyle(style: LayoutStyle): void {
     this.#native.setStyle(style);
+    this.#layout.changed('layout');
   }
 
   /** Replace or reorder children, detaching moved nodes from previous parents. */
   setChildren(children: readonly LayoutNode[]): void {
     this.#native.setChildren(children.map((child) => LayoutNode.unwrap(child, this.#layout)));
+    this.#layout.changed('layout');
   }
 
   /** Remove this node and its descendants. Removed handles remain invalid. */
   remove(): void {
     this.#native.remove();
+    this.#layout.changed('layout');
   }
 }
