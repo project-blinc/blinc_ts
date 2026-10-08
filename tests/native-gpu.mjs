@@ -28,6 +28,8 @@ try {
     JSON.stringify(bottomRight),
   );
   await assert.rejects(renderer.captureInto(new Uint8Array(4), 3), /target size/);
+  await assert.rejects(renderer.captureInto(pixels, 3, [], 0), /instance count/);
+  await assert.rejects(renderer.captureInto(pixels, 3, [], 0.5), /instance count/);
   const second = new Uint8Array(pixels.length);
   await renderer.captureInto(second, probeShader.vertexCount);
   assert.deepEqual(second, pixels);

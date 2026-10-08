@@ -7,7 +7,11 @@ export default defineConfig({
     target: 'node22',
     outDir: '.shader-build',
     lib: {
-      entry: { probe: 'shaders/probe.ts', motion: 'shaders/motion.ts' },
+      entry: {
+        probe: 'shaders/probe.ts',
+        motion: 'shaders/motion.ts',
+        'layout-bench': 'shaders/layout-bench.ts',
+      },
       formats: ['es'],
       fileName: (_format, name) => name + '.mjs',
     },

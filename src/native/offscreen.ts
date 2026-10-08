@@ -146,6 +146,7 @@ export class OffscreenRenderer {
     target: Uint8Array,
     vertexCount: number,
     groups: readonly gpu.GpuBindGroup[] = [],
+    instanceCount = 1,
   ): Promise<CaptureStats> {
     if (this.#disposed) {
       throw new Error('Offscreen renderer disposed');
@@ -159,6 +160,9 @@ export class OffscreenRenderer {
     if (!Number.isSafeInteger(vertexCount) || vertexCount < 1) {
       throw new RangeError('Invalid vertex count');
     }
+    if (!Number.isSafeInteger(instanceCount) || instanceCount < 1) {
+      throw new RangeError('Invalid instance count');
+    }
     const encoder = this.device.encoder();
     this.#capturing = true;
     const start = performance.now();
@@ -170,7 +174,7 @@ export class OffscreenRenderer {
       for (let i = 0; i < groups.length; i++) {
         encoder.renderSetBindGroup(i, groups[i]!);
       }
-      encoder.renderDraw(vertexCount, 1);
+      encoder.renderDraw(vertexCount, instanceCount);
       encoder.renderEnd();
       encoder.copyTextureToBuffer(
         this.texture,
