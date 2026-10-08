@@ -1,7 +1,7 @@
 use crate::layout_values::{LayoutAlign, LayoutDirection, LayoutJustify, LayoutOverflow};
 use blinc_abi::context::{LayoutContext, Node};
 use napi::bindgen_prelude::{ClassInstance, Either, Unknown};
-use napi::{Env, Error, JsValue, Result, Status, sys};
+use napi::{Env, Error, Result, Status};
 use napi_derive::napi;
 use std::{cell::RefCell, rc::Rc};
 use taffy::{Point, prelude::*};
@@ -50,7 +50,7 @@ pub struct LayoutStyle {
     pub overflow: Option<LayoutOverflow>,
 }
 impl LayoutStyle {
-    fn apply(self, mut style: Style) -> Result<Style> {
+    pub(crate) fn apply(self, mut style: Style) -> Result<Style> {
         if let Some(v) = self.width {
             style.size.width = dimension(v)?.into();
         }
@@ -108,12 +108,13 @@ impl LayoutStyle {
     }
 }
 
-struct OwnedLayout {
-    tree: RefCell<LayoutContext>,
+pub(crate) struct OwnedLayout {
+    pub(crate) tree: RefCell<LayoutContext>,
+    pub(crate) encoder: RefCell<Option<blinc_abi::scene::SceneEncoder>>,
     thread: std::thread::ThreadId,
 }
 impl OwnedLayout {
-    fn check(&self) -> Result<()> {
+    pub(crate) fn check(&self) -> Result<()> {
         if self.thread != std::thread::current().id() {
             return Err(error("Layout must be used on its owning thread"));
         }
@@ -123,12 +124,12 @@ impl OwnedLayout {
 
 #[napi]
 pub struct NativeLayout {
-    owner: Rc<OwnedLayout>,
+    pub(crate) owner: Rc<OwnedLayout>,
 }
 #[napi]
 pub struct NativeLayoutNode {
-    owner: Rc<OwnedLayout>,
-    node: Node,
+    pub(crate) owner: Rc<OwnedLayout>,
+    pub(crate) node: Node,
 }
 
 #[napi]
@@ -138,6 +139,7 @@ impl NativeLayout {
         Self {
             owner: Rc::new(OwnedLayout {
                 tree: RefCell::new(LayoutContext::new()),
+                encoder: RefCell::new(None),
                 thread: std::thread::current().id(),
             }),
         }
@@ -175,51 +177,18 @@ impl NativeLayout {
     ) -> Result<()> {
         self.owner.check()?;
         let nodes: Vec<_> = nodes.iter().map(|node| node.node).collect();
-        // No JavaScript callbacks occur after validating this view. Its backing
-        // store is borrowed only for this synchronous native call.
+        // No JavaScript callbacks occur while the output storage is borrowed.
         unsafe {
-            let mut kind = 0;
-            let mut len = 0;
-            let mut data = std::ptr::null_mut();
-            let mut buffer = std::ptr::null_mut();
-            let mut offset = 0;
-            let status = sys::napi_get_typedarray_info(
-                env.raw(),
-                target.raw(),
-                &mut kind,
-                &mut len,
-                &mut data,
-                &mut buffer,
-                &mut offset,
-            );
-            if status != sys::Status::napi_ok || kind != sys::TypedarrayType::float32_array {
-                return Err(error("Layout output must be a Float32Array"));
-            }
-            let mut is_arraybuffer = false;
-            let status = sys::napi_is_arraybuffer(env.raw(), buffer, &mut is_arraybuffer);
-            if status != sys::Status::napi_ok || !is_arraybuffer {
-                return Err(error("Shared layout output is not supported"));
-            }
-            let mut detached = false;
-            let status = sys::napi_is_detached_arraybuffer(env.raw(), buffer, &mut detached);
-            if status != sys::Status::napi_ok || detached {
-                return Err(error("Detached layout output"));
-            }
-            if len > 0 && data.is_null() {
-                return Err(error("Invalid layout output"));
-            }
-            let output = if len == 0 {
-                &mut []
-            } else {
-                std::slice::from_raw_parts_mut(data.cast::<f32>(), len)
-            };
-            self.owner
-                .tree
-                .borrow()
-                .read_bounds(&nodes, output)
-                .map_err(error)
+            crate::buffers::f32_output(env, target, |output| {
+                self.owner
+                    .tree
+                    .borrow()
+                    .read_bounds(&nodes, output)
+                    .map_err(error)
+            })
         }
     }
+
     #[napi(getter)]
     pub fn size(&self) -> Result<u32> {
         self.owner.check()?;
@@ -234,6 +203,7 @@ impl NativeLayout {
     pub fn dispose(&self) -> Result<()> {
         self.owner.check()?;
         self.owner.tree.borrow_mut().dispose();
+        self.owner.encoder.borrow_mut().take();
         Ok(())
     }
 }

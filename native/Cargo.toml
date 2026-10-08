@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 x_idl = { path = "../../x-idl" }
 
 [dependencies]
-blinc_abi = { path = "../../blinc_abi", default-features = false }
+blinc_abi = { path = "../../blinc_abi", default-features = false, features = ["scene"] }
 taffy = { version = "0.14", features = ["content_size"] }
 xidl-node = { path = "../../x-idl/crates/xidl-node" }
 napi = { version = "3.14.2", default-features = false, features = ["napi8", "tokio_rt", "dyn-symbols"] }

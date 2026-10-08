@@ -107,8 +107,11 @@ pointer escapes to JavaScript. Layout contexts use `blinc_abi` without its
 HashLink feature; the Node addon does not link the HashLink runtime.
 
 `tests/native-layout.mjs` covers geometry, edits, invalid handles/buffers and HMR
-scope disposal against the compiled addon. Text measurement and display-list
-production are still pending Node integration.
+scope disposal against the compiled addon. The addon also exposes owned scene
+encoding, measured text, glyph atlas updates, hit testing and image decoding;
+`tests/native-scene.mjs` checks native data, invalid edits, buffer ownership and
+disposal. The public TypeScript scene facade and renderer integration are the
+next milestone.
 
 ## Reactive contexts
 

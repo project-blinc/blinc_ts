@@ -1,0 +1,579 @@
+use crate::{
+    buffers,
+    layout::{LayoutStyle, NativeLayout, NativeLayoutNode},
+};
+use blinc_abi::{
+    bitmap::Bitmap,
+    display_list::{RECORD_FLOATS, Shapes},
+    scene::{self, PaintOptions, SceneEncoder, TextMeasureContext},
+};
+use napi::bindgen_prelude::BigInt;
+use napi::{Env, Error, Result, Status, Unknown};
+use napi_derive::napi;
+use scene::blinc_core::{
+    Brush, Color, CornerRadius, Transform,
+    layer::{Affine2D, Shadow},
+};
+use std::cell::RefCell;
+fn error(message: impl Into<String>) -> Error {
+    Error::new(Status::InvalidArg, message.into())
+}
+fn number(value: f64) -> Result<f32> {
+    let v = value as f32;
+    if v.is_finite() {
+        Ok(v)
+    } else {
+        Err(error("Expected a finite number"))
+    }
+}
+fn integer(value: f64, min: f64, max: f64) -> Result<f64> {
+    if value.fract() != 0.0 || !(min..=max).contains(&value) {
+        return Err(error("Expected an integer in range"));
+    }
+    Ok(value)
+}
+fn positive(value: f64) -> Result<f32> {
+    let v = number(value)?;
+    if v >= 0.0 {
+        Ok(v)
+    } else {
+        Err(error("Expected a non-negative value"))
+    }
+}
+fn unit(value: f64) -> Result<f32> {
+    let v = number(value)?;
+    if (0.0..=1.0).contains(&v) {
+        Ok(v)
+    } else {
+        Err(error("Expected a value between 0 and 1"))
+    }
+}
+fn rgba(value: Vec<f64>) -> Result<[f32; 4]> {
+    if value.len() != 4 {
+        return Err(error("Expected four color channels"));
+    }
+    Ok([
+        unit(value[0])?,
+        unit(value[1])?,
+        unit(value[2])?,
+        unit(value[3])?,
+    ])
+}
+fn color(value: Vec<f64>) -> Result<Color> {
+    let [r, g, b, a] = rgba(value)?;
+    Ok(Color { r, g, b, a })
+}
+#[napi(object)]
+pub struct NativeSceneSchema {
+    pub version: u32,
+    pub record_floats: u32,
+    pub record_rows: u32,
+}
+#[napi]
+pub fn scene_schema() -> NativeSceneSchema {
+    NativeSceneSchema {
+        version: scene::DISPLAY_LIST_VERSION,
+        record_floats: RECORD_FLOATS as u32,
+        record_rows: (RECORD_FLOATS / 4) as u32,
+    }
+}
+#[napi(object)]
+pub struct NativePaintOptions {
+    pub scale: Option<f64>,
+    pub corner_shape: Option<f64>,
+    pub smoothing_threshold: Option<f64>,
+    pub full_radius: Option<f64>,
+    pub text_color: Option<Vec<f64>>,
+}
+impl NativePaintOptions {
+    fn into_options(self) -> Result<PaintOptions> {
+        Ok(PaintOptions {
+            scale: number(self.scale.unwrap_or(1.0))?,
+            shapes: Shapes {
+                n: positive(self.corner_shape.unwrap_or(0.0))?,
+                threshold: positive(self.smoothing_threshold.unwrap_or(0.0))?,
+                radius_full: positive(self.full_radius.unwrap_or(9999.0))?,
+            },
+            text_color: match self.text_color {
+                Some(v) => rgba(v)?,
+                None => [0.0, 0.0, 0.0, 1.0],
+            },
+        })
+    }
+}
+#[napi(object)]
+pub struct NativePaintInfo {
+    pub count: u32,
+    pub floats: u32,
+}
+#[napi(object)]
+pub struct NativeAtlasInfo {
+    pub width: u32,
+    pub height: u32,
+    pub revision: u32,
+    pub x: u32,
+    pub y: u32,
+    pub update_width: u32,
+    pub update_height: u32,
+    pub bytes: u32,
+}
+impl From<scene::AtlasInfo> for NativeAtlasInfo {
+    fn from(i: scene::AtlasInfo) -> Self {
+        Self {
+            width: i.width,
+            height: i.height,
+            revision: i.revision,
+            x: i.x,
+            y: i.y,
+            update_width: i.update_width,
+            update_height: i.update_height,
+            bytes: i.bytes() as u32,
+        }
+    }
+}
+#[napi(object)]
+pub struct NativeHit {
+    pub node_id: BigInt,
+    pub x: f64,
+    pub y: f64,
+}
+#[napi(object)]
+pub struct TextStyle {
+    pub font_size: Option<f64>,
+    pub line_height: Option<f64>,
+    pub letter_spacing: Option<f64>,
+    pub wrap: Option<bool>,
+    pub font_family: Option<String>,
+    pub font_weight: Option<f64>,
+    pub italic: Option<bool>,
+}
+impl TextStyle {
+    fn apply(self, content: String, mut text: TextMeasureContext) -> Result<TextMeasureContext> {
+        text.content = content;
+        if let Some(v) = self.font_size {
+            text.font_size = positive(v)?;
+        }
+        if let Some(v) = self.line_height {
+            text.line_height = positive(v)?;
+        }
+        if let Some(v) = self.letter_spacing {
+            text.letter_spacing = number(v)?;
+        }
+        if let Some(v) = self.wrap {
+            text.wrap = v;
+        }
+        if let Some(v) = self.italic {
+            text.italic = v;
+        }
+        if let Some(v) = self.font_weight {
+            text.font_weight = integer(v, 1.0, 1000.0)? as u16;
+        }
+        if let Some(v) = self.font_family {
+            (text.font_name, text.generic_font) = blinc_abi::text::resolve_family(&v);
+        }
+        Ok(text)
+    }
+}
+fn default_text() -> TextMeasureContext {
+    TextMeasureContext {
+        content: String::new(),
+        font_size: 16.0,
+        line_height: 1.2,
+        letter_spacing: 0.0,
+        wrap: true,
+        font_name: blinc_abi::text::system_ui(),
+        generic_font: Default::default(),
+        font_weight: 400,
+        italic: false,
+    }
+}
+#[napi(object)]
+pub struct PaintShadow {
+    pub x: f64,
+    pub y: f64,
+    pub blur: f64,
+    pub spread: Option<f64>,
+    pub color: Vec<f64>,
+}
+#[napi(object)]
+pub struct PaintStyle {
+    pub background: Option<Vec<f64>>,
+    pub text_color: Option<Vec<f64>>,
+    pub radius: Option<Vec<f64>>,
+    pub border_color: Option<Vec<f64>>,
+    pub border_width: Option<f64>,
+    pub opacity: Option<f64>,
+    pub visible: Option<bool>,
+    pub transform: Option<Vec<f64>>,
+    pub shadows: Option<Vec<PaintShadow>>,
+    pub z_index: Option<f64>,
+}
+impl PaintStyle {
+    fn apply(self, mut p: scene::RenderProps) -> Result<scene::RenderProps> {
+        if let Some(v) = self.background {
+            p.background = Some(Brush::Solid(color(v)?));
+        }
+        if let Some(v) = self.text_color {
+            p.text_color = Some(rgba(v)?);
+        }
+        if let Some(v) = self.radius {
+            if v.len() != 4 {
+                return Err(error("Expected four corner radii"));
+            }
+            p.border_radius = CornerRadius::new(
+                positive(v[0])?,
+                positive(v[1])?,
+                positive(v[2])?,
+                positive(v[3])?,
+            );
+            p.border_radius_explicit = true;
+        }
+        if let Some(v) = self.border_color {
+            p.border_color = Some(color(v)?);
+        }
+        if let Some(v) = self.border_width {
+            p.border_width = positive(v)?;
+        }
+        if let Some(v) = self.opacity {
+            p.opacity = unit(v)?;
+        }
+        if let Some(v) = self.visible {
+            p.visible = v;
+        }
+        if let Some(v) = self.z_index {
+            p.z_index = integer(v, i32::MIN as f64, i32::MAX as f64)? as i32;
+        }
+        if let Some(v) = self.transform {
+            if v.len() != 6 {
+                return Err(error("Expected six affine values"));
+            }
+            p.transform = Some(Transform::Affine2D(Affine2D {
+                elements: [
+                    number(v[0])?,
+                    number(v[1])?,
+                    number(v[2])?,
+                    number(v[3])?,
+                    number(v[4])?,
+                    number(v[5])?,
+                ],
+            }));
+        }
+        if let Some(v) = self.shadows {
+            p.shadow = v
+                .into_iter()
+                .map(|s| {
+                    Ok(Shadow {
+                        offset_x: number(s.x)?,
+                        offset_y: number(s.y)?,
+                        blur: positive(s.blur)?,
+                        spread: number(s.spread.unwrap_or(0.0))?,
+                        color: color(s.color)?,
+                    })
+                })
+                .collect::<Result<_>>()?;
+        }
+        Ok(p)
+    }
+}
+#[napi]
+impl NativeLayout {
+    #[napi]
+    pub fn create_text(
+        &self,
+        content: String,
+        text: TextStyle,
+        style: LayoutStyle,
+    ) -> Result<NativeLayoutNode> {
+        self.owner.check()?;
+        let text = text.apply(content, default_text())?;
+        let node = self
+            .owner
+            .tree
+            .borrow_mut()
+            .create_text(style.apply(Default::default())?, text)
+            .map_err(error)?;
+        Ok(NativeLayoutNode {
+            owner: self.owner.clone(),
+            node,
+        })
+    }
+    #[napi]
+    pub fn prepare_display_list(
+        &self,
+        root: &NativeLayoutNode,
+        options: NativePaintOptions,
+    ) -> Result<NativePaintInfo> {
+        self.owner.check()?;
+        let options = options.into_options()?;
+        let tree = self.owner.tree.borrow();
+        let mut encoder = self.owner.encoder.borrow_mut();
+        let info = encoder
+            .get_or_insert_with(SceneEncoder::new)
+            .prepare(&tree, root.node, options)
+            .map_err(error)?;
+        Ok(NativePaintInfo {
+            count: info.count as u32,
+            floats: info.floats as u32,
+        })
+    }
+    #[napi]
+    pub fn read_display_list(&self, env: Env, target: Unknown<'_>) -> Result<()> {
+        self.owner.check()?;
+        // No JS runs while caller storage is borrowed.
+        unsafe {
+            buffers::f32_output(env, target, |out| {
+                self.owner
+                    .encoder
+                    .borrow()
+                    .as_ref()
+                    .ok_or_else(|| error("Prepare a display list first"))?
+                    .read(&self.owner.tree.borrow(), out)
+                    .map_err(error)
+            })
+        }
+    }
+    #[napi]
+    pub fn atlas_info(&self, color: bool, seen: f64) -> Result<Option<NativeAtlasInfo>> {
+        self.owner.check()?;
+        let mut encoder = self.owner.encoder.borrow_mut();
+        Ok(encoder
+            .as_mut()
+            .ok_or_else(|| error("Prepare a display list first"))?
+            .atlas_info(color, integer(seen, 0.0, u32::MAX as f64)? as u32)
+            .map_err(error)?
+            .map(Into::into))
+    }
+    #[napi]
+    pub fn read_atlas(
+        &self,
+        env: Env,
+        color: bool,
+        seen: f64,
+        target: Unknown<'_>,
+    ) -> Result<Option<NativeAtlasInfo>> {
+        self.owner.check()?;
+        unsafe {
+            buffers::bytes_output(env, target, |out| {
+                Ok(self
+                    .owner
+                    .encoder
+                    .borrow_mut()
+                    .as_mut()
+                    .ok_or_else(|| error("Prepare a display list first"))?
+                    .read_atlas(color, integer(seen, 0.0, u32::MAX as f64)? as u32, out)
+                    .map_err(error)?
+                    .map(Into::into))
+            })
+        }
+    }
+    #[napi]
+    pub fn hit_test(&self, root: &NativeLayoutNode, x: f64, y: f64) -> Result<Vec<NativeHit>> {
+        self.owner.check()?;
+        Ok(self
+            .owner
+            .tree
+            .borrow()
+            .hit_test(root.node, number(x)?, number(y)?)
+            .map_err(error)?
+            .into_iter()
+            .map(|h| NativeHit {
+                node_id: h.node.raw().into(),
+                x: h.x as f64,
+                y: h.y as f64,
+            })
+            .collect())
+    }
+}
+#[napi]
+impl NativeLayoutNode {
+    #[napi(getter)]
+    pub fn id(&self) -> BigInt {
+        self.node.raw().into()
+    }
+    #[napi]
+    pub fn set_paint(&self, patch: PaintStyle) -> Result<()> {
+        self.owner.check()?;
+        let mut tree = self.owner.tree.borrow_mut();
+        let props = patch.apply(tree.properties(self.node).map_err(error)?)?;
+        tree.set_properties(self.node, props).map_err(error)
+    }
+    #[napi]
+    pub fn clear_paint(&self) -> Result<()> {
+        self.owner.check()?;
+        self.owner
+            .tree
+            .borrow_mut()
+            .set_properties(self.node, Default::default())
+            .map_err(error)
+    }
+    #[napi]
+    pub fn set_text(&self, content: String, patch: TextStyle) -> Result<()> {
+        self.owner.check()?;
+        let mut tree = self.owner.tree.borrow_mut();
+        let text = patch.apply(content, tree.text(self.node).map_err(error)?)?;
+        tree.set_text(self.node, text).map_err(error)
+    }
+    #[napi]
+    pub fn set_visual(&self, value: Option<Vec<f64>>) -> Result<()> {
+        self.owner.check()?;
+        let visual = match value {
+            Some(v) => {
+                if v.len() != 4 {
+                    return Err(error("Expected four visual values"));
+                }
+                Some([number(v[0])?, number(v[1])?, number(v[2])?, number(v[3])?])
+            }
+            None => None,
+        };
+        self.owner
+            .tree
+            .borrow_mut()
+            .set_visual(self.node, visual)
+            .map_err(error)
+    }
+    #[napi]
+    pub fn set_pointer_events(&self, enabled: bool) -> Result<()> {
+        self.owner.check()?;
+        self.owner
+            .tree
+            .borrow_mut()
+            .set_pointer_events(self.node, enabled)
+            .map_err(error)
+    }
+    #[napi]
+    pub fn set_resource(&self, slot: Option<f64>, canvas: bool) -> Result<()> {
+        self.owner.check()?;
+        self.owner
+            .tree
+            .borrow_mut()
+            .set_resource(
+                self.node,
+                slot.map(|v| integer(v, 0.0, 16_777_215.0).map(|v| v as i32))
+                    .transpose()?,
+                canvas,
+            )
+            .map_err(error)
+    }
+    #[napi]
+    pub fn set_scroll(&self, x: f64, y: f64) -> Result<()> {
+        self.owner.check()?;
+        self.owner
+            .tree
+            .borrow_mut()
+            .set_scroll(
+                self.node,
+                Some(blinc_abi::tree::Scroll {
+                    x: number(x)?,
+                    y: number(y)?,
+                    thumb: [0.0; 4],
+                }),
+            )
+            .map_err(error)
+    }
+}
+fn dimensions(width: f64, height: f64) -> Result<(u32, u32)> {
+    if width.fract() != 0.0
+        || height.fract() != 0.0
+        || !(1.0..=16384.0).contains(&width)
+        || !(1.0..=16384.0).contains(&height)
+        || width * height > 67_108_864.0
+    {
+        return Err(error(
+            "Invalid raster dimensions (maximum 16384 per side and 64M pixels)",
+        ));
+    }
+    Ok((width as u32, height as u32))
+}
+#[napi]
+pub struct NativeImage {
+    image: RefCell<Option<Bitmap>>,
+    thread: std::thread::ThreadId,
+}
+impl NativeImage {
+    fn new(image: Bitmap) -> Self {
+        Self {
+            image: RefCell::new(Some(image)),
+            thread: std::thread::current().id(),
+        }
+    }
+    fn with<T>(&self, run: impl FnOnce(&Bitmap) -> Result<T>) -> Result<T> {
+        if self.thread != std::thread::current().id() {
+            return Err(error("Image must be used on its owning thread"));
+        }
+        run(self
+            .image
+            .borrow()
+            .as_ref()
+            .ok_or_else(|| error("Image is disposed"))?)
+    }
+}
+#[napi]
+pub fn decode_image(env: Env, input: Unknown<'_>) -> Result<NativeImage> {
+    unsafe {
+        buffers::bytes_input(env, input, |data| {
+            Ok(NativeImage::new(Bitmap::decode(data).map_err(error)?))
+        })
+    }
+}
+#[napi]
+pub fn rasterize_svg(markup: String, width: f64, height: f64) -> Result<NativeImage> {
+    let (width, height) = dimensions(width, height)?;
+    let image = blinc_abi::svg::rasterize(&markup, width, height).map_err(error)?;
+    Ok(NativeImage::new(Bitmap {
+        pixels: image.pixels,
+        width,
+        height,
+    }))
+}
+#[napi]
+impl NativeImage {
+    #[napi(getter)]
+    pub fn width(&self) -> Result<u32> {
+        self.with(|b| Ok(b.width))
+    }
+    #[napi(getter)]
+    pub fn height(&self) -> Result<u32> {
+        self.with(|b| Ok(b.height))
+    }
+    #[napi]
+    pub fn read_pixels(&self, env: Env, target: Unknown<'_>) -> Result<()> {
+        unsafe {
+            buffers::bytes_output(env, target, |out| {
+                self.with(|b| {
+                    if out.len() < b.pixels.len() {
+                        return Err(error("Image output is too small"));
+                    }
+                    out[..b.pixels.len()].copy_from_slice(&b.pixels);
+                    Ok(())
+                })
+            })
+        }
+    }
+    #[napi]
+    pub fn resample(
+        &self,
+        env: Env,
+        width: f64,
+        height: f64,
+        fit: f64,
+        target: Unknown<'_>,
+    ) -> Result<()> {
+        let (width, height) = dimensions(width, height)?;
+        unsafe {
+            buffers::bytes_output(env, target, |out| {
+                self.with(|b| {
+                    b.resample(width, height, integer(fit, 0.0, 2.0)? as i32, out)
+                        .map_err(error)
+                })
+            })
+        }
+    }
+    #[napi]
+    pub fn dispose(&self) -> Result<()> {
+        if self.thread != std::thread::current().id() {
+            return Err(error("Image must be used on its owning thread"));
+        }
+        self.image.borrow_mut().take();
+        Ok(())
+    }
+}
