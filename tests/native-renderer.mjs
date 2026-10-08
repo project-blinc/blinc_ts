@@ -137,32 +137,63 @@ try {
   for (const label of labels) {
     label.setPaint({ visible: false });
   }
-  for (const name of ['geometry', 'squircle']) {
+  // A fractional shape, radius and border width expose any integer conversion in the pipeline.
+  const fractionalShape = Math.fround(Math.log2(Math.fround(2.52)));
+  const variants = ['geometry', 'squircle', 'fractional'];
+  for (const name of variants) {
+    const n = name === 'fractional' ? fractionalShape : 2;
     const shapeOptions =
-      name === 'squircle' ? { cornerShape: 2, smoothingThreshold: 0, fullRadius: 9999 } : {};
+      name === 'geometry' ? {} : { cornerShape: n, smoothingThreshold: 0, fullRadius: 9999 };
+    if (name === 'fractional') {
+      glass.setPaint({
+        radius: [24.375, 24.375, 24.375, 24.375],
+        borderWidth: 1.375,
+        borderColor: [1, 0.8, 0.6, 0.4],
+      });
+    }
+
     for (const scale of [1, 2]) {
       const info = layout.prepareDisplayList(root, { scale, ...shapeOptions });
       const records = new Float32Array(info.floats);
       layout.readDisplayList(records);
-      if (name === 'squircle') {
+      if (name !== 'geometry') {
         const rows = Array.from({ length: info.count }, (_, i) =>
           records.subarray(i * 112, (i + 1) * 112),
         );
         assert(
-          rows.some((r) => r[44] === 42 && r[48] === 2),
+          rows.some((r) => r[44] === 42 && r[48] === n),
           'Glass uses the squircle shape',
         );
         assert(
-          rows.some((r) => r[44] === 3 && r[48] === 2),
+          rows.some((r) => r[44] === 3 && r[48] === n),
           'Shadow uses the squircle shape',
         );
         assert(
-          rows.some((r) => r[47] === 2),
+          rows.some((r) => r[47] === n),
           'Children inherit the squircle clip',
         );
         const circle = rows.find((r) => r[44] === 0 && r[0] === 90 && r[1] === 80);
         assert(circle);
         assert.deepEqual([...circle.slice(48, 52)], [1, 1, 1, 1], 'Full-radius circle stays round');
+        if (name === 'fractional') {
+          const glassBox = rows.find((r) => r[44] === 0 && r[0] === 48 && r[1] === 112);
+          assert(glassBox);
+          assert.deepEqual(
+            [...glassBox.slice(4, 8)],
+            [24.375, 24.375, 24.375, 24.375],
+            'Radii preserve fractions',
+          );
+          assert.deepEqual(
+            [...glassBox.slice(16, 20)],
+            [1.375, 1.375, 1.375, 1.375],
+            'Border widths preserve fractions',
+          );
+          assert.deepEqual(
+            [...glassBox.slice(48, 52)],
+            [n, n, n, n],
+            'Corner exponents preserve fractions',
+          );
+        }
       }
       await writeFile(
         new URL(`records-${name}-${scale}x.json`, output),
@@ -202,8 +233,9 @@ try {
       }
     }
   }
+  glass.setPaint({ radius: [24, 24, 24, 24], borderWidth: 0, borderColor: [0, 0, 0, 0] });
   const references = [];
-  for (const name of ['geometry', 'squircle']) {
+  for (const name of variants) {
     for (const scale of [1, 2]) {
       const current = PNG.sync.read(await readFile(new URL(`${name}-${scale}x.png`, output)));
       const reference = PNG.sync.read(
@@ -292,7 +324,15 @@ try {
     pixel(transparent, 100, 160)[3] > 0 && pixel(transparent, 100, 160)[3] < 40,
     'Glass preserves transparency',
   );
-  console.log(JSON.stringify({ ...frameStats, edgeChanges, references, output: output.pathname }));
+  console.log(
+    JSON.stringify({
+      ...frameStats,
+      edgeChanges,
+      fractionalShape,
+      references,
+      output: output.pathname,
+    }),
+  );
 } finally {
   renderer?.dispose();
   target.dispose();
