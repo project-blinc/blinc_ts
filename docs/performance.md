@@ -118,6 +118,52 @@ is coalescing queued property writes at a frame flush, then measuring batched
 native submission with the same geometry and image checks. End-to-end UI renderer
 measurements remain a later gate.
 
+## Native window idle benchmark
+
+After building the SDK and release addon, compile the example and measure the
+same scene with and without the development server:
+
+```sh
+npm run build:example
+npm run bench:window -- --mode runtime --output .blinc/idle-runtime.json
+npm run bench:window -- --mode dev --output .blinc/idle-dev.json
+```
+
+The default run warms up for five seconds and takes three five-second samples.
+Use `--warmup 10`, `--seconds 10` and `--samples 5` for longer runs.
+`--keep-open` leaves the window interactive after measurement. Run one window
+benchmark at a time, keep its size and focus consistent, and leave the pointer
+outside it. The recorded event kinds reveal input that contaminated a sample.
+
+The report records CPU time as a percentage of one core, presented frames,
+native poll count and wall time, JS heap/external memory, RSS, viewport/scale,
+addon hash and machine metadata. On macOS it also records `vmmap` physical
+footprint after the timed samples. Footprint includes compressed private memory;
+RSS is a different measure. Neither is just the JS heap. Do not compare an
+Activity Monitor footprint directly with Node's RSS, or development-mode memory
+with a runtime-only application.
+
+All measured idle intervals presented zero frames. The current host still
+polls every 16 ms; on macOS this repeatedly enters AppKit through xwindow.
+Caching launch completion removes a redundant LaunchServices query, but does not
+remove that event-pump cost. Coordinating native event readiness with Node's loop
+remains open work; slowing input polling is not a substitute for that integration.
+
+### Initial macOS measurements, 2026-10-08
+
+Apple M1 Pro, Node 24.2.0, release addon, the native scene example.
+The final development run measured a 138.4 MB physical footprint; the standalone
+run measured 71.1 MB. Their CPU samples were 2.6–3.2% and 5.1–5.6% respectively,
+with zero frames presented in both. Earlier samples varied from 2.3–6.6% CPU.
+
+These are diagnostic runs, not a controlled speedup claim. Focus was not recorded
+in the initial samples (the harness now records it), and compression/GC change
+memory readings. The large development-mode heap is real, but neither the memory
+policy nor the launch-status cache has a reliable isolated savings figure yet.
+The idle CPU issue remains open.
+[Raw samples and binary hashes](../benchmarks/results/2026-10-08-window-idle.json.gz)
+include the earlier runs and their measurement limitations.
+
 ## Renderer measurement plan
 
 Use shared reference workloads and fixed inputs:

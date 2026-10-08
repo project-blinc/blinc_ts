@@ -263,7 +263,8 @@ export class NativeWindowHost {
       if (!adapter?.valid()) {
         throw new Error('No native GPU adapter');
       }
-      const device = await adapter.requestDevice();
+      // UI textures are small; avoid reserving large, mostly empty GPU heaps.
+      const device = await adapter.requestDeviceWith({ memoryHints: gpu.MemoryHints.MemoryUsage });
       if (device) {
         keep(device);
       }

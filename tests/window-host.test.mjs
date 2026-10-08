@@ -44,7 +44,7 @@ function fixture(options = {}) {
       resource('encoder', { submit() {}, passColour() {}, passBegin() {}, renderEnd() {} }),
   });
   const adapter = resource('adapter', {
-    requestDevice: options.requestDevice ?? (() => Promise.resolve(device)),
+    requestDeviceWith: options.requestDevice ?? (() => Promise.resolve(device)),
   });
   const instance = resource('instance', {
     requestAdapter: options.requestAdapter ?? (() => Promise.resolve(adapter)),

@@ -57,6 +57,23 @@ The [native scene example](../examples/native/app.ts) uses this lifecycle for
 text, gradients and interactive glass. See [scene windows](native.md#native-scene-windows)
 for invalidation, scale, input and renderer ownership.
 
+## Running without the development server
+
+Compile the native example once, then run its JavaScript directly:
+
+```sh
+npm run build:native
+npm run build
+npm run build:example
+npm run start:native
+```
+
+This opens the same interactive scene without loading Vite, its watcher or its
+module runner into the application process. It does not hot-reload; use
+`npm run dev:native` for development. Compare application memory in this mode,
+and report development-server overhead separately. See the
+[idle benchmark](performance.md#native-window-idle-benchmark).
+
 ## Other tooling
 
 `blinc_ts/hmr` has no Vite runtime dependency. Its structural `HotContext`

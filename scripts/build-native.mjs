@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { copyFile } from 'node:fs/promises';
+import { copyFile, rename, rm } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -18,9 +18,16 @@ const library =
     : process.platform === 'win32'
       ? 'blinc_ts_native.dll'
       : 'libblinc_ts_native.so';
-await copyFile(
-  new URL(`../native/target/${debug ? 'debug' : 'release'}/${library}`, import.meta.url),
-  new URL('../native/blinc_ts.node', import.meta.url),
-);
+// Replace the inode instead of truncating a library a running window has mapped.
+const staged = new URL(`../native/blinc_ts.${process.pid}.node`, import.meta.url);
+try {
+  await copyFile(
+    new URL(`../native/target/${debug ? 'debug' : 'release'}/${library}`, import.meta.url),
+    staged,
+  );
+  await rename(staged, new URL('../native/blinc_ts.node', import.meta.url));
+} finally {
+  await rm(staged, { force: true });
+}
 
 await import('./format-bindings.mjs');

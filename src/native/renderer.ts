@@ -196,22 +196,28 @@ export class SceneRenderer {
         [-1, backdropRowsShader],
         [-2, blitShader],
       ])) {
-        const module = keep(device.createShader(shader.code));
-        const builder = keep(device.pipeline());
-        builder.shader(module, shader.vertexEntryPoint, shader.fragmentEntryPoint);
-        builder.layout(pipelineLayout);
-        builder.target(kind === -2 ? format : gpu.TextureFormat.Rgba8unorm, gpu.ColorWrite.ALL);
-        if (shader.alphaBlend) {
-          builder.blend(
-            gpu.BlendFactor.SrcAlpha,
-            gpu.BlendFactor.OneMinusSrcAlpha,
-            gpu.BlendOperation.Add,
-            gpu.BlendFactor.One,
-            gpu.BlendFactor.OneMinusSrcAlpha,
-            gpu.BlendOperation.Add,
-          );
+        const module = device.createShader(shader.code);
+        const builder = device.pipeline();
+        try {
+          builder.shader(module, shader.vertexEntryPoint, shader.fragmentEntryPoint);
+          builder.layout(pipelineLayout);
+          builder.target(kind === -2 ? format : gpu.TextureFormat.Rgba8unorm, gpu.ColorWrite.ALL);
+          if (shader.alphaBlend) {
+            builder.blend(
+              gpu.BlendFactor.SrcAlpha,
+              gpu.BlendFactor.OneMinusSrcAlpha,
+              gpu.BlendOperation.Add,
+              gpu.BlendFactor.One,
+              gpu.BlendFactor.OneMinusSrcAlpha,
+              gpu.BlendOperation.Add,
+            );
+          }
+          this.#pipelines.set(kind, keep(builder.build()));
+        } finally {
+          // Release construction handles; pipelines retain what they need.
+          builder.destroy();
+          module.destroy();
         }
-        this.#pipelines.set(kind, keep(builder.build()));
       }
       this.#check();
     } catch (error) {

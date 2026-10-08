@@ -322,6 +322,9 @@ recompute it. `Layout.onChange` exposes `'paint'`, `'layout'` and `'disposed'`
 notifications for other hosts. Failed native edits emit nothing. Unattached node
 creation does not trigger a frame; attaching it to the tree does.
 
+The GPU device requests the memory-saving allocation policy for small UI textures.
+Shader construction handles are released after pipelines are built.
+
 The host draws only when dirty. Hidden, minimized or occluded windows defer work;
 a temporarily unavailable surface is retried on a later event pump. The pump
 processes at most 64 events per turn and leaves Node free to run timers and Vite.
