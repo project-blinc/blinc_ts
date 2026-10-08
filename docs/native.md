@@ -177,7 +177,7 @@ assignment. Gradient stops are added before assignment. The current shared
 encoder represents the first, middle and last stops; additional-stop and conic
 rendering remain renderer work. Glass carries blur, tint, noise, saturation,
 brightness, border and liquid rim settings through the existing backdrop records.
-The offscreen probe does not render those effects yet.
+`SceneRenderer` renders these effects with the TypeGPU passes described below.
 
 `Brush.image(source, ImageFit.Contain)` retains Blinc's image source/fit model.
 The host registers a prepared image with
@@ -205,9 +205,60 @@ SVG rasterization/resampling accepts integer dimensions up to 16384 per side and
 edits, buffers and disposal. `tests/native-scene-facade.mjs` tests load-time schema
 rejection and HMR cleanup, then uploads real records, glyph masks and image pixels
 through `OffscreenRenderer`. Its captures go to `.blinc/scene-adapter/` and compare
-thousands of rendered glyph pixels against their native atlas samples. The probe
-covers solid rectangles, mask text and one image; clips, effects, color glyphs
-and resource batching are gates for the complete renderer.
+thousands of rendered glyph pixels against their native atlas samples. That probe covers only the native adapter. `tests/native-renderer.mjs` exercises
+the actual scene renderer, including clipping, blur, glass dispersion, atlas
+updates and deterministic captures at both 1× and 2×.
+
+## Drawing a scene
+
+`SceneRenderer` draws an owned layout into a texture view or window surface.
+The host keeps its device and renderer alive between frames. Recompute layout
+after layout or text edits; paint-only updates need only another draw.
+
+```ts
+import { SceneRenderer } from 'blinc_ts/native/renderer';
+
+// device, scene and root belong to the host; target is its texture/surface view.
+const renderer = new SceneRenderer(device, scene, targetFormat);
+const encoder = device.encoder();
+try {
+  const stats = renderer.encode(encoder, root, target, {
+    width: 1280,
+    height: 720,
+    scale: 2, // A 640 × 360 logical viewport.
+  });
+  encoder.submit(device.queue());
+} finally {
+  encoder.destroy();
+}
+// On host teardown: renderer.dispose(), then release the layout and device.
+```
+
+The renderer batches consecutive primitives in paint order, retains its GPU
+buffers and textures, and uploads only changed glyph rectangles. Image slots
+are packed into one growing atlas; call
+`renderer.setImage(slot, image, pixelWidth, pixelHeight, ImageFit.Contain)`
+before drawing a registered image brush. The atlas preserves entries when it
+grows, up to 4096 × 4096; an individual entry must leave room for its one-pixel gap.
+
+Backdrops use two Gaussian passes over the accumulated frame. Liquid glass
+adds refraction, tint, grain and adjustable chromatic separation. Rounded and
+shaped boxes, gradients, borders, analytic shadows, clipping, text and RGBA images
+use the same packed records. Set `cornerShape: 2` in render options for squircle
+smoothing, with `smoothingThreshold` and `fullRadius` controlling which corners
+remain circular. Fill, border, shadow, child clipping and glass refraction all
+follow the resolved corner shape. The output is premultiplied RGBA; use an unorm target
+without automatic sRGB encoding.
+
+For snapshots, `OffscreenRenderer.captureCommandsInto(pixels, callback)` supplies
+an encoder and target view; return `renderer.encode(...).drawCalls` from the
+callback. It handles submission and readback. Submit each encoded frame before
+encoding another, since the renderer reuses its upload buffers.
+
+Group-layer compositing and canvas callbacks are the next renderer milestones;
+those record kinds currently raise an explicit error. CSS, themes and the
+component layer are separate work. See [shader authoring](shaders.md) for the
+TypeScript sources and their build path.
 
 ## Reactive contexts
 

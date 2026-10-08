@@ -51,8 +51,11 @@ export interface PaintStyle {
 export interface PaintOptions {
   /** Device pixels per logical pixel; determines glyph raster resolution. */
   scale?: number;
+  /** Theme corner-shape n: 2 smooths eligible corners to squircles; 0 disables smoothing. */
   cornerShape?: number;
+  /** Radii below this threshold remain circular. */
   smoothingThreshold?: number;
+  /** Radii at this size, or near half the box size, keep circles and pills round. */
   fullRadius?: number;
   textColor?: Color;
 }

@@ -44,6 +44,10 @@
     "./debug/motion": {
       "types": "./dist/debug/motion.d.ts",
       "import": "./dist/debug/motion.js"
+    },
+    "./native/renderer": {
+      "types": "./dist/native/renderer.d.ts",
+      "import": "./dist/native/renderer.js"
     }
   },
   "files": [
@@ -60,7 +64,7 @@
     "dev": "node examples/hmr/dev.mjs",
     "build:native": "node scripts/build-native.mjs",
     "dev:native": "node examples/native/dev.mjs",
-    "test:native": "node tests/native-reactive.mjs && node tests/native-layout.mjs && node tests/native-scene.mjs && node tests/native-brush.mjs && node tests/native-scene-facade.mjs && node tests/native-gpu.mjs && node tests/native-snapshot.mjs && node tests/native-watch.mjs && node tests/native-window.mjs && node tests/native-hmr.mjs",
+    "test:native": "node tests/native-reactive.mjs && node tests/native-layout.mjs && node tests/native-scene.mjs && node tests/native-brush.mjs && node tests/native-scene-facade.mjs && node tests/native-renderer.mjs && node tests/native-gpu.mjs && node tests/native-snapshot.mjs && node tests/native-watch.mjs && node tests/native-window.mjs && node tests/native-hmr.mjs",
     "bench:native": "node benchmarks/native.mjs",
     "snapshot": "node tools/snapshot/index.mjs",
     "lint": "eslint . --max-warnings 0",

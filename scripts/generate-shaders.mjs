@@ -1,3 +1,10 @@
+import { compileBlitShader } from '../.shader-build/blit.mjs';
+import { compileBoxShader } from '../.shader-build/box.mjs';
+import { compileShadowShader } from '../.shader-build/shadow.mjs';
+import { compileTextShader } from '../.shader-build/text.mjs';
+import { compileImageShader } from '../.shader-build/image.mjs';
+import { compileBackdropShader } from '../.shader-build/backdrop.mjs';
+import { compileBackdropRowsShader } from '../.shader-build/backdropRows.mjs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { compileProbeShader } from '../.shader-build/probe.mjs';
 import { compileLayoutBenchShader } from '../.shader-build/layout-bench.mjs';
@@ -19,6 +26,13 @@ async function changed(path, content) {
 }
 for (const [name, shader] of [
   ['probe', compileProbeShader()],
+  ['box', compileBoxShader()],
+  ['blit', compileBlitShader()],
+  ['shadow', compileShadowShader()],
+  ['text', compileTextShader()],
+  ['image', compileImageShader()],
+  ['backdrop', compileBackdropShader()],
+  ['backdropRows', compileBackdropRowsShader()],
   ['motion', compileMotionShader()],
   ['layoutBench', compileLayoutBenchShader()],
   ['sceneProbe', compileSceneProbeShader()],
@@ -26,7 +40,13 @@ for (const [name, shader] of [
   await changed(
     new URL(name + '.ts', generated),
     '// Generated from shaders/' +
-      (name === 'layoutBench' ? 'layout-bench' : name === 'sceneProbe' ? 'scene-probe' : name) +
+      (name === 'layoutBench'
+        ? 'layout-bench'
+        : name === 'sceneProbe'
+          ? 'scene-probe'
+          : ['box', 'shadow', 'text', 'image', 'backdrop', 'backdropRows', 'blit'].includes(name)
+            ? 'ui/' + name
+            : name) +
       '.ts. Do not edit.\nexport const ' +
       name +
       'Shader = ' +

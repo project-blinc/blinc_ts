@@ -6,7 +6,7 @@ export interface Shader {
   readonly vertexEntryPoint: string;
   readonly fragmentEntryPoint: string;
   readonly vertexCount: number;
-  /** Straight-alpha color output, for text and image fixtures. */
+  /** Blend straight-alpha color output over the render target. */
   readonly alphaBlend?: boolean;
 }
 export interface CaptureStats {
@@ -160,6 +160,30 @@ export class OffscreenRenderer {
     groups: readonly gpu.GpuBindGroup[] = [],
     instanceCount = 1,
   ): Promise<CaptureStats> {
+    if (!Number.isSafeInteger(vertexCount) || vertexCount < 1) {
+      throw new RangeError('Invalid vertex count');
+    }
+    if (!Number.isSafeInteger(instanceCount) || instanceCount < 1) {
+      throw new RangeError('Invalid instance count');
+    }
+    return this.captureCommandsInto(target, (encoder) => {
+      encoder.passColour(this.view, 0, 0, 0, 1);
+      encoder.passBegin();
+      encoder.renderSetPipeline(this.pipeline);
+      for (let i = 0; i < groups.length; i++) {
+        encoder.renderSetBindGroup(i, groups[i]!);
+      }
+      encoder.renderDraw(vertexCount, instanceCount);
+      encoder.renderEnd();
+      return 1;
+    });
+  }
+
+  /** Record passes into this target; the callback returns its draw count. */
+  async captureCommandsInto(
+    target: Uint8Array,
+    encode: (encoder: gpu.GpuEncoder, view: gpu.GpuTextureView) => number,
+  ): Promise<CaptureStats> {
     if (this.#disposed) {
       throw new Error('Offscreen renderer disposed');
     }
@@ -169,25 +193,12 @@ export class OffscreenRenderer {
     if (target.length !== this.width * this.height * 4) {
       throw new RangeError('Wrong RGBA target size');
     }
-    if (!Number.isSafeInteger(vertexCount) || vertexCount < 1) {
-      throw new RangeError('Invalid vertex count');
-    }
-    if (!Number.isSafeInteger(instanceCount) || instanceCount < 1) {
-      throw new RangeError('Invalid instance count');
-    }
     const encoder = this.device.encoder();
     this.#capturing = true;
     const start = performance.now();
     let mapped = false;
     try {
-      encoder.passColour(this.view, 0, 0, 0, 1);
-      encoder.passBegin();
-      encoder.renderSetPipeline(this.pipeline);
-      for (let i = 0; i < groups.length; i++) {
-        encoder.renderSetBindGroup(i, groups[i]!);
-      }
-      encoder.renderDraw(vertexCount, instanceCount);
-      encoder.renderEnd();
+      const drawCalls = encode(encoder, this.view);
       encoder.copyTextureToBuffer(
         this.texture,
         this.#readback,
@@ -216,7 +227,7 @@ export class OffscreenRenderer {
         width: this.width,
         height: this.height,
         rowStride: this.rowStride,
-        drawCalls: 1,
+        drawCalls,
         cpuEncodeMs: encoded - start,
         readbackMs: performance.now() - encoded,
       };
