@@ -285,9 +285,69 @@ the current record format samples the first, middle and last stops.
 Content textures are pooled by nesting depth; sequential blur and shadow passes
 share scratch textures, allocated only when needed.
 
-Canvas callbacks remain a renderer milestone and currently raise an explicit
-error. CSS, themes and the component layer are separate work. See [shader authoring](shaders.md) for the
-TypeScript sources and their build path.
+Window presentation and full-render benchmarks remain in progress. CSS, themes
+and the component layer are separate work. See [shader authoring](shaders.md) for
+the TypeScript sources and their build path.
+
+## GPU canvases
+
+A canvas inserts synchronous custom drawing into the scene's paint order. It
+inherits transforms, clips, group opacity, filters and masks. Create a pipeline
+once, then register a callback for the node's canvas slot:
+
+```ts
+// shader is compiled by TypeGPU; see the canvas shader example in shaders.md.
+const program = renderer.createCanvasPipeline(shader, [], scope);
+const node = scene.createNode({ width: 320, height: 180 });
+node.setPaint({ radius: [24, 24, 24, 24] });
+node.setResource(0, true);
+renderer.registerCanvas(
+  0,
+  (frame) => {
+    frame.draw(program);
+  },
+  scope,
+);
+// Attach node to the scene and compute layout before rendering.
+```
+
+`frame.width` and `height` are the local content size. `transform` maps content
+coordinates into the scene; `pixelRatio` is the target scale, and `scale` also
+includes the transform's determinant. `scissor` is the clipped rectangle in target
+pixels. The frame and its tuples are borrowed for the callback; copy values you
+need to retain. Invisible, singular and unregistered canvases are skipped.
+
+The renderer sets a rectangular GPU scissor. Use
+[`canvasVertex` and `canvasClip`](shaders.md#canvas-shaders) for exact rounded and
+shaped clipping, fades and inherited opacity. Canvas output uses straight alpha
+blending into the renderer's RGBA8 unorm layer, exposed by `frame.format`.
+
+For custom resources, pass additional bind group layouts to
+`createCanvasPipeline`. Shared frame/record data occupies group 0 and renderer
+textures occupy group 1; your groups start at 2. Inside the callback, call
+`frame.bind(program)`, set your groups through `frame.encoder`, then
+`frame.draw(program)`. Upload reusable buffers before encoding the scene.
+
+Use `frame.suspend(encoder => { ... })` for auxiliary compute/render passes into
+your own targets. End every auxiliary render pass before returning. The renderer
+resumes the same UI layer with its content and scissor preserved; bind pipelines
+and resources again before drawing. Frame drawing methods are unavailable during
+the suspension. Callbacks must be synchronous and must not reenter or dispose the
+renderer while it is encoding.
+
+`frame.draw` counts its draws automatically. Return the number of any raw draws
+from the paint or suspension callback so `SceneRenderStats.drawCalls` includes
+them; `canvasCalls` counts invoked paint callbacks. The host submits the encoder.
+
+The optional `Scope` removes callbacks and disposes pipelines during HMR. Stale
+cleanup cannot remove a newer registration for the same slot. Without a scope,
+use the function returned by `registerCanvas` to unregister, and call
+`program.dispose()` when finished. Disposing the renderer releases its remaining
+pipelines. Caller-created buffers, bind groups and extra layouts remain caller-owned.
+
+`tests/native-canvas.mjs` checks paint order, transformed clipping, layers,
+state restoration, suspension, callback failures and replacement/disposal, with
+independent reference captures at 1× and 2×.
 
 ## Reactive contexts
 

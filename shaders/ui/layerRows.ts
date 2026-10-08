@@ -1,6 +1,6 @@
 import { tgpu, d } from 'typegpu';
 import { fields } from '../../src/renderer/records.js';
-import { inputs, field, textures } from './shared.js';
+import { inputs, field, textures } from '../../src/renderer/gpu/shared.js';
 import { layerVertex, gaussian } from './layerShared.js';
 
 const fragment = tgpu

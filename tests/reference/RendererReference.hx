@@ -5,11 +5,16 @@ import ashui.layout.DisplayList;
 import gpu.GpuTextureViewDescriptor;
 
 @:access(ashui.layout.DisplayList)
+@:access(ashui.ui.Canvas)
 class RendererReference {
   static function main() {
     var dir = Sys.getEnv("RENDER_REFERENCE_DIR");
     var offscreen = Offscreen.create();
     var renderer = new Renderer(offscreen.device, gpu.TextureFormat.Rgba8unorm);
+    // A real CanvasFrame callback consumes the same records for the canvas fixture.
+    var canvasTree = new ashui.layout.LayoutTree();
+    var canvas = new ashui.ui.Canvas({paint: frame -> frame.draw(CanvasReferenceShader.WGSL, 6)}, [], canvasTree);
+    for (slot in 0...5) ashui.ui.Canvas.bySlot.set(slot, canvas);
     var names = Sys.getEnv("RENDER_REFERENCE_NAMES");
     for (name in (names == null ? ["geometry", "squircle", "fractional"] : names.split(","))) for (scale in [1, 2]) {
       var data:Dynamic = haxe.Json.parse(sys.io.File.getContent(dir + '/records-${name}-${scale}x.json'));
@@ -32,4 +37,22 @@ class RendererReference {
       Sys.println('reference $name ${scale}x: $count primitives');
     }
   }
+}
+
+class CanvasReferenceShader implements ashui.core.render.UiShader {
+  static var SRC = {
+    @:import ashui.core.render.Sdf;
+    var output : { position : Vec4, color : Vec4 };
+    var pixel : Vec2;
+    var uv : Vec2;
+    function vertex() {
+      var b = primitive.bounds;
+      uv = quadCorner(vertexID);
+      pixel = placed(b.xy, primitive.affine, uv * b.zw);
+      output.position = pixelToClip(pixel, viewport);
+    }
+    function fragment() {
+      output.color = vec4(primitive.color.rgb * mix(0.65, 1., uv.x), canvasClip(pixel));
+    }
+  };
 }

@@ -1,5 +1,5 @@
 import { tgpu, d, std } from 'typegpu';
-import { textures } from './shared.js';
+import { textures } from '../../src/renderer/gpu/shared.js';
 const vertex = tgpu
   .vertexFn({
     in: { vertexIndex: d.builtin.vertexIndex },

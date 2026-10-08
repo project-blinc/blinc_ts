@@ -48,6 +48,10 @@
     "./native/renderer": {
       "types": "./dist/native/renderer.d.ts",
       "import": "./dist/native/renderer.js"
+    },
+    "./shaders/canvas": {
+      "types": "./dist/renderer/canvas.d.ts",
+      "import": "./dist/shader-library/canvas.mjs"
     }
   },
   "files": [
@@ -57,14 +61,14 @@
     "docs"
   ],
   "scripts": {
-    "build:shaders": "vite build --config vite.shaders.config.ts && node scripts/generate-shaders.mjs",
+    "build:shaders": "vite build --config vite.shaders.config.ts && node scripts/generate-shaders.mjs && vite build --config vite.shaders.config.ts --mode canvas-library",
     "build": "npm run build:shaders && tsc -p tsconfig.build.json",
     "typecheck": "npm run build:shaders && tsc --noEmit",
     "test": "npm run build && node --test tests/*.test.mjs",
     "dev": "node examples/hmr/dev.mjs",
     "build:native": "node scripts/build-native.mjs",
     "dev:native": "node examples/native/dev.mjs",
-    "test:native": "node tests/native-reactive.mjs && node tests/native-layout.mjs && node tests/native-scene.mjs && node tests/native-brush.mjs && node tests/native-scene-facade.mjs && node tests/native-renderer.mjs && node tests/native-layers.mjs && node tests/native-gpu.mjs && node tests/native-snapshot.mjs && node tests/native-watch.mjs && node tests/native-window.mjs && node tests/native-hmr.mjs",
+    "test:native": "node tests/native-reactive.mjs && node tests/native-layout.mjs && node tests/native-scene.mjs && node tests/native-brush.mjs && node tests/native-scene-facade.mjs && node tests/native-renderer.mjs && node tests/native-layers.mjs && node tests/native-canvas.mjs && node tests/native-gpu.mjs && node tests/native-snapshot.mjs && node tests/native-watch.mjs && node tests/native-window.mjs && node tests/native-hmr.mjs",
     "bench:native": "node benchmarks/native.mjs",
     "snapshot": "node tools/snapshot/index.mjs",
     "lint": "eslint . --max-warnings 0",
@@ -77,10 +81,14 @@
     "bench:layout:compare": "node benchmarks/compare-layout.mjs"
   },
   "peerDependencies": {
-    "vite": "^8.0.0"
+    "vite": "^8.0.0",
+    "typegpu": "^0.12.7"
   },
   "peerDependenciesMeta": {
     "vite": {
+      "optional": true
+    },
+    "typegpu": {
       "optional": true
     }
   },

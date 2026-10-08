@@ -1,6 +1,6 @@
 import { fields } from '../../src/renderer/records.js';
 import { tgpu, d, std } from 'typegpu';
-import { inputs, field, shapeCoverage, scene } from './shared.js';
+import { inputs, field, shapeCoverage, scene } from '../../src/renderer/gpu/shared.js';
 import {
   quadCorner,
   placed,
@@ -12,7 +12,7 @@ import {
   erf,
   clipCoverage,
   fadeCoverage,
-} from './sdf.js';
+} from '../../src/renderer/gpu/sdf.js';
 
 const vertex = tgpu
   .vertexFn({

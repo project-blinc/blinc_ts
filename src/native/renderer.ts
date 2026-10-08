@@ -1,3 +1,12 @@
+import {
+  CanvasFrame,
+  CanvasPipeline,
+  canvasDrawCount,
+  type CanvasPaint,
+  type CanvasState,
+} from './canvas.js';
+import type { Scope } from '../hmr.js';
+export { CanvasFrame, CanvasPipeline, type CanvasPaint } from './canvas.js';
 import { fields } from '../renderer/records.js';
 import {
   gpu,
@@ -32,6 +41,7 @@ export interface SceneRenderStats {
   drawCalls: number;
   recordBytes: number;
   atlasBytes: number;
+  canvasCalls: number;
 }
 interface Texture {
   texture: gpu.GpuTexture;
@@ -76,9 +86,39 @@ export class SceneRenderer {
   #rows: Texture | undefined;
   #shadow: Texture | undefined;
   #disposed = false;
+  #encoding = false;
+  readonly #canvases = new Map<number, CanvasPaint>();
+  readonly #canvasPipelines = new Set<CanvasPipeline>();
+  readonly #canvasState: CanvasState = {
+    encoder: undefined,
+    target: undefined,
+    record: 0,
+    width: 0,
+    height: 0,
+    transform: [1, 0, 0, 1, 0, 0],
+    scale: 1,
+    pixelRatio: 1,
+    scissor: [0, 0, 0, 0],
+    drawCalls: 0,
+  };
+  readonly #canvasFrame: CanvasFrame;
 
   constructor(device: gpu.GpuDevice, layout: Layout, format = gpu.TextureFormat.Rgba8unorm) {
     this.#device = device;
+    this.#canvasFrame = new CanvasFrame({
+      device,
+      state: this.#canvasState,
+      bind: (pipeline) => {
+        const encoder = this.#canvasState.encoder!;
+        encoder.renderSetPipeline(pipeline.resolve(this));
+        this.#bindGroups(encoder, this.#dummy.view, this.#dummy.view);
+      },
+      resume: () => {
+        const state = this.#canvasState;
+        this.#begin(state.encoder!, state.target!);
+        state.encoder!.renderSetScissorRect(...state.scissor);
+      },
+    });
     this.#layout = layout;
     this.#queue = device.queue();
     const keep = <T extends { destroy(): void }>(value: T): T => {
@@ -176,6 +216,83 @@ export class SceneRenderer {
     }
   }
 
+  /** Register a canvas slot. Cleanup removes only this registration, including after replacement. */
+  registerCanvas(slot: number, paint: CanvasPaint, scope?: Scope): () => void {
+    this.#assertLive();
+    this.#assertIdle();
+    if (!Number.isSafeInteger(slot) || slot < 0 || slot > 0xffffff) {
+      throw new RangeError('Invalid canvas slot');
+    }
+    // A unique wrapper makes stale cleanup safe even when the callback itself is reused.
+    const callback: CanvasPaint = (frame) => paint(frame);
+    this.#canvases.set(slot, callback);
+    const remove = () => {
+      this.#assertIdle();
+      if (this.#canvases.get(slot) === callback) {
+        this.#canvases.delete(slot);
+      }
+    };
+    scope?.onCleanup(remove);
+    return remove;
+  }
+
+  /** Prepare outside paint; the pipeline is reused across frames and released with its scope/renderer. */
+  createCanvasPipeline(
+    shader: Shader,
+    extraLayouts: readonly gpu.GpuBindGroupLayout[] = [],
+    scope?: Scope,
+  ): CanvasPipeline {
+    this.#assertLive();
+    this.#assertIdle();
+    if (
+      !Number.isSafeInteger(shader.vertexCount) ||
+      shader.vertexCount < 0 ||
+      shader.vertexCount > 0xffffffff
+    ) {
+      throw new RangeError('Invalid canvas vertex count');
+    }
+    const resources: { destroy(): void }[] = [];
+    const keep = <T extends { destroy(): void }>(resource: T): T => {
+      resources.push(resource);
+      return resource;
+    };
+    let result: CanvasPipeline;
+    try {
+      const layout = keep(
+        this.#device.createPipelineLayout({
+          bindGroupLayouts: [this.#frameLayout, this.#textureLayout, ...extraLayouts],
+        }),
+      );
+      const module = keep(this.#device.createShader(shader.code));
+      const builder = keep(this.#device.pipeline());
+      builder.shader(module, shader.vertexEntryPoint, shader.fragmentEntryPoint);
+      builder.layout(layout);
+      builder.target(gpu.TextureFormat.Rgba8unorm, gpu.ColorWrite.ALL);
+      builder.blend(
+        gpu.BlendFactor.SrcAlpha,
+        gpu.BlendFactor.OneMinusSrcAlpha,
+        gpu.BlendOperation.Add,
+        gpu.BlendFactor.One,
+        gpu.BlendFactor.OneMinusSrcAlpha,
+        gpu.BlendOperation.Add,
+      );
+      const pipeline = keep(builder.build());
+      this.#check();
+      result = new CanvasPipeline(this, pipeline, shader.vertexCount, resources, () => {
+        this.#assertIdle();
+        this.#canvasPipelines.delete(result);
+      });
+    } catch (error) {
+      for (const resource of resources.reverse()) {
+        resource.destroy();
+      }
+      throw error;
+    }
+    this.#canvasPipelines.add(result);
+    scope?.onCleanup(() => result.dispose());
+    return result;
+  }
+
   /** Pack a rasterized image into the shared atlas and associate its renderer slot. */
   setImage(
     slot: number,
@@ -185,6 +302,7 @@ export class SceneRenderer {
     fit = ImageFit.Fill,
   ): void {
     this.#assertLive();
+    this.#assertIdle();
     if (!Number.isSafeInteger(slot) || slot < 0 || slot > 0xffffff) {
       throw new RangeError('Invalid image slot');
     }
@@ -227,6 +345,21 @@ export class SceneRenderer {
     options: RenderOptions,
   ): SceneRenderStats {
     this.#assertLive();
+    this.#assertIdle();
+    this.#encoding = true;
+    try {
+      return this.#encode(encoder, root, target, options);
+    } finally {
+      this.#encoding = false;
+    }
+  }
+
+  #encode(
+    encoder: gpu.GpuEncoder,
+    root: LayoutNode,
+    target: gpu.GpuTextureView,
+    options: RenderOptions,
+  ): SceneRenderStats {
     const { width, height } = options;
     const scale = options.scale ?? 1;
     if (
@@ -256,6 +389,7 @@ export class SceneRenderer {
         kind !== 3 &&
         kind !== 7 &&
         kind !== 32 &&
+        kind !== 33 &&
         kind !== 40 &&
         kind !== 41 &&
         kind !== 42
@@ -330,6 +464,8 @@ export class SceneRenderer {
     const clear = options.clear ?? [0, 0, 0, 0];
     this.#begin(encoder, frame.view, clear);
     let drawCalls = 0;
+    let canvasCalls = 0;
+    this.#canvasState.drawCalls = 0;
     for (let i = 0; i < info.count;) {
       const kind = this.#records[i * R + KIND]!;
       if (kind === 40) {
@@ -376,6 +512,9 @@ export class SceneRenderer {
         this.#draw(encoder, 42, i, 1, this.#rows!.view);
         drawCalls += 2;
         i++;
+      } else if (kind === 33) {
+        canvasCalls += this.#paintCanvas(encoder, i, width, height, scale, current.view);
+        i++;
       } else {
         let end = i + 1;
         while (end < info.count && this.#records[end * R + KIND] === kind) {
@@ -393,10 +532,108 @@ export class SceneRenderer {
     this.#check();
     return {
       primitives: info.count,
-      drawCalls: drawCalls + 1,
+      drawCalls: drawCalls + this.#canvasState.drawCalls + 1,
+      canvasCalls,
       recordBytes: info.floats * 4,
       atlasBytes,
     };
+  }
+
+  #paintCanvas(
+    encoder: gpu.GpuEncoder,
+    record: number,
+    width: number,
+    height: number,
+    ratio: number,
+    target: gpu.GpuTextureView,
+  ): number {
+    const at = record * R;
+    const paint = this.#canvases.get(this.#records[at + GRADIENT]!);
+    if (!paint) {
+      return 0;
+    }
+    const data = this.#records;
+    const w = data[at + 2]!,
+      h = data[at + 3]!;
+    const a = data[at + fields.affine * 4]!,
+      b = data[at + fields.affine * 4 + 1]!;
+    const c = data[at + fields.affine * 4 + 2]!,
+      d = data[at + fields.affine * 4 + 3]!;
+    const tx = data[at]!,
+      ty = data[at + 1]!;
+    const det = a * d - b * c;
+    if (w <= 0 || h <= 0 || Math.abs(det) < 1e-12) {
+      return 0;
+    }
+    let x0 = tx + Math.min(0, a * w) + Math.min(0, c * h);
+    let y0 = ty + Math.min(0, b * w) + Math.min(0, d * h);
+    let x1 = tx + Math.max(0, a * w) + Math.max(0, c * h);
+    let y1 = ty + Math.max(0, b * w) + Math.max(0, d * h);
+    const clips = data[at + KIND + 2]!;
+    if ((clips & 1) !== 0) {
+      const clip = at + fields.clipBounds * 4;
+      x0 = Math.max(x0, data[clip]!);
+      y0 = Math.max(y0, data[clip + 1]!);
+      x1 = Math.min(x1, data[clip]! + data[clip + 2]!);
+      y1 = Math.min(y1, data[clip + 1]! + data[clip + 3]!);
+    }
+    if ((clips & 2) !== 0) {
+      const clip = at + fields.shadow * 4;
+      const cx = data[clip]!,
+        cy = data[clip + 1]!,
+        cw = data[clip + 2]!,
+        ch = data[clip + 3]!;
+      const px = tx + a * cx + c * cy,
+        py = ty + b * cx + d * cy;
+      x0 = Math.max(x0, px + Math.min(0, a * cw) + Math.min(0, c * ch));
+      y0 = Math.max(y0, py + Math.min(0, b * cw) + Math.min(0, d * ch));
+      x1 = Math.min(x1, px + Math.max(0, a * cw) + Math.max(0, c * ch));
+      y1 = Math.min(y1, py + Math.max(0, b * cw) + Math.max(0, d * ch));
+    }
+    x0 = Math.max(0, Math.floor(x0 * ratio));
+    y0 = Math.max(0, Math.floor(y0 * ratio));
+    x1 = Math.min(width, Math.ceil(x1 * ratio));
+    y1 = Math.min(height, Math.ceil(y1 * ratio));
+    if (x1 <= x0 || y1 <= y0) {
+      return 0;
+    }
+    const state = this.#canvasState;
+    state.encoder = encoder;
+    state.target = target;
+    state.record = record;
+    state.width = w;
+    state.height = h;
+    state.pixelRatio = ratio;
+    state.scale = Math.sqrt(Math.abs(det)) * ratio;
+    state.transform[0] = a;
+    state.transform[1] = b;
+    state.transform[2] = c;
+    state.transform[3] = d;
+    state.transform[4] = tx;
+    state.transform[5] = ty;
+    state.scissor[0] = x0;
+    state.scissor[1] = y0;
+    state.scissor[2] = x1 - x0;
+    state.scissor[3] = y1 - y0;
+    encoder.renderSetScissorRect(x0, y0, x1 - x0, y1 - y0);
+    this.#canvasFrame.activate();
+    try {
+      const rawDraws = canvasDrawCount(paint(this.#canvasFrame));
+      state.drawCalls += rawDraws;
+    } catch (error) {
+      encoder.renderEnd();
+      throw error;
+    } finally {
+      this.#canvasFrame.deactivate();
+      state.encoder = undefined;
+      state.target = undefined;
+    }
+    // Custom callbacks may alter dynamic state; ordinary runs bind their own pipeline/groups.
+    encoder.renderSetViewport(0, 0, width, height, 0, 1);
+    encoder.renderSetScissorRect(0, 0, width, height);
+    encoder.renderSetBlendConstant(0, 0, 0, 0);
+    encoder.renderSetStencilReference(0);
+    return 1;
   }
 
   #reserve(floats: number): void {
@@ -496,6 +733,15 @@ export class SceneRenderer {
     layer: gpu.GpuTextureView,
     shadow: gpu.GpuTextureView = this.#dummy.view,
   ): void {
+    encoder.renderSetPipeline(this.#pipelines.get(kind)!);
+    this.#bindGroups(encoder, layer, shadow);
+    encoder.renderDrawRange(kind === -2 ? 3 : 6, count, 0, first);
+  }
+  #bindGroups(
+    encoder: gpu.GpuEncoder,
+    layer: gpu.GpuTextureView,
+    shadow: gpu.GpuTextureView,
+  ): void {
     let groups = this.#textureGroups.get(layer);
     if (!groups) {
       groups = new Map();
@@ -518,10 +764,8 @@ export class SceneRenderer {
       });
       groups.set(shadow, group);
     }
-    encoder.renderSetPipeline(this.#pipelines.get(kind)!);
     encoder.renderSetBindGroup(0, this.#frameGroup!);
     encoder.renderSetBindGroup(1, group);
-    encoder.renderDrawRange(kind === -2 ? 3 : 6, count, 0, first);
   }
   #clearGroups(): void {
     for (const groups of this.#textureGroups.values()) {
@@ -534,6 +778,11 @@ export class SceneRenderer {
   #drop(texture: Texture | undefined): void {
     texture?.view.destroy();
     texture?.texture.destroy();
+  }
+  #assertIdle(): void {
+    if (this.#encoding) {
+      throw new Error('Cannot mutate or reenter the renderer during encoding');
+    }
   }
   #assertLive(): void {
     if (this.#disposed) {
@@ -550,7 +799,12 @@ export class SceneRenderer {
     if (this.#disposed) {
       return;
     }
+    this.#assertIdle();
     this.#disposed = true;
+    this.#canvases.clear();
+    for (const pipeline of this.#canvasPipelines) {
+      pipeline.dispose();
+    }
     this.#clearGroups();
     this.#frameGroup?.destroy();
     this.#buffer?.destroy();

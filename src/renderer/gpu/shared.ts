@@ -1,5 +1,5 @@
-import { sceneSchema } from '../../src/native/scene.js';
-import { fields } from '../../src/renderer/records.js';
+import { sceneSchema } from '../../native/scene.js';
+import { fields } from '../records.js';
 import { tgpu, d, std } from 'typegpu';
 import { sdShapedRect, halfPixel } from './sdf.js';
 export const scene = tgpu

@@ -1,7 +1,7 @@
 import { tgpu, d, std } from 'typegpu';
 import { fields } from '../../src/renderer/records.js';
-import { inputs, field, scene, textures } from './shared.js';
-import { quadCorner, placed, pixelToClip } from './sdf.js';
+import { inputs, field, scene, textures } from '../../src/renderer/gpu/shared.js';
+import { quadCorner, placed, pixelToClip } from '../../src/renderer/gpu/sdf.js';
 
 // The ABI has already expanded these bounds for blur and drop-shadow reach.
 export const layerVertex = tgpu

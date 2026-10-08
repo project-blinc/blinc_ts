@@ -1,3 +1,4 @@
+import { compileCanvasProbeShader } from '../.shader-build/canvas-probe.mjs';
 import { compileLayerShader } from '../.shader-build/layer.mjs';
 import { compileLayerRowsShader } from '../.shader-build/layerRows.mjs';
 import { compileLayerShadowShader } from '../.shader-build/layerShadow.mjs';
@@ -42,28 +43,31 @@ for (const [name, shader] of [
   ['motion', compileMotionShader()],
   ['layoutBench', compileLayoutBenchShader()],
   ['sceneProbe', compileSceneProbeShader()],
+  ['canvasProbe', compileCanvasProbeShader()],
 ]) {
   await changed(
     new URL(name + '.ts', generated),
     '// Generated from shaders/' +
       (name === 'layoutBench'
         ? 'layout-bench'
-        : name === 'sceneProbe'
-          ? 'scene-probe'
-          : [
-                'layer',
-                'layerRows',
-                'layerShadow',
-                'box',
-                'shadow',
-                'text',
-                'image',
-                'backdrop',
-                'backdropRows',
-                'blit',
-              ].includes(name)
-            ? 'ui/' + name
-            : name) +
+        : name === 'canvasProbe'
+          ? 'canvas-probe'
+          : name === 'sceneProbe'
+            ? 'scene-probe'
+            : [
+                  'layer',
+                  'layerRows',
+                  'layerShadow',
+                  'box',
+                  'shadow',
+                  'text',
+                  'image',
+                  'backdrop',
+                  'backdropRows',
+                  'blit',
+                ].includes(name)
+              ? 'ui/' + name
+              : name) +
       '.ts. Do not edit.\nexport const ' +
       name +
       'Shader = ' +

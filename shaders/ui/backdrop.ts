@@ -1,6 +1,6 @@
 import { fields } from '../../src/renderer/records.js';
 import { tgpu, d, std } from 'typegpu';
-import { inputs, field, shapeCoverage, scene, textures } from './shared.js';
+import { inputs, field, shapeCoverage, scene, textures } from '../../src/renderer/gpu/shared.js';
 import {
   quadCorner,
   placed,
@@ -10,7 +10,7 @@ import {
   localClipCoverage,
   fadeCoverage,
   halfPixel,
-} from './sdf.js';
+} from '../../src/renderer/gpu/sdf.js';
 import { noise, rimLine, rimLens, glassEnvironment } from './glass.js';
 
 const vertex = tgpu

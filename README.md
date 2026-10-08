@@ -26,7 +26,8 @@ xwindow, [owned layout trees](docs/native.md#owned-layout-trees),
 [native reactivity](docs/native.md#reactive-contexts),
 [scene encoding, text and images](docs/native.md#owned-scenes-and-images),
 [a native scene renderer](docs/native.md#drawing-a-scene) with gradients, clipping,
-shadows, group filters and masks, blur and liquid glass, [TypeScript shaders](docs/shaders.md), Vite HMR,
+shadows, group filters and masks, blur and liquid glass,
+[custom GPU canvases](docs/native.md#gpu-canvases), [TypeScript shaders](docs/shaders.md), Vite HMR,
 and [offscreen visual and motion inspection](docs/snapshots.md): clean/debug
 filmstrips, dotted trails, pixel/geometry diffs and per-element curve sheets.
 

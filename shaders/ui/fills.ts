@@ -1,6 +1,6 @@
 import { tgpu, d, std } from 'typegpu';
 
-import { quarterEllipseSdf } from './sdf.js';
+import { quarterEllipseSdf } from '../../src/renderer/gpu/sdf.js';
 
 /** Solid, linear or radial fill, with up to three encoded stops. */
 export const fillAt = tgpu
