@@ -37,8 +37,12 @@ export interface LayoutStyle {
 }
 
 /** @internal Native adapter contract; applications use Layout and LayoutNode. */
-interface NativePaintStyle extends Omit<PaintStyle, 'background'> {
+interface NativePaintStyle extends Omit<PaintStyle, 'background' | 'maskImage' | 'filter'> {
   background?: NativeBrush;
+  maskImage?: NativeBrush;
+  filter?: Exclude<PaintStyle['filter'], null | undefined>;
+  clearFilter?: boolean;
+  clearMask?: boolean;
 }
 export interface NativeLayoutNode {
   readonly id: bigint;
@@ -172,12 +176,22 @@ export class LayoutNode {
   }
 
   setPaint(style: PaintStyle): void {
-    const { background, ...fields } = style;
-    this.#native.setPaint(
-      background === undefined
-        ? fields
-        : { ...fields, background: this.#layout.brushValue(background) },
-    );
+    const { background, maskImage, filter, ...fields } = style;
+    const patch: NativePaintStyle = fields;
+    if (background !== undefined) {
+      patch.background = this.#layout.brushValue(background);
+    }
+    if (maskImage === null) {
+      patch.clearMask = true;
+    } else if (maskImage !== undefined) {
+      patch.maskImage = this.#layout.brushValue(maskImage);
+    }
+    if (filter === null) {
+      patch.clearFilter = true;
+    } else if (filter !== undefined) {
+      patch.filter = filter;
+    }
+    this.#native.setPaint(patch);
   }
   clearPaint(): void {
     this.#native.clearPaint();

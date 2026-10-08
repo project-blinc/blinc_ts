@@ -198,6 +198,29 @@ pub struct PaintShadow {
     pub color: Vec<f64>,
 }
 #[napi(object)]
+pub struct PaintFilter {
+    pub brightness: Option<f64>,
+    pub contrast: Option<f64>,
+    pub grayscale: Option<f64>,
+    pub hue_rotate: Option<f64>,
+    pub invert: Option<f64>,
+    pub saturate: Option<f64>,
+    pub sepia: Option<f64>,
+    pub blur: Option<f64>,
+    pub drop_shadow: Option<PaintShadow>,
+}
+impl PaintShadow {
+    fn into_shadow(self) -> Result<Shadow> {
+        Ok(Shadow {
+            offset_x: number(self.x)?,
+            offset_y: number(self.y)?,
+            blur: positive(self.blur)?,
+            spread: number(self.spread.unwrap_or(0.0))?,
+            color: color(self.color)?,
+        })
+    }
+}
+#[napi(object)]
 pub struct PaintStyle<'env> {
     pub background: Option<ClassInstance<'env, NativeBrush>>,
     pub text_color: Option<Vec<f64>>,
@@ -209,6 +232,10 @@ pub struct PaintStyle<'env> {
     pub transform: Option<Vec<f64>>,
     pub shadows: Option<Vec<PaintShadow>>,
     pub z_index: Option<f64>,
+    pub filter: Option<PaintFilter>,
+    pub mask_image: Option<ClassInstance<'env, NativeBrush>>,
+    pub clear_filter: Option<bool>,
+    pub clear_mask: Option<bool>,
 }
 impl PaintStyle<'_> {
     fn apply(self, mut p: scene::RenderProps) -> Result<scene::RenderProps> {
@@ -267,16 +294,34 @@ impl PaintStyle<'_> {
         if let Some(v) = self.shadows {
             p.shadow = v
                 .into_iter()
-                .map(|s| {
-                    Ok(Shadow {
-                        offset_x: number(s.x)?,
-                        offset_y: number(s.y)?,
-                        blur: positive(s.blur)?,
-                        spread: number(s.spread.unwrap_or(0.0))?,
-                        color: color(s.color)?,
-                    })
-                })
+                .map(PaintShadow::into_shadow)
                 .collect::<Result<_>>()?;
+        }
+        if self.clear_filter == Some(true) {
+            p.filter = None;
+        }
+        if let Some(v) = self.filter {
+            let filter = p.filter.get_or_insert_with(Default::default);
+            filter.brightness = positive(v.brightness.unwrap_or(1.0))?;
+            filter.contrast = positive(v.contrast.unwrap_or(1.0))?;
+            filter.grayscale = unit(v.grayscale.unwrap_or(0.0))?;
+            filter.hue_rotate = number(v.hue_rotate.unwrap_or(0.0))?;
+            filter.invert = unit(v.invert.unwrap_or(0.0))?;
+            filter.saturate = positive(v.saturate.unwrap_or(1.0))?;
+            filter.sepia = unit(v.sepia.unwrap_or(0.0))?;
+            filter.blur = positive(v.blur.unwrap_or(0.0))?;
+            filter.drop_shadow = v.drop_shadow.map(PaintShadow::into_shadow).transpose()?;
+        }
+        if self.clear_mask == Some(true) {
+            p.mask_image = None;
+        }
+        if let Some(v) = self.mask_image {
+            p.mask_image = Some(match &v.style_value {
+                blinc_abi::types::Value::Brush(scene::blinc_core::Brush::Gradient(g)) => {
+                    scene::blinc_core::MaskImage::Gradient(g.clone())
+                }
+                _ => return Err(error("Expected a linear or radial gradient mask")),
+            });
         }
         Ok(p)
     }

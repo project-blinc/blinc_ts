@@ -10,6 +10,9 @@ export default defineConfig({
       entry: {
         probe: 'shaders/probe.ts',
         box: 'shaders/ui/box.ts',
+        layer: 'shaders/ui/layer.ts',
+        layerRows: 'shaders/ui/layerRows.ts',
+        layerShadow: 'shaders/ui/layerShadow.ts',
         blit: 'shaders/ui/blit.ts',
         shadow: 'shaders/ui/shadow.ts',
         text: 'shaders/ui/text.ts',

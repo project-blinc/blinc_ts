@@ -1,3 +1,6 @@
+import { compileLayerShader } from '../.shader-build/layer.mjs';
+import { compileLayerRowsShader } from '../.shader-build/layerRows.mjs';
+import { compileLayerShadowShader } from '../.shader-build/layerShadow.mjs';
 import { compileBlitShader } from '../.shader-build/blit.mjs';
 import { compileBoxShader } from '../.shader-build/box.mjs';
 import { compileShadowShader } from '../.shader-build/shadow.mjs';
@@ -27,6 +30,9 @@ async function changed(path, content) {
 for (const [name, shader] of [
   ['probe', compileProbeShader()],
   ['box', compileBoxShader()],
+  ['layer', compileLayerShader()],
+  ['layerRows', compileLayerRowsShader()],
+  ['layerShadow', compileLayerShadowShader()],
   ['blit', compileBlitShader()],
   ['shadow', compileShadowShader()],
   ['text', compileTextShader()],
@@ -44,7 +50,18 @@ for (const [name, shader] of [
         ? 'layout-bench'
         : name === 'sceneProbe'
           ? 'scene-probe'
-          : ['box', 'shadow', 'text', 'image', 'backdrop', 'backdropRows', 'blit'].includes(name)
+          : [
+                'layer',
+                'layerRows',
+                'layerShadow',
+                'box',
+                'shadow',
+                'text',
+                'image',
+                'backdrop',
+                'backdropRows',
+                'blit',
+              ].includes(name)
             ? 'ui/' + name
             : name) +
       '.ts. Do not edit.\nexport const ' +

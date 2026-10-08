@@ -13,6 +13,7 @@ export type {
   VisualBounds,
   TextStyle,
   PaintShadow,
+  PaintFilter,
   PaintStyle,
   PaintOptions,
   PaintInfo,

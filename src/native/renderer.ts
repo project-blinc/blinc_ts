@@ -16,6 +16,9 @@ import { textShader } from '../renderer/generated/text.js';
 import { imageShader } from '../renderer/generated/image.js';
 import { backdropShader } from '../renderer/generated/backdrop.js';
 import { backdropRowsShader } from '../renderer/generated/backdropRows.js';
+import { layerShader } from '../renderer/generated/layer.js';
+import { layerRowsShader } from '../renderer/generated/layerRows.js';
+import { layerShadowShader } from '../renderer/generated/layerShadow.js';
 import { blitShader } from '../renderer/generated/blit.js';
 
 export interface RenderOptions extends PaintOptions {
@@ -59,7 +62,11 @@ export class SceneRenderer {
   readonly #images: TextureAtlas;
   readonly #imageSlots = new Map<number, AtlasRect>();
   readonly #imageCache = new WeakMap<ImageResource, Map<string, AtlasRect>>();
-  readonly #textureGroups = new Map<gpu.GpuTextureView, gpu.GpuBindGroup>();
+  readonly #textureGroups = new Map<
+    gpu.GpuTextureView,
+    Map<gpu.GpuTextureView, gpu.GpuBindGroup>
+  >();
+  readonly #layers: Texture[] = [];
   readonly #dummy: Texture;
   readonly #glyphs: [GlyphTexture, GlyphTexture];
   #records = new Float32Array(0);
@@ -67,6 +74,7 @@ export class SceneRenderer {
   #frameGroup: gpu.GpuBindGroup | undefined;
   #frame: Texture | undefined;
   #rows: Texture | undefined;
+  #shadow: Texture | undefined;
   #disposed = false;
 
   constructor(device: gpu.GpuDevice, layout: Layout, format = gpu.TextureFormat.Rgba8unorm) {
@@ -96,7 +104,7 @@ export class SceneRenderer {
     this.#textureLayout = keep(
       device.createBindGroupLayout({
         entries: [
-          ...[0, 1, 2, 3].map((binding) => ({
+          ...[0, 1, 2, 3, 5].map((binding) => ({
             binding,
             visibility: gpu.ShaderStage.FRAGMENT,
             texture: {
@@ -138,6 +146,9 @@ export class SceneRenderer {
         [7, textShader],
         [32, imageShader],
         [42, backdropShader],
+        [41, layerShader],
+        [-3, layerRowsShader],
+        [-4, layerShadowShader],
         [-1, backdropRowsShader],
         [-2, blitShader],
       ])) {
@@ -233,11 +244,34 @@ export class SceneRenderer {
     const info = this.#layout.prepareDisplayList(root, options);
     this.#reserve(info.floats);
     this.#layout.readDisplayList(this.#records);
+    let depth = 0;
+    let maxDepth = 0;
+    let needsRows = false;
+    let needsShadow = false;
     for (let i = 0; i < info.count; i++) {
       const at = i * R;
       const kind = this.#records[at + KIND]!;
-      if (kind !== 0 && kind !== 3 && kind !== 7 && kind !== 32 && kind !== 42) {
+      if (
+        kind !== 0 &&
+        kind !== 3 &&
+        kind !== 7 &&
+        kind !== 32 &&
+        kind !== 40 &&
+        kind !== 41 &&
+        kind !== 42
+      ) {
         throw new Error(`Unsupported display-list primitive ${kind}`);
+      }
+      if (kind === 40) {
+        maxDepth = Math.max(maxDepth, ++depth);
+      } else if (kind === 41) {
+        if (--depth < 0) {
+          throw new Error('Unbalanced display-list layers');
+        }
+        needsRows ||= this.#records[at + fields.color * 4]! > 0;
+        needsShadow ||= this.#records[at + fields.via * 4 + 3]! > 0;
+      } else if (kind === 42) {
+        needsRows = true;
       }
       if (kind === 32) {
         const slot = this.#records[at + GRADIENT]!;
@@ -253,16 +287,36 @@ export class SceneRenderer {
         this.#records[at + GRADIENT + 3] = rect.y + rect.height;
       }
     }
+    if (depth !== 0) {
+      throw new Error('Unbalanced display-list layers');
+    }
     const atlasBytes = this.#syncGlyphs();
     if (this.#frame?.width !== width || this.#frame.height !== height) {
       this.#clearGroups();
       this.#drop(this.#frame);
       this.#drop(this.#rows);
+      this.#drop(this.#shadow);
+      for (const layer of this.#layers) {
+        this.#drop(layer);
+      }
+      this.#layers.length = 0;
+      this.#rows = undefined;
+      this.#shadow = undefined;
       this.#frame = this.#texture(width, height, gpu.TextureFormat.Rgba8unorm, true);
+    }
+    // Scratch passes are consumed immediately, so rows/shadow can be shared at every depth.
+    // Only simultaneously active groups need distinct content textures.
+    if (needsRows && !this.#rows) {
       this.#rows = this.#texture(width, height, gpu.TextureFormat.Rgba8unorm, true);
     }
+    if (needsShadow && !this.#shadow) {
+      this.#shadow = this.#texture(width, height, gpu.TextureFormat.Rgba8unorm, true);
+    }
+    while (this.#layers.length < maxDepth) {
+      this.#layers.push(this.#texture(width, height, gpu.TextureFormat.Rgba8unorm, true));
+    }
     const frame = this.#frame;
-    const rows = this.#rows!;
+    let current = frame;
     this.#viewportData.set([width / scale, height / scale, 0, 0]);
     this.#queue.writeBuffer(this.#viewport, 0n, new Uint8Array(this.#viewportData.buffer), 16);
     if (info.floats) {
@@ -278,13 +332,48 @@ export class SceneRenderer {
     let drawCalls = 0;
     for (let i = 0; i < info.count;) {
       const kind = this.#records[i * R + KIND]!;
-      if (kind === 42) {
+      if (kind === 40) {
         encoder.renderEnd();
-        this.#begin(encoder, rows.view, [0, 0, 0, 0]);
-        this.#draw(encoder, -1, i, 1, frame.view);
+        current = this.#layers[depth++]!;
+        this.#begin(encoder, current.view, [0, 0, 0, 0]);
+        i++;
+      } else if (kind === 41) {
         encoder.renderEnd();
-        this.#begin(encoder, frame.view);
-        this.#draw(encoder, 42, i, 1, rows.view);
+        const inner = current;
+        const blurred = this.#records[i * R + fields.color * 4]! > 0;
+        const shadowed = this.#records[i * R + fields.via * 4 + 3]! > 0;
+        if (shadowed) {
+          this.#begin(encoder, this.#shadow!.view, [0, 0, 0, 0]);
+          this.#draw(encoder, -4, i, 1, inner.view);
+          encoder.renderEnd();
+          drawCalls++;
+        }
+        if (blurred) {
+          this.#begin(encoder, this.#rows!.view, [0, 0, 0, 0]);
+          this.#draw(encoder, -3, i, 1, inner.view);
+          encoder.renderEnd();
+          drawCalls++;
+        }
+        depth--;
+        current = depth === 0 ? frame : this.#layers[depth - 1]!;
+        this.#begin(encoder, current.view);
+        this.#draw(
+          encoder,
+          41,
+          i,
+          1,
+          blurred ? this.#rows!.view : inner.view,
+          shadowed ? this.#shadow!.view : this.#dummy.view,
+        );
+        drawCalls++;
+        i++;
+      } else if (kind === 42) {
+        encoder.renderEnd();
+        this.#begin(encoder, this.#rows!.view, [0, 0, 0, 0]);
+        this.#draw(encoder, -1, i, 1, current.view);
+        encoder.renderEnd();
+        this.#begin(encoder, current.view);
+        this.#draw(encoder, 42, i, 1, this.#rows!.view);
         drawCalls += 2;
         i++;
       } else {
@@ -405,8 +494,14 @@ export class SceneRenderer {
     first: number,
     count: number,
     layer: gpu.GpuTextureView,
+    shadow: gpu.GpuTextureView = this.#dummy.view,
   ): void {
-    let group = this.#textureGroups.get(layer);
+    let groups = this.#textureGroups.get(layer);
+    if (!groups) {
+      groups = new Map();
+      this.#textureGroups.set(layer, groups);
+    }
+    let group = groups.get(shadow);
     if (!group) {
       group = this.#device.createBindGroup({
         layout: this.#textureLayout,
@@ -418,9 +513,10 @@ export class SceneRenderer {
             }),
           ),
           { binding: 4, resource: { kind: 'Sampler', value: this.#sampler } },
+          { binding: 5, resource: { kind: 'TextureView', value: shadow } },
         ],
       });
-      this.#textureGroups.set(layer, group);
+      groups.set(shadow, group);
     }
     encoder.renderSetPipeline(this.#pipelines.get(kind)!);
     encoder.renderSetBindGroup(0, this.#frameGroup!);
@@ -428,8 +524,10 @@ export class SceneRenderer {
     encoder.renderDrawRange(kind === -2 ? 3 : 6, count, 0, first);
   }
   #clearGroups(): void {
-    for (const group of this.#textureGroups.values()) {
-      group.destroy();
+    for (const groups of this.#textureGroups.values()) {
+      for (const group of groups.values()) {
+        group.destroy();
+      }
     }
     this.#textureGroups.clear();
   }
@@ -458,6 +556,11 @@ export class SceneRenderer {
     this.#buffer?.destroy();
     this.#drop(this.#frame);
     this.#drop(this.#rows);
+    this.#drop(this.#shadow);
+    for (const layer of this.#layers) {
+      this.#drop(layer);
+    }
+    this.#layers.length = 0;
     this.#drop(this.#dummy);
     for (const glyph of this.#glyphs) {
       this.#drop(glyph);

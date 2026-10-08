@@ -31,6 +31,8 @@ The renderer's shader sources are organized by purpose:
   [box pass](../shaders/ui/box.ts).
 - [Text](../shaders/ui/text.ts) and [images](../shaders/ui/image.ts): shared
   clipping, mask/color glyph atlases and the image atlas.
+- [Layers](../shaders/ui/layer.ts): group opacity, color filters and gradient masks,
+  with paired Gaussian passes for blur and alpha drop shadows.
 - [Backdrop](../shaders/ui/backdrop.ts), [row blur](../shaders/ui/backdropRows.ts)
   and [glass math](../shaders/ui/glass.ts): separable blur, refraction and dispersion.
 

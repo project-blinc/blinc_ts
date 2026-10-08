@@ -36,6 +36,21 @@ export interface PaintShadow {
   spread?: number;
   color: Color;
 }
+/** A complete filter value. Omitted members use their identity values. */
+export interface PaintFilter {
+  brightness?: number;
+  contrast?: number;
+  grayscale?: number;
+  /** Degrees. */
+  hueRotate?: number;
+  invert?: number;
+  saturate?: number;
+  sepia?: number;
+  /** Gaussian standard deviation in logical pixels. */
+  blur?: number;
+  /** The rendered group's alpha casts the shadow; blur is twice its standard deviation. */
+  dropShadow?: Omit<PaintShadow, 'spread'>;
+}
 /** Partial paint update; clearPaint resets all paint fields. */
 export interface PaintStyle {
   background?: Brush;
@@ -47,6 +62,10 @@ export interface PaintStyle {
   visible?: boolean;
   transform?: AffineTransform;
   shadows?: readonly PaintShadow[];
+  /** Filters the group as a whole. Null clears the filter. */
+  filter?: PaintFilter | null;
+  /** Linear/radial Brush gradient used for alpha masking. Null clears the mask. */
+  maskImage?: Brush | null;
 }
 export interface PaintOptions {
   /** Device pixels per logical pixel; determines glyph raster resolution. */

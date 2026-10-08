@@ -10,7 +10,8 @@ class RendererReference {
     var dir = Sys.getEnv("RENDER_REFERENCE_DIR");
     var offscreen = Offscreen.create();
     var renderer = new Renderer(offscreen.device, gpu.TextureFormat.Rgba8unorm);
-    for (name in ["geometry", "squircle", "fractional"]) for (scale in [1, 2]) {
+    var names = Sys.getEnv("RENDER_REFERENCE_NAMES");
+    for (name in (names == null ? ["geometry", "squircle", "fractional"] : names.split(","))) for (scale in [1, 2]) {
       var data:Dynamic = haxe.Json.parse(sys.io.File.getContent(dir + '/records-${name}-${scale}x.json'));
       var records:Array<Float> = data.records;
       var count:Int = data.count;

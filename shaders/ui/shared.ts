@@ -15,6 +15,7 @@ export const textures = tgpu
     images: { texture: d.texture2d() },
     layer: { texture: d.texture2d() },
     linearSampler: { sampler: 'filtering' },
+    shadow: { texture: d.texture2d() },
   })
   .$idx(1);
 export const field = tgpu.fn(

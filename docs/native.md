@@ -141,8 +141,8 @@ try {
 }
 ```
 
-`setText` merges text metrics and invalidates layout. `setPaint` merges background brushes, radius, border, shadow, visibility, opacity
-and affine transform fields;
+`setText` merges text metrics and invalidates layout. `setPaint` merges background brushes, radius, border, shadow, visibility, opacity,
+affine transforms, filters and gradient masks;
 `clearPaint` resets them. Child order determines paint order. Colors are
 straight-alpha RGBA in 0..1, and sizes are logical pixels. `setVisual` supplies
 layout-animation offsets and optional drawn sizes; `setPointerEvents` and
@@ -207,7 +207,9 @@ rejection and HMR cleanup, then uploads real records, glyph masks and image pixe
 through `OffscreenRenderer`. Its captures go to `.blinc/scene-adapter/` and compare
 thousands of rendered glyph pixels against their native atlas samples. That probe covers only the native adapter. `tests/native-renderer.mjs` exercises
 the actual scene renderer, including clipping, blur, glass dispersion, atlas
-updates and deterministic captures at both 1× and 2×.
+updates and deterministic captures at both 1× and 2×. `tests/native-layers.mjs`
+checks nested opacity, filters, drop shadows, transformed gradient masks and
+backdrops within layers, including clearing effects and resizing targets.
 
 ## Drawing a scene
 
@@ -241,7 +243,7 @@ are packed into one growing atlas; call
 before drawing a registered image brush. The atlas preserves entries when it
 grows, up to 4096 × 4096; an individual entry must leave room for its one-pixel gap.
 
-Backdrops use two Gaussian passes over the accumulated frame. Liquid glass
+Backdrops use two Gaussian passes over the accumulated content in the current layer. Liquid glass
 adds refraction, tint, grain and adjustable chromatic separation. Rounded and
 shaped boxes, gradients, borders, analytic shadows, clipping, text and RGBA images
 use the same packed records. Set `cornerShape: 2` in render options for squircle
@@ -255,9 +257,36 @@ an encoder and target view; return `renderer.encode(...).drawCalls` from the
 callback. It handles submission and readback. Submit each encoded frame before
 encoding another, since the renderer reuses its upload buffers.
 
-Group-layer compositing and canvas callbacks are the next renderer milestones;
-those record kinds currently raise an explicit error. CSS, themes and the
-component layer are separate work. See [shader authoring](shaders.md) for the
+Groups with opacity are composited once after their children, so overlapping
+children do not become individually translucent. Filters and masks also operate
+on the complete group:
+
+```ts
+card.setPaint({
+  opacity: 0.85,
+  filter: {
+    brightness: 1.1,
+    blur: 1.5,
+    dropShadow: { x: 0, y: 6, blur: 12, color: [0, 0, 0, 0.35] },
+  },
+  maskImage: Brush.linear(0, 0, 1, 0, true)
+    .stop(0, 0xffffff, 0)
+    .stop(0.25, 0xffffff, 1)
+    .stop(1, 0xffffff, 1),
+});
+card.setPaint({ filter: null, maskImage: null }); // Preserve the other paint fields.
+```
+
+A filter value replaces the previous filter; omitted members use identity values.
+Supported fields are brightness, contrast, grayscale, hueRotate (degrees), invert,
+saturate, sepia, blur and dropShadow. Masks take the alpha of a linear or radial
+Brush gradient in the element's transformed box. As with displayed gradients,
+the current record format samples the first, middle and last stops.
+Content textures are pooled by nesting depth; sequential blur and shadow passes
+share scratch textures, allocated only when needed.
+
+Canvas callbacks remain a renderer milestone and currently raise an explicit
+error. CSS, themes and the component layer are separate work. See [shader authoring](shaders.md) for the
 TypeScript sources and their build path.
 
 ## Reactive contexts
