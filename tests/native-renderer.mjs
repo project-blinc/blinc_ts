@@ -303,7 +303,7 @@ try {
   }
   // Zero blur must be finite and leave an opaque backdrop unchanged.
   glass.setPaint({ background: Brush.blur(0) });
-  const zero = await capture('zero-blur');
+  const zero = await capture('zero-blur-filter');
   glass.setPaint({ visible: false });
   const behind = await capture('without-glass');
   for (let y = 140; y < 180; y++) {
@@ -311,8 +311,57 @@ try {
       assert.deepEqual(pixel(zero, x, y), pixel(behind, x, y), 'Zero blur is an identity filter');
     }
   }
+  // Removing blur from glass must retain its material, lens and adjustable dispersion.
   glass.setPaint({
     visible: true,
+    background: Brush.glass(0, 0xffffff, 0.06, { bevel: 0.18, aberration: 0, inset: true }),
+  });
+  const clearGlass = await capture('zero-blur-no-aberration');
+  glass.setPaint({
+    background: Brush.glass(0, 0xffffff, 0.06, { bevel: 0.18, aberration: 1, inset: true }),
+  });
+  const clearChromatic = await capture('zero-blur');
+  const clearInfo = layout.prepareDisplayList(root);
+  const clearRecords = new Float32Array(clearInfo.floats);
+  layout.readDisplayList(clearRecords);
+  const clearRecord = Array.from({ length: clearInfo.count }, (_, i) =>
+    clearRecords.subarray(i * 112, (i + 1) * 112),
+  ).find((r) => r[44] === 42 && r[0] === 48 && r[1] === 112);
+  assert(clearRecord);
+  assert.equal(clearRecord[8], 0, 'Glass blur remains zero');
+  assert.equal(clearRecord[40], 1, 'Zero blur retains the liquid material');
+  assert.equal(clearRecord[41], Math.fround(-0.18), 'Bevel and inset remain unchanged');
+  assert.equal(clearRecord[56], 1, 'Zero blur retains chromatic aberration');
+  let zeroBlurEdgeChanges = 0;
+  for (let y = 112; y < 256; y++) {
+    for (let x = 48; x < 304; x++) {
+      const a = pixel(clearGlass, x, y),
+        b = pixel(clearChromatic, x, y);
+      if (a.some((v, i) => Math.abs(v - b[i]) > 2)) {
+        zeroBlurEdgeChanges++;
+      }
+    }
+  }
+  assert(zeroBlurEdgeChanges > 300, 'Zero-blur glass keeps visible chromatic separation');
+  for (let y = 140; y < 180; y++) {
+    for (let x = 80; x < 270; x++) {
+      assert.deepEqual(
+        pixel(clearGlass, x, y),
+        pixel(clearChromatic, x, y),
+        'Clear center is unaffected by aberration',
+      );
+    }
+  }
+  for (let y = 100; y < 270; y++) {
+    for (let x = 330; x < 605; x++) {
+      assert.deepEqual(
+        pixel(clearGlass, x, y),
+        pixel(clearChromatic, x, y),
+        'Separate blur card is unchanged',
+      );
+    }
+  }
+  glass.setPaint({
     background: Brush.glass(1, 0xffffff, 0.06, { bevel: 0.18, aberration: 1, inset: true }),
   });
   root.setPaint({ background: Brush.solid(0, 0) });
@@ -328,6 +377,7 @@ try {
     JSON.stringify({
       ...frameStats,
       edgeChanges,
+      zeroBlurEdgeChanges,
       fractionalShape,
       references,
       output: output.pathname,
