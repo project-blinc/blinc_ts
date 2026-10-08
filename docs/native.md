@@ -62,11 +62,18 @@ and Linux execution still require platform validation.
 UI `Scope` disposes it during HMR; otherwise call `dispose()` explicitly.
 
 ```ts
-import { loadNative } from 'blinc_ts/native';
+import { LayoutAlign, LayoutDirection, loadNative } from 'blinc_ts/native';
 
 const layout = loadNative().createLayout();
 try {
-  const root = layout.createNode({ width: '100%', height: '100%', gap: 12, padding: 16 });
+  const root = layout.createNode({
+    width: '100%',
+    height: '100%',
+    gap: 12,
+    padding: 16,
+    direction: LayoutDirection.Row,
+    align: LayoutAlign.Stretch,
+  });
   const sidebar = layout.createNode({ width: 180, shrink: 0 });
   const content = layout.createNode({ grow: 1 });
   root.setChildren([sidebar, content]);
@@ -81,7 +88,14 @@ try {
 ```
 
 Styles currently cover flex direction, alignment, justification, grow/shrink,
-gaps, uniform padding and pixel/percentage/auto sizes with min/max constraints.
+gaps, uniform padding, overflow and pixel/percentage/auto sizes with min/max constraints.
+Use `LayoutDirection`, `LayoutAlign`, `LayoutJustify` and `LayoutOverflow` for
+categorical styles, for example `align: LayoutAlign.Center`. These constants are
+numbers generated for TypeScript and Rust from `native/api/layout.rs` through
+x-idl. Native calls validate numeric enum values without allocating or comparing
+strings; loading checks the schema fingerprint. Unknown codes, fractions and
+non-finite values are rejected before edits are applied. Size values still accept
+numbers, percentages such as `'100%'`, and `'auto'`.
 `setStyle` merges fields. `setChildren` reorders or reparents existing nodes;
 removing a node removes its descendants. Handles are checked for context and
 generation, and cyclic or duplicate-child edits are rejected atomically.

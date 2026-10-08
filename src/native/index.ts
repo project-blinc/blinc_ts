@@ -5,6 +5,8 @@ import type { Scope } from '../hmr.js';
 import { Layout, type NativeLayout } from './layout.js';
 export { Layout, LayoutNode } from './layout.js';
 export type { LayoutStyle, LayoutLength } from './layout.js';
+export { LayoutDirection, LayoutAlign, LayoutJustify, LayoutOverflow } from './generated/layout.js';
+import { bind as bindLayout } from './generated/layout.js';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { isMainThread } from 'node:worker_threads';
@@ -23,6 +25,7 @@ interface Addon {
   buildProfile(): string;
   gpuCall: NativeBinding['call'];
   windowCall: NativeBinding['call'];
+  layoutCall: NativeBinding['call'];
 }
 export interface NativeBindings {
   readonly buildProfile: string;
@@ -41,6 +44,7 @@ export function loadNative(
   const addon = createRequire(import.meta.url)(
     path instanceof URL ? fileURLToPath(path) : path,
   ) as Addon;
+  bindLayout({ call: addon.layoutCall });
   return {
     buildProfile: addon.buildProfile(),
     createLayout: (scope?: Scope) => new Layout(new addon.NativeLayout(), scope),

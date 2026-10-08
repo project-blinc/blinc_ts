@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { AppSession } from '../dist/hmr.js';
-import { loadNative } from '../dist/native/index.js';
+import {
+  LayoutDirection,
+  LayoutAlign,
+  LayoutJustify,
+  LayoutOverflow,
+  loadNative,
+} from '../dist/native/index.js';
 
 const native = loadNative();
 const layout = native.createLayout();
@@ -36,7 +42,7 @@ try {
   assert.throws(() => layout.compute(root, Infinity, 180), /finite/);
   assert.throws(() => a.setStyle({ width: 'oops' }), /percentage/);
   assert.throws(() => a.setStyle({ height: -1 }), /non-negative/);
-  assert.throws(() => a.setStyle({ direction: 'diagonal' }), /direction/);
+  assert.throws(() => a.setStyle({ direction: 'diagonal' }), { code: 'NumberExpected' });
   layout.readBounds([a], bounds); // Rejected edits keep computed geometry valid.
   assert.throws(() => layout.readBounds([a], new Float32Array(3)), /too small/);
   assert.throws(() => layout.readBounds([a], new Uint32Array(4)), /Float32Array/);
@@ -80,6 +86,79 @@ try {
   foreign.dispose();
 }
 
+// All authored enum values pass as numbers, with the same layout semantics.
+const enums = native.createLayout();
+try {
+  const root = enums.createNode({ width: 100, height: 80 });
+  const a = enums.createNode({ width: 10, height: 20, shrink: 0 });
+  const b = enums.createNode({ width: 10, height: 20, shrink: 0 });
+  root.setChildren([a, b]);
+  const bounds = new Float32Array(8);
+  const check = (patch, expected) => {
+    root.setStyle(patch);
+    enums.compute(root, 100, 80);
+    enums.readBounds([a, b], bounds);
+    assert.deepEqual([...bounds], expected);
+  };
+  check({ direction: LayoutDirection.Row }, [0, 0, 10, 20, 10, 0, 10, 20]);
+  check({ direction: LayoutDirection.Column }, [0, 0, 10, 20, 0, 20, 10, 20]);
+  check({ direction: LayoutDirection.RowReverse }, [90, 0, 10, 20, 80, 0, 10, 20]);
+  check({ direction: LayoutDirection.ColumnReverse }, [0, 60, 10, 20, 0, 40, 10, 20]);
+  for (const [align, y] of [
+    [LayoutAlign.Start, 0],
+    [LayoutAlign.End, 60],
+    [LayoutAlign.Center, 30],
+  ]) {
+    check({ direction: LayoutDirection.Row, align }, [0, y, 10, 20, 10, y, 10, 20]);
+  }
+  a.setStyle({ height: 'auto' });
+  check({ align: LayoutAlign.Stretch }, [0, 0, 10, 80, 10, 0, 10, 20]);
+  a.setStyle({ height: 20 });
+  for (const [justify, x1, x2] of [
+    [LayoutJustify.Start, 0, 10],
+    [LayoutJustify.End, 80, 90],
+    [LayoutJustify.Center, 40, 50],
+    [LayoutJustify.SpaceBetween, 0, 90],
+    [LayoutJustify.SpaceAround, 20, 70],
+    [LayoutJustify.SpaceEvenly, 27, 63],
+  ]) {
+    check({ justify }, [x1, 0, 10, 20, x2, 0, 10, 20]);
+  }
+  for (const overflow of Object.values(LayoutOverflow)) {
+    check({ overflow, justify: LayoutJustify.Start }, [0, 0, 10, 20, 10, 0, 10, 20]);
+  }
+  // Partial style patches retain enum values, and invalid patches are atomic.
+  check({ align: LayoutAlign.Center }, [0, 30, 10, 20, 10, 30, 10, 20]);
+  check({ gap: 4 }, [0, 30, 10, 20, 14, 30, 10, 20]);
+  const previous = [...bounds];
+  for (const key of ['direction', 'align', 'justify', 'overflow']) {
+    for (const value of [
+      'center',
+      '0',
+      NaN,
+      Infinity,
+      -Infinity,
+      0.5,
+      -1,
+      99,
+      4294967296,
+      true,
+      {},
+      0n,
+    ]) {
+      assert.throws(() => root.setStyle({ width: 200, [key]: value }));
+      enums.readBounds([a, b], bounds);
+      assert.deepEqual([...bounds], previous);
+    }
+  }
+} finally {
+  enums.dispose();
+}
+// Schema mismatch fails at load, before a style can be interpreted differently.
+const { bind, bindingSchema } = await import('../dist/native/generated/layout.js');
+assert.equal(addon.layoutCall(0xffffffff, []), bindingSchema);
+assert.throws(() => bind({ call: () => 'incompatible-layout-schema' }), /schema mismatch/);
+
 let hostDisposed = false;
 const session = new AppSession({
   dispose() {
@@ -95,4 +174,6 @@ assert.throws(() => node.setStyle({ width: 1 }), /disposed/);
 session.dispose();
 assert.equal(second.disposed, true);
 assert.equal(hostDisposed, true);
-console.log('Native layout: geometry, ownership, buffers, edits and HMR disposal passed');
+console.log(
+  'Native layout: numeric enums, geometry, ownership, buffers, edits and HMR disposal passed',
+);

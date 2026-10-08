@@ -1,3 +1,9 @@
+import type {
+  LayoutDirection,
+  LayoutAlign,
+  LayoutJustify,
+  LayoutOverflow,
+} from './generated/layout.js';
 import type { Scope } from '../hmr.js';
 
 export type LayoutLength = number | `${number}%` | 'auto';
@@ -9,9 +15,10 @@ export interface LayoutStyle {
   minHeight?: LayoutLength;
   maxWidth?: LayoutLength;
   maxHeight?: LayoutLength;
-  direction?: 'row' | 'column' | 'row-reverse' | 'column-reverse';
-  align?: 'start' | 'end' | 'center' | 'stretch';
-  justify?: 'start' | 'end' | 'center' | 'space-between' | 'space-around' | 'space-evenly';
+  direction?: LayoutDirection;
+  align?: LayoutAlign;
+  justify?: LayoutJustify;
+  overflow?: LayoutOverflow;
   grow?: number;
   shrink?: number;
   gap?: number;

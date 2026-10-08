@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { cpus, platform, arch, release } from 'node:os';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { loadNative } from '../dist/native/index.js';
+import { LayoutDirection, loadNative } from '../dist/native/index.js';
 
 const api = loadNative();
 if (api.buildProfile !== 'release') {
@@ -25,8 +25,8 @@ const results = [];
 for (const count of [100, 1000, 10000]) {
   const layout = api.createLayout();
   try {
-    const root = layout.createNode({ width: '100%', direction: 'column' });
-    const other = layout.createNode({ width: '100%', direction: 'column' });
+    const root = layout.createNode({ width: '100%', direction: LayoutDirection.Column });
+    const other = layout.createNode({ width: '100%', direction: LayoutDirection.Column });
     const nodes = Array.from({ length: count }, () => layout.createNode({ height: 12, shrink: 0 }));
     root.setChildren(nodes);
     const bounds = new Float32Array(count * 4);

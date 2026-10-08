@@ -1,9 +1,10 @@
+use crate::layout_values::{LayoutAlign, LayoutDirection, LayoutJustify, LayoutOverflow};
 use blinc_abi::context::{LayoutContext, Node};
 use napi::bindgen_prelude::{ClassInstance, Either, Unknown};
 use napi::{Env, Error, JsValue, Result, Status, sys};
 use napi_derive::napi;
 use std::{cell::RefCell, rc::Rc};
-use taffy::prelude::*;
+use taffy::{Point, prelude::*};
 
 fn error(message: impl Into<String>) -> Error {
     Error::new(Status::InvalidArg, message.into())
@@ -39,13 +40,14 @@ pub struct LayoutStyle {
     pub min_height: Option<Either<f64, String>>,
     pub max_width: Option<Either<f64, String>>,
     pub max_height: Option<Either<f64, String>>,
-    pub direction: Option<String>,
-    pub align: Option<String>,
-    pub justify: Option<String>,
+    pub direction: Option<LayoutDirection>,
+    pub align: Option<LayoutAlign>,
+    pub justify: Option<LayoutJustify>,
     pub grow: Option<f64>,
     pub shrink: Option<f64>,
     pub gap: Option<f64>,
     pub padding: Option<f64>,
+    pub overflow: Option<LayoutOverflow>,
 }
 impl LayoutStyle {
     fn apply(self, mut style: Style) -> Result<Style> {
@@ -68,33 +70,13 @@ impl LayoutStyle {
             style.max_size.height = dimension(v)?;
         }
         if let Some(v) = self.direction {
-            style.flex_direction = match v.as_str() {
-                "row" => FlexDirection::Row,
-                "column" => FlexDirection::Column,
-                "row-reverse" => FlexDirection::RowReverse,
-                "column-reverse" => FlexDirection::ColumnReverse,
-                _ => return Err(error("Invalid layout direction")),
-            };
+            style.flex_direction = v.into();
         }
         if let Some(v) = self.align {
-            style.align_items = Some(match v.as_str() {
-                "start" => AlignItems::START,
-                "end" => AlignItems::END,
-                "center" => AlignItems::CENTER,
-                "stretch" => AlignItems::STRETCH,
-                _ => return Err(error("Invalid layout alignment")),
-            });
+            style.align_items = Some(v.into());
         }
         if let Some(v) = self.justify {
-            style.justify_content = Some(match v.as_str() {
-                "start" => JustifyContent::START,
-                "end" => JustifyContent::END,
-                "center" => JustifyContent::CENTER,
-                "space-between" => JustifyContent::SPACE_BETWEEN,
-                "space-around" => JustifyContent::SPACE_AROUND,
-                "space-evenly" => JustifyContent::SPACE_EVENLY,
-                _ => return Err(error("Invalid layout justification")),
-            });
+            style.justify_content = Some(v.into());
         }
         if let Some(v) = self.grow {
             style.flex_grow = finite(v)?;
@@ -117,6 +99,10 @@ impl LayoutStyle {
                 top: v,
                 bottom: v,
             };
+        }
+        if let Some(value) = self.overflow {
+            let value = value.into();
+            style.overflow = Point { x: value, y: value };
         }
         Ok(style)
     }
