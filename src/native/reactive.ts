@@ -79,6 +79,10 @@ export class ReactiveContext implements Disposable {
   }
   /** @internal */
   own(resource: Disposable, scope?: Scope): void {
+    if (this.#disposed) {
+      resource.dispose();
+      return;
+    }
     this.#owned.add(resource);
     (scope ?? active?.scope)?.onCleanup(() => resource.dispose());
   }
@@ -98,6 +102,25 @@ export class ReactiveContext implements Disposable {
     this.own(value, scope);
     return value;
   }
+  #cleanup(scope: Scope | undefined): void {
+    const previous = active;
+    active = { context: this, computed: false, tracking: false };
+    try {
+      scope?.dispose();
+    } finally {
+      active = previous;
+    }
+  }
+  #cleanupAfterError(scope: Scope | undefined, error: unknown): never {
+    try {
+      this.#cleanup(scope);
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], 'Effect and cleanup failed', {
+        cause: cleanupError,
+      });
+    }
+    throw error;
+  }
   effect(run: (scope: Scope) => void, scope?: Scope): Disposable {
     this.check(true);
     let current: Scope | undefined;
@@ -108,18 +131,16 @@ export class ReactiveContext implements Disposable {
         if (disposed || this.#disposed) {
           return;
         }
-        this.untrack(() => current?.dispose());
+        this.#cleanup(current);
         current = new Scope();
         try {
           this.evaluate(false, () => run(current!), current);
         } catch (error) {
-          this.untrack(() => current?.dispose());
-          throw error;
+          this.#cleanupAfterError(current, error);
         }
       });
     } catch (error) {
-      this.untrack(() => current?.dispose());
-      throw error;
+      this.#cleanupAfterError(current, error);
     }
     const effect: Disposable = {
       dispose: () => {
@@ -135,13 +156,7 @@ export class ReactiveContext implements Disposable {
           native.dispose();
         } finally {
           // Cleanup remains valid while the context itself is being disposed.
-          const previous = active;
-          active = { context: this, computed: false, tracking: false };
-          try {
-            current?.dispose();
-          } finally {
-            active = previous;
-          }
+          this.#cleanup(current);
         }
       },
     };

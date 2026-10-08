@@ -181,6 +181,108 @@ armed = true;
 trigger.notify();
 assert.equal(disposing.disposed, true);
 trigger.dispose();
+// The initial callback runs before effect() can register its returned handle.
+for (const fail of [false, true]) {
+  const context = api.createReactive();
+  let cleanups = 0;
+  const failure = { phase: 'after disposal' };
+  const run = () =>
+    context.effect((effectScope) => {
+      effectScope.onCleanup(() => {
+        cleanups++;
+      });
+      context.dispose();
+      if (fail) {
+        throw failure;
+      }
+    });
+  if (fail) {
+    assert.throws(run, (error) => error === failure);
+  } else {
+    run().dispose();
+  }
+  assert.equal(context.disposed, true);
+  assert.equal(cleanups, 1);
+}
+const lifecycle = api.createReactive();
+try {
+  const compute = lifecycle.computed(() => lifecycle.dispose());
+  assert.throws(() => compute.get(), /computed callback/);
+  assert.equal(lifecycle.disposed, false);
+  compute.dispose();
+  const callbackError = new Error('effect');
+  const cleanupError = new Error('cleanup');
+  assert.throws(
+    () =>
+      lifecycle.effect((effectScope) => {
+        effectScope.onCleanup(() => {
+          throw cleanupError;
+        });
+        throw callbackError;
+      }),
+    (error) => {
+      assert(error instanceof AggregateError);
+      assert.equal(error.errors[0], callbackError);
+      assert(error.errors[1] instanceof AggregateError);
+      assert.equal(error.errors[1].errors[0], cleanupError);
+      return true;
+    },
+  );
+  assert.deepEqual(lifecycle.stats(), { signals: 0, computeds: 0, effects: 0 });
+} finally {
+  lifecycle.dispose();
+}
+// Arbitrary thrown values must survive the native boundary without coercion.
+for (const thrown of [
+  undefined,
+  null,
+  'failure',
+  42,
+  2n ** 62n,
+  Symbol('failure'),
+  {
+    toString() {
+      throw new Error('Must not coerce thrown values');
+    },
+  },
+]) {
+  const context = api.createReactive();
+  const state = context.signal(false);
+  const effect = context.effect(() => {
+    if (state.get()) {
+      throw thrown;
+    }
+  });
+  let caught = false;
+  try {
+    state.set(true);
+  } catch (error) {
+    caught = true;
+    assert.equal(error, thrown);
+  }
+  assert.equal(caught, true);
+  state.set(false);
+  effect.dispose();
+  context.dispose();
+}
+const rawLifecycle = new addon.NativeGraph();
+try {
+  const compute = rawLifecycle.computed(() => rawLifecycle.dispose());
+  assert.throws(() => compute.track(), /computed callback/);
+  assert.equal(rawLifecycle.disposed, false);
+  compute.dispose();
+  compute.dispose();
+  assert.throws(() => compute.track(), /disposed/);
+  const signal = rawLifecycle.signal();
+  const effect = rawLifecycle.effect(() => signal.track());
+  effect.dispose();
+  effect.dispose();
+  signal.dispose();
+  signal.dispose();
+  assert.deepEqual(rawLifecycle.stats(), { signals: 0, computeds: 0, effects: 0 });
+} finally {
+  rawLifecycle.dispose();
+}
 console.log(
   'Native reactivity: branching, batching, identity, errors, nested effects and disposal passed',
 );
