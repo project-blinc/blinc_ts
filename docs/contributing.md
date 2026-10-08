@@ -56,6 +56,13 @@ Use git-bug for implementation work, defects and follow-up tasks. Keep a concret
 scope and validation criteria in each issue, record implementation and test
 results in comments, and close it only when that scope is complete.
 
+Commit each tested milestone before starting the next one. Keep independently
+reversible fixes in separate commits and record each commit hash, verification
+results, platform and remaining work in its issue. Preserve these checkpoints
+for `git bisect`; use `git revert <commit>` to undo a change in shared history.
+A separate worktree at a known milestone allows comparisons without disturbing
+current work.
+
 ```sh
 git bug bug --format plain
 git bug bug new --non-interactive --title 'Short title' --message 'Scope and acceptance checks'
