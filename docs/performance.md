@@ -193,9 +193,74 @@ are retained so comparisons can examine that spread.
 
 The list exposes a concrete scaling problem: all three sizes have identical
 visible pixels, but 30/300/3,000 rows encode 2,237/22,217/222,017 primitives.
-Invisible rows are still traversed and submitted. The next optimization is
-conservative clipping during scene preparation, preserving transformed bounds,
-shadows and backdrop sampling reach. Virtualization remains a separate concern.
+In that baseline, invisible rows were still traversed and submitted. The shared
+paint walk now culls primitives outside explicit screen clips before packing.
+It retains the antialiasing fringe and transformed shadow reach; layout bounds
+and the viewport never become implicit clips. Canvas records and compositing
+layer contents are preserved. Local transformed clips and clip paths still use
+the shader. Virtualization remains a separate concern.
+
+### Comparing clipping builds
+
+Keep the baseline addon before rebuilding the candidate, then run:
+
+```sh
+npm run bench:renderer:compare -- \
+  --baseline /path/to/baseline.node --candidate /path/to/candidate.node \
+  --output .blinc/benchmarks/renderer-comparison
+```
+
+The driver alternates fresh processes for three runs per build, with the same
+SDK, fixtures, machine, GPU and viewport. Each state must match the baseline's
+pixel hash; the number of records may change. The summary retains individual
+run medians and record/draw/upload ranges; companion reports retain all samples.
+Use `--counts`, `--scales`, `--cases`, `--samples`, `--warmup` or `--runs` to select
+the experiment. The single-run harness also accepts `--addon`.
+
+`tests/native-clipping.mjs` covers scrolling italic text, fractional corners,
+overflow descendants, offset shadows, transformed clips, filtered/masked groups,
+glass and retained canvas records. Run it with `--addon` and `--output` to capture
+an unchanged producer, then use `--verify` with that directory to require exact
+pixel equality from the candidate on the same machine. Its default run asserts
+that clipped rows no longer produce their box and glyph records.
+
+### Clipping measurement, 2026-10-08
+
+Apple M1 Pro, macOS arm64, Node 24.2.0, Metal, release builds. Three alternating
+runs per build, 20 warm-up frames and 101 samples per mode. Values below are
+medians of changed-mode run medians; every captured state matched the baseline.
+
+| Text rows | Scale | CPU before | CPU after | Reduction | Completion before | Completion after |
+| --------: | ----: | ---------: | --------: | --------: | ----------------: | ---------------: |
+|        30 |    1x |   0.840 ms |  0.516 ms |     38.6% |          1.829 ms |         1.465 ms |
+|       300 |    1x |  10.919 ms |  6.062 ms |     44.5% |         14.604 ms |         8.290 ms |
+|     3,000 |    1x | 111.100 ms | 60.965 ms |     45.1% |        122.484 ms |        63.804 ms |
+|        30 |    2x |   0.984 ms |  0.659 ms |     33.1% |          4.238 ms |         4.006 ms |
+|       300 |    2x |  11.052 ms |  6.145 ms |     44.4% |         16.670 ms |         9.996 ms |
+|     3,000 |    2x | 111.440 ms | 61.118 ms |     45.2% |        125.901 ms |        68.748 ms |
+
+All list sizes now submit 905–909 primitives in 27–29 draws, depending on scroll
+position, instead of 2,237–222,017 primitives in 63–6,003 draws. The 3,000-row
+record upload fell from 99.5 MB to about 0.4 MB per frame. Warm captures still
+allocated no GPU textures, buffers or bind groups and uploaded no glyph bytes.
+
+Small-scene end-to-end timings remain inconclusive: for example, mixed-run 2x
+image cards measured 0.444 ms before and 0.495 ms after. A separate cards/effects
+experiment with 201 samples showed wide variation across processes. Their
+records and pixels are identical between builds. Isolating native paint
+preparation and transfer (three runs, 200 warm-up iterations and 1,001 samples)
+measured 14–21% less time; this excludes layout, GPU submission and completion.
+
+CPU cost still grows with retained rows because the walk visits every text node
+and prepares its glyphs before culling their records. Safely reusing actual ink
+bounds and text preparation is the next target; layout boxes alone cannot
+bound italic or overflowing text. Layer contents and transformed local clips
+also remain conservative.
+
+[Raw reports, run medians, binary hashes and the native-only diagnostic source](../benchmarks/results/2026-10-08-ui-clipping.json.gz)
+include both the mixed and isolated experiments, plus hashes of the six clipping
+regression captures. These measurements cover this renderer on this machine.
+They do not compare frameworks or establish interactive frame rates.
 
 ## Native window idle benchmark
 

@@ -16,6 +16,7 @@ import { createScene, viewport, paintOptions, fontFamily } from './renderer-scen
 
 const { values } = parseArgs({
   options: {
+    addon: { type: 'string' },
     counts: { type: 'string', default: '30,300,3000' },
     scales: { type: 'string', default: '1,2' },
     cases: { type: 'string', default: 'list,cards,effects' },
@@ -51,7 +52,8 @@ for (const file of (await readdir(resolve(rootPath, 'dist'), { recursive: true }
   .sort()) {
   sdkHash.update(file).update(await readFile(resolve(rootPath, 'dist', file)));
 }
-const api = loadNative();
+const addonPath = values.addon ? resolve(values.addon) : resolve(rootPath, 'native/blinc_ts.node');
+const api = loadNative(addonPath);
 assert.equal(api.buildProfile, 'release', 'Build an optimized native addon first');
 const report = {
   schema: 1,
@@ -68,7 +70,7 @@ const report = {
     encoding: 'utf8',
   }).trim(),
   buildProfile: api.buildProfile,
-  addonSha256: await hashFile(resolve(rootPath, 'native/blinc_ts.node')),
+  addonSha256: await hashFile(addonPath),
   sdkSha256: sdkHash.digest('hex'),
   fixtureSha256: await hashFile(new URL('./renderer-scenes.mjs', import.meta.url)),
   harnessSha256: await hashFile(fileURLToPath(import.meta.url)),

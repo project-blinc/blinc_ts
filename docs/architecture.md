@@ -35,7 +35,11 @@ must be released before their windows.
 The TypeScript renderer manages paint order, batching, atlas updates,
 straight-alpha/color behavior, transformed clipping, borders, shadows,
 nested layers, filters, backdrop blur, liquid glass, display scaling and
-custom canvas passes through xgpu.
+custom canvas passes through xgpu. The shared ABI paint walk rejects primitives
+outside explicit screen clips before packing records, preserving shadow reach
+and antialiasing. It retains compositing-layer contents and canvas records;
+transformed local clips and clip paths remain shader-resolved. This reduces
+submission work without treating a layout box as an implicit overflow clip.
 
 Use TypeGPU for shader authoring. During builds, its Vite plugin transforms
 shader functions and `tgpu.resolve` generates WGSL. Package WGSL, entry-point
