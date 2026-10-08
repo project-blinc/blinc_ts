@@ -1,0 +1,98 @@
+{
+  "name": "blinc_ts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "TypeScript SDK for Blinc layout and reactivity, with native rendering through xgpu and xwindow.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/project-blinc/blinc_ts.git"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./hmr": {
+      "types": "./dist/hmr.d.ts",
+      "import": "./dist/hmr.js"
+    },
+    "./vite": {
+      "types": "./dist/vite.d.ts",
+      "import": "./dist/vite.js"
+    },
+    "./shaders": {
+      "types": "./dist/renderer/shaders.d.ts",
+      "import": "./dist/renderer/shaders.js"
+    },
+    "./native": {
+      "types": "./dist/native/index.d.ts",
+      "import": "./dist/native/index.js"
+    },
+    "./native/offscreen": {
+      "types": "./dist/native/offscreen.d.ts",
+      "import": "./dist/native/offscreen.js"
+    },
+    "./native/probe": {
+      "types": "./dist/native/probe.d.ts",
+      "import": "./dist/native/probe.js"
+    },
+    "./debug/motion": {
+      "types": "./dist/debug/motion.d.ts",
+      "import": "./dist/debug/motion.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "docs"
+  ],
+  "scripts": {
+    "build:shaders": "vite build --config vite.shaders.config.ts && node scripts/generate-shaders.mjs",
+    "build": "npm run build:shaders && tsc -p tsconfig.build.json",
+    "typecheck": "npm run build:shaders && tsc --noEmit",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "dev": "node examples/hmr/dev.mjs",
+    "build:native": "node scripts/build-native.mjs",
+    "dev:native": "node examples/native/dev.mjs",
+    "test:native": "node tests/native-reactive.mjs && node tests/native-layout.mjs && node tests/native-gpu.mjs && node tests/native-snapshot.mjs && node tests/native-watch.mjs && node tests/native-window.mjs && node tests/native-hmr.mjs",
+    "bench:native": "node benchmarks/native.mjs",
+    "snapshot": "node tools/snapshot/index.mjs",
+    "lint": "eslint . --max-warnings 0",
+    "lint:fix": "eslint . --fix --max-warnings 0",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm test",
+    "bench:layout": "node benchmarks/layout.mjs"
+  },
+  "peerDependencies": {
+    "vite": "^8.0.0"
+  },
+  "peerDependenciesMeta": {
+    "vite": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@resvg/resvg-js": "2.6.2",
+    "@types/node": "24.19.1",
+    "@types/pngjs": "6.0.5",
+    "@webgpu/types": "0.1.74",
+    "eslint": "10.12.0",
+    "eslint-config-prettier": "10.1.8",
+    "globals": "17.13.0",
+    "pngjs": "7.0.0",
+    "prettier": "3.9.9",
+    "typegpu": "0.12.7",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.1",
+    "unplugin-typegpu": "0.12.5",
+    "vite": "8.3.3"
+  }
+}

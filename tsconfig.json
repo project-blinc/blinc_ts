@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.build.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "types": ["node", "@webgpu/types", "vite/client"]
+  },
+  "include": ["src/**/*.ts", "shaders/**/*.ts", "vite.shaders.config.ts", "examples/**/*.ts"]
+}

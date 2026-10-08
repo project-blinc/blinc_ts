@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.shader-build/
+.test-fixtures/
+.blinc/
+native/target/
+package-lock.json
+src/renderer/generated/

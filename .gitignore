@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.shader-build/
+src/renderer/generated/
+.test-fixtures/
+*.tsbuildinfo
+.DS_Store
+
+/native/target/
+/native/*.node
+
+.blinc/

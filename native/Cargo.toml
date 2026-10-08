@@ -1,0 +1,45 @@
+[package]
+name = "blinc-ts-native"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[workspace]
+[patch."https://github.com/rayzor-blade/x-idl.git"]
+x_idl = { path = "../../x-idl" }
+
+[dependencies]
+blinc_abi = { path = "../../blinc_abi", default-features = false }
+taffy = { version = "0.14", features = ["content_size"] }
+xidl-node = { path = "../../x-idl/crates/xidl-node" }
+napi = { version = "3.14.2", default-features = false, features = ["napi8", "tokio_rt", "dyn-symbols"] }
+napi-derive = "3.6.12"
+xgpu-core = { path = "../../xgpu/crates/xgpu-core" }
+xwindow-core = { path = "../../xwindow/crates/xwindow-core" }
+xwindow-clipboard = { path = "../../xwindow/crates/xwindow-clipboard" }
+pollster = "0.4"
+winit = "0.30"
+raw-window-handle = "0.6"
+wgpu = { version = "30", default-features = false, features = ["std", "parking_lot", "wgsl"] }
+
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+wgpu = { version = "30", default-features = false, features = ["metal"] }
+[target.'cfg(target_os = "windows")'.dependencies]
+wgpu = { version = "30", default-features = false, features = ["dx12"] }
+[target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]
+wgpu = { version = "30", default-features = false, features = ["vulkan"] }
+
+[build-dependencies]
+x_idl = { path = "../../x-idl" }
+xgpu-bindgen = { path = "../../xgpu/crates/xgpu-bindgen" }
+xgpu-backend = { path = "../../xgpu/crates/xgpu-backend" }
+xwindow-bindgen = { path = "../../xwindow/crates/xwindow-bindgen" }
+xwindow-backend = { path = "../../xwindow/crates/xwindow-backend" }
+napi-build = "2.6.0"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

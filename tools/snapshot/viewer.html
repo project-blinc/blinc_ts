@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Blinc capture</title>
+    <style>
+      body {
+        margin: 0;
+        background: #10151d;
+        color: #e1e7ef;
+        font: 14px system-ui;
+      }
+      main {
+        padding: 24px;
+        max-width: 1100px;
+        margin: auto;
+      }
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 18px;
+        align-items: center;
+        margin-bottom: 20px;
+      }
+      input[type='range'] {
+        flex: 1;
+        min-width: 120px;
+      }
+      canvas {
+        max-width: 100%;
+        height: auto;
+        display: block;
+        border: 1px solid #354050;
+      }
+      #artifacts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        margin: 18px 0;
+      }
+      a {
+        color: #4cc9f0;
+      }
+      #summary {
+        color: #a9bfd5;
+      }
+      details {
+        margin-top: 20px;
+      }
+      pre {
+        white-space: pre-wrap;
+        color: #a9bfd5;
+      }
+      button {
+        background: #243447;
+        color: inherit;
+        border: 1px solid #496078;
+        border-radius: 8px;
+        padding: 8px 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <button id="play" type="button">Play</button>
+        <input id="frame" aria-label="Frame" type="range" min="0" value="0" />
+        <label><input id="bounds" type="checkbox" /> Bounds</label>
+        <label><input id="trails" type="checkbox" /> Trails</label>
+        <label><input id="deltas" type="checkbox" /> Geometry changes</label>
+        <label><input id="curves" type="checkbox" /> Curves</label>
+        <label><input id="diff" type="checkbox" /> Pixel motion diff</label>
+      </header>
+      <canvas id="canvas" aria-label="Captured frame"></canvas>
+      <p id="summary" aria-live="polite"></p>
+      <nav id="artifacts" aria-label="Capture artifacts"></nav>
+      <details>
+        <summary>Frame trace</summary>
+        <pre id="details"></pre>
+      </details>
+    </main>
+    <script id="capture" type="application/json">
+      "__BLINC_CAPTURE__"
+    </script>
+    <script type="module">
+      __BLINC_CLIENT__;
+    </script>
+  </body>
+</html>
