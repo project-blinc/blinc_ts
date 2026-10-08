@@ -6,6 +6,8 @@ export interface Shader {
   readonly vertexEntryPoint: string;
   readonly fragmentEntryPoint: string;
   readonly vertexCount: number;
+  /** Straight-alpha color output, for text and image fixtures. */
+  readonly alphaBlend?: boolean;
 }
 export interface CaptureStats {
   width: number;
@@ -103,6 +105,16 @@ export class OffscreenRenderer {
       const builder = retain(device.pipeline());
       builder.shader(module, shader.vertexEntryPoint, shader.fragmentEntryPoint);
       builder.target(gpu.TextureFormat.Rgba8unorm, gpu.ColorWrite.ALL);
+      if (shader.alphaBlend) {
+        builder.blend(
+          gpu.BlendFactor.SrcAlpha,
+          gpu.BlendFactor.OneMinusSrcAlpha,
+          gpu.BlendOperation.Add,
+          gpu.BlendFactor.One,
+          gpu.BlendFactor.OneMinusSrcAlpha,
+          gpu.BlendOperation.Add,
+        );
+      }
       const pipeline = retain(builder.build());
       const texture = retain(
         device.texture({

@@ -1,24 +1,26 @@
+use crate::brush::NativeBrush;
 use crate::{
     buffers,
     layout::{LayoutStyle, NativeLayout, NativeLayoutNode},
+    scene_values::ImageFit,
 };
 use blinc_abi::{
     bitmap::Bitmap,
     display_list::{RECORD_FLOATS, Shapes},
     scene::{self, PaintOptions, SceneEncoder, TextMeasureContext},
 };
-use napi::bindgen_prelude::BigInt;
+use napi::bindgen_prelude::{BigInt, ClassInstance};
 use napi::{Env, Error, Result, Status, Unknown};
 use napi_derive::napi;
 use scene::blinc_core::{
-    Brush, Color, CornerRadius, Transform,
+    Color, CornerRadius, Transform,
     layer::{Affine2D, Shadow},
 };
 use std::cell::RefCell;
 fn error(message: impl Into<String>) -> Error {
     Error::new(Status::InvalidArg, message.into())
 }
-fn number(value: f64) -> Result<f32> {
+pub(crate) fn number(value: f64) -> Result<f32> {
     let v = value as f32;
     if v.is_finite() {
         Ok(v)
@@ -32,7 +34,7 @@ fn integer(value: f64, min: f64, max: f64) -> Result<f64> {
     }
     Ok(value)
 }
-fn positive(value: f64) -> Result<f32> {
+pub(crate) fn positive(value: f64) -> Result<f32> {
     let v = number(value)?;
     if v >= 0.0 {
         Ok(v)
@@ -40,7 +42,7 @@ fn positive(value: f64) -> Result<f32> {
         Err(error("Expected a non-negative value"))
     }
 }
-fn unit(value: f64) -> Result<f32> {
+pub(crate) fn unit(value: f64) -> Result<f32> {
     let v = number(value)?;
     if (0.0..=1.0).contains(&v) {
         Ok(v)
@@ -59,7 +61,7 @@ fn rgba(value: Vec<f64>) -> Result<[f32; 4]> {
         unit(value[3])?,
     ])
 }
-fn color(value: Vec<f64>) -> Result<Color> {
+pub(crate) fn color(value: Vec<f64>) -> Result<Color> {
     let [r, g, b, a] = rgba(value)?;
     Ok(Color { r, g, b, a })
 }
@@ -196,8 +198,8 @@ pub struct PaintShadow {
     pub color: Vec<f64>,
 }
 #[napi(object)]
-pub struct PaintStyle {
-    pub background: Option<Vec<f64>>,
+pub struct PaintStyle<'env> {
+    pub background: Option<ClassInstance<'env, NativeBrush>>,
     pub text_color: Option<Vec<f64>>,
     pub radius: Option<Vec<f64>>,
     pub border_color: Option<Vec<f64>>,
@@ -208,10 +210,14 @@ pub struct PaintStyle {
     pub shadows: Option<Vec<PaintShadow>>,
     pub z_index: Option<f64>,
 }
-impl PaintStyle {
+impl PaintStyle<'_> {
     fn apply(self, mut p: scene::RenderProps) -> Result<scene::RenderProps> {
         if let Some(v) = self.background {
-            p.background = Some(Brush::Solid(color(v)?));
+            p.background = Some(match &v.style_value {
+                blinc_abi::types::Value::Brush(brush) => brush.clone(),
+                blinc_abi::types::Value::Glass(glass, _) => scene::blinc_core::Brush::Glass(*glass),
+                _ => return Err(error("Expected a native brush value")),
+            });
         }
         if let Some(v) = self.text_color {
             p.text_color = Some(rgba(v)?);
@@ -277,6 +283,18 @@ impl PaintStyle {
 }
 #[napi]
 impl NativeLayout {
+    #[napi]
+    pub fn set_image_source(&self, source: String, fit: ImageFit, slot: Option<f64>) -> Result<()> {
+        self.owner.check()?;
+        let slot = slot
+            .map(|v| integer(v, 0.0, 16_777_215.0).map(|v| v as i32))
+            .transpose()?;
+        self.owner
+            .tree
+            .borrow_mut()
+            .set_image_source(source, fit.native(), slot)
+            .map_err(error)
+    }
     #[napi]
     pub fn create_text(
         &self,
@@ -391,20 +409,30 @@ impl NativeLayoutNode {
         self.node.raw().into()
     }
     #[napi]
-    pub fn set_paint(&self, patch: PaintStyle) -> Result<()> {
+    pub fn set_paint(&self, patch: PaintStyle<'_>) -> Result<()> {
         self.owner.check()?;
         let mut tree = self.owner.tree.borrow_mut();
+        let effects = patch
+            .background
+            .as_ref()
+            .map(|brush| match &brush.style_value {
+                blinc_abi::types::Value::Glass(_, effects) => Some(*effects),
+                _ => None,
+            });
         let props = patch.apply(tree.properties(self.node).map_err(error)?)?;
-        tree.set_properties(self.node, props).map_err(error)
+        tree.set_properties(self.node, props).map_err(error)?;
+        if let Some(effects) = effects {
+            tree.set_glass_effects(self.node, effects).map_err(error)?;
+        }
+        Ok(())
     }
     #[napi]
     pub fn clear_paint(&self) -> Result<()> {
         self.owner.check()?;
-        self.owner
-            .tree
-            .borrow_mut()
-            .set_properties(self.node, Default::default())
-            .map_err(error)
+        let mut tree = self.owner.tree.borrow_mut();
+        tree.set_properties(self.node, Default::default())
+            .map_err(error)?;
+        tree.set_glass_effects(self.node, None).map_err(error)
     }
     #[napi]
     pub fn set_text(&self, content: String, patch: TextStyle) -> Result<()> {
@@ -555,16 +583,13 @@ impl NativeImage {
         env: Env,
         width: f64,
         height: f64,
-        fit: f64,
+        fit: ImageFit,
         target: Unknown<'_>,
     ) -> Result<()> {
         let (width, height) = dimensions(width, height)?;
         unsafe {
             buffers::bytes_output(env, target, |out| {
-                self.with(|b| {
-                    b.resample(width, height, integer(fit, 0.0, 2.0)? as i32, out)
-                        .map_err(error)
-                })
+                self.with(|b| b.resample(width, height, fit.native(), out).map_err(error))
             })
         }
     }

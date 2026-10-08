@@ -15,7 +15,10 @@ try {
   const root = tree.createNode({ width: 100, height: 100, overflow: 1 });
   const child = tree.createNode({ width: 30, height: 20, shrink: 0 });
   root.setChildren([child]);
-  child.setPaint({ background: [1, 0, 0, 1], radius: [3, 3, 3, 3] });
+  child.setPaint({
+    background: tree.createBrush({ kind: 0, color: [1, 0, 0, 1] }),
+    radius: [3, 3, 3, 3],
+  });
   assert.throws(() => tree.prepareDisplayList(root, {}), /Compute layout/);
   tree.compute(root, 100, 100);
   const info = tree.prepareDisplayList(root, {});
@@ -28,7 +31,7 @@ try {
   assert.deepEqual([...records.slice(8, 12)], [1, 0, 0, 1]);
   assert.equal(tree.hitTest(root, 5, 5)[0].nodeId, child.id);
   for (const patch of [
-    { background: [0, 1, 0, 1], opacity: NaN },
+    { background: tree.createBrush({ kind: 0, color: [0, 1, 0, 1] }), opacity: NaN },
     { radius: [1, 2, 3] },
     { transform: [1, 0, 0, Infinity, 0, 0] },
     { shadows: [{ x: 0, y: 0, blur: -1, color: [0, 0, 0, 1] }] },
@@ -167,7 +170,7 @@ try {
   assert.equal(scaled[(1 * 16 + 8) * 4 + 3], 0);
   assert.equal(scaled[(8 * 16 + 8) * 4 + 3], 255);
   for (const fit of [-1, 0.5, 3, 2 ** 32, NaN]) {
-    assert.throws(() => image.resample(16, 16, fit, scaled), /integer/);
+    assert.throws(() => image.resample(16, 16, fit, scaled), /integer|enum/);
   }
   for (const dimension of [0, -1, 1.5, 16385, Infinity, NaN]) {
     assert.throws(() => image.resample(dimension, 16, 0, scaled), /dimensions/);

@@ -11,6 +11,7 @@ export default defineConfig({
         probe: 'shaders/probe.ts',
         motion: 'shaders/motion.ts',
         'layout-bench': 'shaders/layout-bench.ts',
+        'scene-probe': 'shaders/scene-probe.ts',
       },
       formats: ['es'],
       fileName: (_format, name) => name + '.mjs',

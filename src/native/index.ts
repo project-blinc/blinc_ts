@@ -1,3 +1,24 @@
+export { Brush } from './brush.js';
+export type { BrushColor, GlassOptions } from './brush.js';
+import { ImageResource, type NativeImage } from './image.js';
+import { validateSceneSchema } from './scene.js';
+import { bind as bindScene } from './generated/scene.js';
+export { ImageResource } from './image.js';
+export { ImageFit } from './generated/scene.js';
+export { sceneSchema } from './scene.js';
+export type {
+  Color,
+  CornerRadii,
+  AffineTransform,
+  VisualBounds,
+  TextStyle,
+  PaintShadow,
+  PaintStyle,
+  PaintOptions,
+  PaintInfo,
+  AtlasInfo,
+  SceneHit,
+} from './scene.js';
 import { ReactiveContext, type NativeGraph } from './reactive.js';
 export { ReactiveContext, Signal, Computed } from './reactive.js';
 export type { GraphStats, Disposable } from './reactive.js';
@@ -20,6 +41,10 @@ export * as gpu from './generated/gpu.js';
 export * as window from './generated/window.js';
 
 interface Addon {
+  sceneSchema(): unknown;
+  sceneCall: NativeBinding['call'];
+  decodeImage(bytes: Uint8Array): NativeImage;
+  rasterizeSvg(markup: string, width: number, height: number): NativeImage;
   NativeLayout: new () => NativeLayout;
   NativeGraph: new () => NativeGraph;
   buildProfile(): string;
@@ -28,6 +53,8 @@ interface Addon {
   layoutCall: NativeBinding['call'];
 }
 export interface NativeBindings {
+  decodeImage(bytes: Uint8Array, scope?: Scope): ImageResource;
+  rasterizeSvg(markup: string, width: number, height: number, scope?: Scope): ImageResource;
   readonly buildProfile: string;
   createLayout(scope?: Scope): Layout;
   createReactive(scope?: Scope): ReactiveContext;
@@ -45,8 +72,13 @@ export function loadNative(
     path instanceof URL ? fileURLToPath(path) : path,
   ) as Addon;
   bindLayout({ call: addon.layoutCall });
+  bindScene({ call: addon.sceneCall });
+  validateSceneSchema(addon.sceneSchema());
   return {
     buildProfile: addon.buildProfile(),
+    decodeImage: (bytes, scope) => new ImageResource(addon.decodeImage(bytes), scope),
+    rasterizeSvg: (markup, width, height, scope) =>
+      new ImageResource(addon.rasterizeSvg(markup, width, height), scope),
     createLayout: (scope?: Scope) => new Layout(new addon.NativeLayout(), scope),
     createReactive: (scope?: Scope) => new ReactiveContext(new addon.NativeGraph(), scope),
     gpu: bindGpu({ call: addon.gpuCall }),

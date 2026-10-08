@@ -23,7 +23,8 @@ updates.
 
 Working foundations include x-idl generated Node/TypeScript bindings for xgpu and
 xwindow, [owned layout trees](docs/native.md#owned-layout-trees),
-[native reactivity](docs/native.md#reactive-contexts), TypeGPU
+[native reactivity](docs/native.md#reactive-contexts),
+[scene encoding, text and images](docs/native.md#owned-scenes-and-images), TypeGPU
 shader compilation, native rendering and readback, Vite HMR,
 and [offscreen visual and motion inspection](docs/snapshots.md): clean/debug
 filmstrips, dotted trails, pixel/geometry diffs and per-element curve sheets.

@@ -107,11 +107,107 @@ pointer escapes to JavaScript. Layout contexts use `blinc_abi` without its
 HashLink feature; the Node addon does not link the HashLink runtime.
 
 `tests/native-layout.mjs` covers geometry, edits, invalid handles/buffers and HMR
-scope disposal against the compiled addon. The addon also exposes owned scene
-encoding, measured text, glyph atlas updates, hit testing and image decoding;
-`tests/native-scene.mjs` checks native data, invalid edits, buffer ownership and
-disposal. The public TypeScript scene facade and renderer integration are the
-next milestone.
+scope disposal against the compiled addon.
+
+## Owned scenes and images
+
+The same `Layout` owns text and paint properties. Encoding reuses the native
+paint walk, text measurement, glyph atlases and hit testing.
+
+```ts
+import { Brush, LayoutDirection, loadNative } from 'blinc_ts/native';
+
+const native = loadNative();
+const scene = native.createLayout(); // Pass a mounted Scope for HMR cleanup.
+try {
+  const root = scene.createNode({
+    width: 360,
+    height: 180,
+    padding: 20,
+    direction: LayoutDirection.Column,
+  });
+  root.setPaint({ background: Brush.solid(0x0d141f) });
+  const label = scene.createText('Native scenes', { fontSize: 26, fontWeight: 600 });
+  label.setPaint({ textColor: [0.9, 0.95, 1, 1] });
+  root.setChildren([label]);
+  scene.compute(root, 360, 180);
+
+  const info = scene.prepareDisplayList(root, { scale: 1 });
+  const records = new Float32Array(info.floats);
+  scene.readDisplayList(records); // Renderer-owned upload storage; reuse on later frames.
+  const hits = scene.hitTest(root, 24, 28); // nodeId matches LayoutNode.id.
+} finally {
+  scene.dispose();
+}
+```
+
+`setText` merges text metrics and invalidates layout. `setPaint` merges background brushes, radius, border, shadow, visibility, opacity
+and affine transform fields;
+`clearPaint` resets them. Child order determines paint order. Colors are
+straight-alpha RGBA in 0..1, and sizes are logical pixels. `setVisual` supplies
+layout-animation offsets and optional drawn sizes; `setPointerEvents` and
+`setScroll` affect hit testing through the shared engine. Clear a visual override
+with `setVisual(null)`.
+
+Compute after layout/text edits, then prepare once and copy the display list.
+Paint edits also invalidate prepared records. `sceneSchema` describes the wire
+version and record size; `loadNative()` rejects an incompatible producer before
+rendering. `info.count` counts primitives, while `info.floats` also includes any
+trailing polygon data. This API produces renderer input; the complete UI renderer
+is still in progress.
+
+Backgrounds are Blinc `Brush` values. Constructors follow the existing brush
+model, including effects:
+
+```ts
+const solid = Brush.solid(0x243244);
+const gradient = Brush.linear(0, 0, 1, 1, true).stop(0, 0x4488ff).stop(1, 0x44ddcc);
+const radial = Brush.radial(0.5, 0.5, 0.5, true).stop(0, 0xffffff).stop(1, 0x4488ff);
+const frost = Brush.blur(12, 0xffffff, 0.08);
+const glass = Brush.glass(2, 0xffffff, 0.1, {
+  aberration: 0.3,
+  bevel: 0.2,
+  inset: true,
+});
+label.setPaint({ background: glass });
+```
+
+Brushes construct native Blinc values once per context and reuse them on
+assignment. Gradient stops are added before assignment. The current shared
+encoder represents the first, middle and last stops; additional-stop and conic
+rendering remain renderer work. Glass carries blur, tint, noise, saturation,
+brightness, border and liquid rim settings through the existing backdrop records.
+The offscreen probe does not render those effects yet.
+
+`Brush.image(source, ImageFit.Contain)` retains Blinc's image source/fit model.
+The host registers a prepared image with
+`scene.setImageSource(source, ImageFit.Contain, slot)` before encoding, and removes
+it with a null slot. Asset loading and GPU uploads belong to the renderer.
+
+Glyph atlas uploads use `atlasInfo(color, seenRevision)` and
+`readAtlas(color, seenRevision, target)`. `false` selects one-byte glyph masks;
+`true` selects RGBA color glyphs. Start with revision 0. Upload the returned
+rectangle, then remember its revision. Unchanged atlases return `null`; missed
+history or resized atlases require a full upload. Reuse output buffers and
+acknowledge the revision only after a successful upload.
+
+`native.decodeImage(bytes, scope?)` decodes PNG, JPEG or WebP.
+`native.rasterizeSvg(markup, width, height, scope?)` creates an SVG image resource.
+Both expose `width`, `height`, `readPixels(target)` and
+`resample(width, height, ImageFit.Contain, target)`. `ImageFit.Cover`, `Contain`
+and `Fill` are numeric enums generated through x-idl. Pixels are straight RGBA;
+SVG rasterization/resampling accepts integer dimensions up to 16384 per side and
+64M pixels. Dispose resources explicitly or let the mounted scope release them.
+`node.setResource(slot)` references an image slot owned by the renderer;
+`node.setResource(slot, true)` references a canvas. Pass `null` to clear it.
+
+`tests/native-scene.mjs` exercises native records, fonts, atlases, images, invalid
+edits, buffers and disposal. `tests/native-scene-facade.mjs` tests load-time schema
+rejection and HMR cleanup, then uploads real records, glyph masks and image pixels
+through `OffscreenRenderer`. Its captures go to `.blinc/scene-adapter/` and compare
+thousands of rendered glyph pixels against their native atlas samples. The probe
+covers solid rectangles, mask text and one image; clips, effects, color glyphs
+and resource batching are gates for the complete renderer.
 
 ## Reactive contexts
 
