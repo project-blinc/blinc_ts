@@ -328,9 +328,12 @@ Shader construction handles are released after pipelines are built.
 The host draws only when dirty. Hidden, minimized or occluded windows defer work;
 a temporarily unavailable surface is retried on a later event pump. The pump
 processes at most 64 events per turn and leaves Node free to run timers and Vite.
-Idle event polling uses a 16 ms timer. New edit bursts wake it immediately;
-continuous painting yields between frames and lets FIFO pace the GPU, without
-applying that idle polling interval as a frame-rate cap.
+On macOS, xwindow waits on the main thread while a helper watches Node's I/O
+readiness; timers and async completions interrupt that wait. Quiet windows have
+no repeating event-poll timer. Other native backends currently retain the 16 ms
+fallback pump. New edit bursts wake immediately; continuous painting yields
+between frames and lets FIFO pace the GPU. A temporarily unavailable surface
+uses a bounded retry while a visible frame is still pending.
 Call `host.requestFrame()` for changes outside the layout, such as canvas buffers
 or image uploads. Requests made during painting survive for the next frame.
 `host.frames` counts successful presentations and `host.stats` reports the last
@@ -339,7 +342,10 @@ or presentation failure releases the host and is available through `host.error`.
 
 `host.onEvent(listener, scope?)` exposes native input; pointer coordinates are
 physical pixels, so divide by `host.window.scaleFactor()` for layout hit testing.
-The SDK does not prescribe a component event system here.
+The SDK does not prescribe a component event system here. The UI example disables
+raw device events with `Window.listenDeviceEvents(DeviceEvents.Never)`; normal
+window pointer and keyboard events still arrive. Await `host.closed` for shutdown
+instead of checking `host.disposed` on a repeating timer.
 
 `attachScene(layout, root, options, scope?)` owns the returned renderer. Replacing
 or detaching the scene disposes its renderer; the layout remains caller-owned.

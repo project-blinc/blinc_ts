@@ -70,7 +70,19 @@ try {
       host.frames <= previousFrame ||
       host.stats === undefined
     ) {
-      assert(performance.now() < deadline, 'Native HMR timed out');
+      assert(
+        performance.now() < deadline,
+        JSON.stringify({
+          message: 'Native HMR timed out',
+          label: state.label,
+          expected: label,
+          updates: state.updates,
+          frames: host.frames,
+          previousFrame,
+          error: host.error,
+          history: state.history,
+        }),
+      );
       await delay(20);
     }
     assert.equal(oldScene.disposed, true);

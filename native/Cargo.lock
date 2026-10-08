@@ -180,6 +180,7 @@ name = "blinc-ts-native"
 version = "0.0.0"
 dependencies = [
  "blinc_abi",
+ "libc",
  "napi",
  "napi-build",
  "napi-derive",

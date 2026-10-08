@@ -43,3 +43,6 @@ napi-build = "2.6.0"
 [profile.release]
 lto = "thin"
 codegen-units = 1
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"

@@ -4,6 +4,8 @@ import { NativeWindowHost } from 'blinc_ts/native/window';
 import { createScene } from './scene.js';
 
 const native = loadNative();
+// UI input comes from the window; raw device motion is unnecessary here.
+native.window.Window.listenDeviceEvents(window.DeviceEvents.Never);
 export const session = createHmrSession(
   import.meta.hot,
   () => new NativeWindowHost(native, { minWidth: 480 }),

@@ -42,6 +42,7 @@ export * as gpu from './generated/gpu.js';
 export * as window from './generated/window.js';
 
 interface Addon {
+  NativeEventPump?: new (callback: () => void) => { dispose(): void };
   sceneSchema(): unknown;
   sceneCall: NativeBinding['call'];
   decodeImage(bytes: Uint8Array): NativeImage;
@@ -53,7 +54,35 @@ interface Addon {
   windowCall: NativeBinding['call'];
   layoutCall: NativeBinding['call'];
 }
+const eventPumps = new WeakMap<Addon, { listeners: Set<() => void>; pump: { dispose(): void } }>();
+function subscribeEvents(addon: Addon, callback: () => void): () => void {
+  let entry = eventPumps.get(addon);
+  if (!entry) {
+    const listeners = new Set<() => void>();
+    const pump = new addon.NativeEventPump!(() => {
+      for (const listener of listeners) {
+        listener();
+      }
+    });
+    entry = { listeners, pump };
+    eventPumps.set(addon, entry);
+  }
+  const live = entry;
+  const listener = () => callback();
+  live.listeners.add(listener);
+  return () => {
+    if (!live.listeners.delete(listener)) {
+      return;
+    }
+    if (live.listeners.size === 0) {
+      eventPumps.delete(addon);
+      live.pump.dispose();
+    }
+  };
+}
 export interface NativeBindings {
+  /** @internal Event readiness integration, where supported by the native host. */
+  subscribeWindowEvents?: (callback: () => void) => () => void;
   decodeImage(bytes: Uint8Array, scope?: Scope): ImageResource;
   rasterizeSvg(markup: string, width: number, height: number, scope?: Scope): ImageResource;
   readonly buildProfile: string;
@@ -76,6 +105,9 @@ export function loadNative(
   bindScene({ call: addon.sceneCall });
   validateSceneSchema(addon.sceneSchema());
   return {
+    ...(addon.NativeEventPump
+      ? { subscribeWindowEvents: (callback: () => void) => subscribeEvents(addon, callback) }
+      : {}),
     buildProfile: addon.buildProfile(),
     decodeImage: (bytes, scope) => new ImageResource(addon.decodeImage(bytes), scope),
     rasterizeSvg: (markup, width, height, scope) =>

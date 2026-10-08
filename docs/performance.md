@@ -143,11 +143,16 @@ RSS is a different measure. Neither is just the JS heap. Do not compare an
 Activity Monitor footprint directly with Node's RSS, or development-mode memory
 with a runtime-only application.
 
-All measured idle intervals presented zero frames. The current host still
-polls every 16 ms; on macOS this repeatedly enters AppKit through xwindow.
-Caching launch completion removes a redundant LaunchServices query, but does not
-remove that event-pump cost. Coordinating native event readiness with Node's loop
-remains open work; slowing input polling is not a substitute for that integration.
+The macOS host now waits through xwindow and wakes for native events, Node I/O,
+or a real timer deadline. It does not run `uv_run` recursively. Quiet samples
+should contain zero window polls as well as zero presented frames. The native
+wake test verifies timer/worker/socket progress, explicit redraws, multiple
+windows and disposal; Vite HMR is verified separately. Other platforms currently
+retain the timer pump until their native integration is validated.
+
+The helper watches libuv's backend descriptor using the documented
+[embedding facilities](https://docs.libuv.org/en/v1.x/loop.html#c.uv_backend_fd).
+Both platform handling and JavaScript callbacks stay on the main thread.
 
 ### Initial macOS measurements, 2026-10-08
 
@@ -160,9 +165,30 @@ These are diagnostic runs, not a controlled speedup claim. Focus was not recorde
 in the initial samples (the harness now records it), and compression/GC change
 memory readings. The large development-mode heap is real, but neither the memory
 policy nor the launch-status cache has a reliable isolated savings figure yet.
-The idle CPU issue remains open.
+These measurements predate the event-driven macOS pump.
 [Raw samples and binary hashes](../benchmarks/results/2026-10-08-window-idle.json.gz)
 include the earlier runs and their measurement limitations.
+
+### Event-driven macOS host, 2026-10-08
+
+After replacing the polling timer, a ten-second warmup followed by three
+five-second samples gave:
+
+| Mode       | Window polls | Presented frames |  CPU samples | Physical footprint |
+| ---------- | -----------: | ---------------: | -----------: | -----------------: |
+| Standalone |            0 |                0 | 0.059–0.124% |            68.1 MB |
+| Vite       |            0 |                0 | 0.065–0.154% |           141.9 MB |
+
+Both windows were visible, unfocused and not minimized, at the same viewport and
+scale. CPU includes the benchmark's own timer/diagnostic work and runtime/system
+housekeeping. Development tools still account for substantial memory, but they
+no longer require a repeating window-poll timer.
+[Raw samples](../benchmarks/results/2026-10-08-window-event-wake.json.gz)
+retain focus, event counts, machine metadata and the addon hash.
+
+A separate standalone run with no in-process sampling timer reported **0.0% CPU**
+in both measured five-second macOS `top` intervals, with approximately **62 MB**
+memory. Its external samples and command are included in the same archive.
 
 ## Renderer measurement plan
 

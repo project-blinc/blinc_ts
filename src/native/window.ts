@@ -28,6 +28,9 @@ interface WindowGpu {
 /** Persistent window/device, with a replaceable scene and bounded main-thread event pumping. */
 export class NativeWindowHost {
   readonly ready: Promise<void>;
+  readonly closed: Promise<void>;
+  #resolveClosed!: () => void;
+  #unsubscribeEvents: (() => void) | undefined;
   readonly window: window.Window;
   readonly #transparent: boolean;
   #gpu: WindowGpu | undefined;
@@ -49,6 +52,9 @@ export class NativeWindowHost {
   #stats: SceneRenderStats | undefined;
 
   constructor(bindings: NativeBindings, options: window.WindowAttributes = {}) {
+    this.closed = new Promise<void>((resolve) => {
+      this.#resolveClosed = resolve;
+    });
     this.#transparent = options.transparent ?? false;
     this.window = bindings.window.Window.open({
       title: 'Blinc',
@@ -56,10 +62,20 @@ export class NativeWindowHost {
       height: 480,
       ...options,
     });
+    try {
+      this.#unsubscribeEvents = bindings.subscribeWindowEvents?.(() => {
+        this.#tick();
+      });
+    } catch (error) {
+      this.window.close();
+      this.#resolveClosed();
+      throw error;
+    }
     this.ready = this.#initialize(bindings)
       .then(() => {
         if (!this.#disposed) {
           this.initializeContent();
+          this.#schedule(true);
         }
       })
       .catch((error: unknown) => {
@@ -67,7 +83,7 @@ export class NativeWindowHost {
         this.dispose();
         throw error;
       });
-    // poll() must run on the owning thread; never block Node's Vite/timer callbacks with wait().
+    // Supported native hosts wait alongside Node I/O. Other hosts use the bounded timer pump.
     this.#schedule();
   }
   /** @internal Called after GPU initialization, before ready resolves. */
@@ -127,15 +143,27 @@ export class NativeWindowHost {
     if (this.#disposed) {
       return;
     }
-    const wasDirty = this.#dirty;
     this.#dirty = true;
     // Wake once per edit burst. In-frame requests are scheduled after presentation.
-    if (!wasDirty && !this.#painting && !this.#pumping) {
+    if (!this.#painting && !this.#pumping) {
       this.#schedule(true);
     }
   }
   #schedule(urgent = false): void {
     if (this.#disposed) {
+      return;
+    }
+    if (
+      this.#unsubscribeEvents &&
+      !urgent &&
+      (!this.#dirty ||
+        !this.#gpu ||
+        this.#holdingFrame ||
+        this.#occluded ||
+        this.#suspended ||
+        !this.window.isVisible() ||
+        this.window.isMinimized())
+    ) {
       return;
     }
     if (this.#timer !== undefined) {
@@ -382,7 +410,7 @@ export class NativeWindowHost {
     } finally {
       this.#pumping = false;
       // Continuous painting yields to Node immediately and lets FIFO pace the GPU.
-      // Idle/hidden/unavailable surfaces only pump events, without a redraw loop.
+      // Native event readiness drives quiet windows; only pending surface work needs a retry.
       this.#schedule(presented && this.#dirty);
     }
   }
@@ -475,18 +503,27 @@ export class NativeWindowHost {
       clearTimeout(this.#timer);
     }
     this.#listeners.clear();
+    this.#unsubscribeEvents?.();
+    this.#unsubscribeEvents = undefined;
     try {
       this.detachScene();
     } finally {
       const state = this.#gpu;
       this.#gpu = undefined;
-      if (state) {
-        // The surface must die before the native window. Pending initialization owns its own cleanup.
-        for (const resource of [state.surface, state.device, state.adapter, state.instance]) {
-          resource.destroy();
+      try {
+        if (state) {
+          // The surface must die before the native window. Pending initialization owns its own cleanup.
+          for (const resource of [state.surface, state.device, state.adapter, state.instance]) {
+            resource.destroy();
+          }
+        }
+      } finally {
+        try {
+          this.window.close();
+        } finally {
+          this.#resolveClosed();
         }
       }
-      this.window.close();
     }
   }
 }

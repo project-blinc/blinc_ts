@@ -37,11 +37,5 @@ process.once('SIGINT', () => {
 process.once('SIGTERM', () => {
   void close();
 });
-const timer = setInterval(() => {
-  if (!app.session.host.disposed) {
-    return;
-  }
-  clearInterval(timer);
-  void close();
-}, 100);
+void app.session.host.closed.then(close);
 console.log('Edit examples/native/app.ts; the native window and GPU device survive accepted HMR.');
