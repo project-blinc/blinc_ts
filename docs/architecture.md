@@ -32,23 +32,25 @@ must be released before their windows.
 
 ## Rendering
 
-The TypeScript renderer will manage paint order, batching, atlas updates,
+The TypeScript renderer manages paint order, batching, atlas updates,
 straight-alpha/color behavior, transformed clipping, borders, shadows,
 nested layers, filters, backdrop blur, liquid glass, display scaling and
 custom canvas passes through xgpu.
 
 Use TypeGPU for shader authoring. During builds, its Vite plugin transforms
 shader functions and `tgpu.resolve` generates WGSL. Package WGSL, entry-point
-names and binding metadata together. The native pipeline probe and deterministic motion shader are rendered and
-read back offscreen; full UI shaders are the next rendering stage.
+names and binding metadata together. Complete scenes are verified offscreen,
+including fractional corner shapes, transformed clipping, layered effects and
+custom canvases. Native windows use the same scene renderer with retained GPU
+resources and change-driven presentation.
 
 Initially shader generation is independent of the TypeGPU GPU runtime.
 A future WebGPU-compatible xgpu JavaScript surface can also support
 `tgpu.initFromDevice` after resource and method semantics are verified.
 
-The display-list reader follows the current 112-float ABI records. This is an
-extraction baseline. Introduce ABI/version negotiation and generated schema
-metadata before independently releasing producer and consumer.
+The display-list reader follows the current 112-float ABI records. The SDK
+checks the producer's schema version, record size and row count when loading
+the addon; incompatible producers are rejected before records reach a shader.
 
 ## Styling and components
 

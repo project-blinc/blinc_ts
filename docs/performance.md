@@ -115,8 +115,87 @@ In the fully dirty flat-list CPU workload, numeric style submission still costs
 14.088 ms, versus 3.163 ms for layout and 1.507 ms for bounds transfer. These
 separate medians do not necessarily sum to the combined median. The next target
 is coalescing queued property writes at a frame flush, then measuring batched
-native submission with the same geometry and image checks. End-to-end UI renderer
-measurements remain a later gate.
+native submission with the same geometry and image checks. The full-scene
+renderer baseline below covers the rendering stages separately.
+
+## Full-scene renderer benchmark
+
+```sh
+npm run build:native
+npm run build
+npm run bench:renderer -- --output .blinc/renderer-run1.json \
+  --captures .blinc/renderer-captures
+npm run bench:renderer -- --output .blinc/renderer-run2.json \
+  --verify .blinc/renderer-run1.json
+```
+
+This harness uses `SceneRenderer` and the shared offscreen target. It exercises
+text shaping/cache lookup, display-list generation and transfer, glyph and image
+atlases, rounded clipping, fractional corner shapes, gradients, shadows, masks,
+group opacity, Gaussian blur and liquid glass. The scenes use raw SDK primitives;
+CSS, application components and virtualization are outside this measurement.
+
+| Workload                                                     | Change between frames                                                 |
+| ------------------------------------------------------------ | --------------------------------------------------------------------- |
+| 30, 300 or 3,000 text rows in a clipped viewport             | Scroll by 28 logical pixels; paint only                               |
+| 12 image cards with borders, shadows and gradients           | Change the layout gap by 8 logical pixels                             |
+| Six glass cards with masked, blurred groups and drop shadows | Change aberration at fixed bevel; half the cards have zero glass blur |
+
+Each case runs at 1024 × 768 logical pixels at both 1x and 2x. The default is
+20 warm-up frames and 101 recorded samples per mode. `--counts`, `--scales`,
+`--cases`, `--warmup` and `--samples` select a smaller or longer run. Static mode
+forces repeated unchanged draws to measure cache reuse; the real window host
+skips those draws when idle. Changed mode alternates two deterministic states.
+
+The report separates mutation, layout when needed, CPU encode, queue submission
+and serialized queue completion, and retains p50/p95/p99 plus every sample.
+Encoding includes native display-list preparation and transfer. Completion is
+wall-clock latency with GPU work, driver polling and promise delivery; it is
+not an isolated GPU timestamp or a presented-window frame rate. Each frame
+completes before the next starts. Construction, pipeline compilation and image
+preparation are outside samples. First-render timings are reported separately;
+they are cache-fill diagnostics after construction/layout, not cold app startup.
+
+Before timing, both states are captured and replayed. Checks require text and
+expected image/layer/glass records, changed pixels between states, identical
+pixels on replay, no warm glyph uploads and no new textures, buffers or bind
+groups. Resource instrumentation is removed before timing. `--verify` also
+requires matching workload/viewport/GPU metadata and pixel hashes from an earlier
+run. Reports include runtime/OS/GPU metadata and native binary, SDK and fixture
+hashes. Use separate processes for repeated runs and avoid concurrent GPU work.
+
+### Local renderer baseline, 2026-10-08
+
+Apple M1 Pro, macOS arm64, Node 24.2.0, release addon, Metal. Three sequential
+processes, 20 warm-up frames and 101 samples per mode. Both scene states matched
+pixel-for-pixel between runs; warm captures allocated no textures, buffers or
+bind groups and uploaded no glyph bytes. Captures were also inspected visually.
+The table uses the median of the three changed-mode medians:
+
+| Workload            | Scale |  CPU frame | Through queue completion | Draws |
+| ------------------- | ----: | ---------: | -----------------------: | ----: |
+| 30 text rows        |    1x |   0.936 ms |                 3.522 ms |    63 |
+| 300 text rows       |    1x |  11.042 ms |                15.124 ms |   603 |
+| 3,000 text rows     |    1x | 109.921 ms |               121.745 ms | 6,003 |
+| 12 image cards      |    1x |   0.412 ms |                 2.489 ms |    63 |
+| 6 glass/layer cards |    1x |   1.193 ms |                 4.487 ms |    52 |
+| 30 text rows        |    2x |   0.966 ms |                 3.438 ms |    63 |
+| 300 text rows       |    2x |  10.911 ms |                15.915 ms |   603 |
+| 3,000 text rows     |    2x | 111.622 ms |               126.870 ms | 6,003 |
+| 12 image cards      |    2x |   0.459 ms |                 4.206 ms |    63 |
+| 6 glass/layer cards |    2x |   1.267 ms |                12.023 ms |    52 |
+
+These are baseline measurements, not a speedup or framework comparison. Run
+variation is visible: the 1x 30-row changed CPU median ranges from 0.854 to
+2.160 ms, and the 2x 3,000-row case from 111.518 to 140.098 ms. Queue completion
+also varies. [All raw samples, frame counts and build hashes](../benchmarks/results/2026-10-08-ui-renderer.json.gz)
+are retained so comparisons can examine that spread.
+
+The list exposes a concrete scaling problem: all three sizes have identical
+visible pixels, but 30/300/3,000 rows encode 2,237/22,217/222,017 primitives.
+Invisible rows are still traversed and submitted. The next optimization is
+conservative clipping during scene preparation, preserving transformed bounds,
+shadows and backdrop sampling reach. Virtualization remains a separate concern.
 
 ## Native window idle benchmark
 

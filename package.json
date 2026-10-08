@@ -85,7 +85,8 @@
     "bench:layout:compare": "node benchmarks/compare-layout.mjs",
     "build:example": "tsc -p examples/native/tsconfig.json",
     "start:native": "node .blinc/native-app/app.js",
-    "bench:window": "node benchmarks/window-idle.mjs"
+    "bench:window": "node benchmarks/window-idle.mjs",
+    "bench:renderer": "node benchmarks/renderer.mjs"
   },
   "peerDependencies": {
     "vite": "^8.0.0",

@@ -33,7 +33,9 @@ and [offscreen visual and motion inspection](docs/snapshots.md): clean/debug
 filmstrips, dotted trails, pixel/geometry diffs and per-element curve sheets.
 
 The package is private. Native scenes render in windows and offscreen;
-full-render benchmarks, CSS, themes and components remain in progress.
+[Full-scene renderer benchmarks](docs/performance.md#full-scene-renderer-benchmark)
+cover text lists, image cards and layered glass. CSS, themes, components and
+comparative framework measurements remain in progress.
 Native execution is currently validated on macOS with Metal.
 
 ## Architecture

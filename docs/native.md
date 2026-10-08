@@ -340,6 +340,11 @@ or image uploads. Requests made during painting survive for the next frame.
 scene render. `host.render()` attempts a pending frame synchronously. An encoding
 or presentation failure releases the host and is available through `host.error`.
 
+The shared xwindow backend's external pump also passes the Linux NUC's
+GNOME 50.1 Wayland desktop suite: idle blocking, proxy wakes, input routing,
+clipboard and frame-paced redraws. Linux Node/libuv integration remains
+unvalidated, so the TypeScript host still uses the fallback there.
+
 `host.onEvent(listener, scope?)` exposes native input; pointer coordinates are
 physical pixels, so divide by `host.window.scaleFactor()` for layout hit testing.
 The SDK does not prescribe a component event system here. The UI example disables
