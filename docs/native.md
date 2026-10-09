@@ -254,6 +254,24 @@ draws with them. Declarations that cannot be applied are reported to
 `LayoutNode.setLayoutProperty(name, value)` reads a CSS layout declaration with
 the same native parser a sheet's go through.
 
+### Compile-time CSS
+
+`blincCss()` from `blinc_ts/vite` compiles `.css` imports when the app is
+built, with the same engine:
+
+```ts
+import sheet, { classes, vars } from './card.css';
+layout.addStyleSheet(sheet); // loaded without parsing
+element.className = classes.card;
+```
+
+The default export is the compiled sheet, and `classes`, `vars` and
+`keyframes` are frozen objects of the names the sheet defines. An error fails
+the build at its file, line and column. The plugin also writes
+`card.d.css.ts` beside the sheet, which TypeScript reads for `./card.css` with
+`allowArbitraryExtensions`, so a misspelt class name is a type error.
+`compileCss(source, { file, load })` is the same compiler as a function.
+
 ## Measuring text and inline runs
 
 `measureText(text, style, wrapWidth?)` lays text out as the renderer draws
