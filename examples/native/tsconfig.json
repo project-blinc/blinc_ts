@@ -1,11 +1,4 @@
 {
-  "extends": "../../tsconfig.build.json",
-  "compilerOptions": {
-    "rootDir": ".",
-    "outDir": "../../.blinc/native-app",
-    "types": ["node", "@webgpu/types", "vite/client"],
-    "declaration": false,
-    "declarationMap": false
-  },
+  "extends": "../../tsconfig.json",
   "include": ["app.ts", "scene.ts"]
 }

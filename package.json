@@ -83,7 +83,7 @@
     "bench:layout": "node benchmarks/layout.mjs",
     "bench:layout:pipeline": "node benchmarks/layout-pipeline.mjs",
     "bench:layout:compare": "node benchmarks/compare-layout.mjs",
-    "build:example": "tsc -p examples/native/tsconfig.json",
+    "build:example": "tsc -p examples/native/tsconfig.build.json",
     "start:native": "node .blinc/native-app/app.js",
     "bench:window": "node benchmarks/window-idle.mjs",
     "bench:renderer": "node benchmarks/renderer.mjs",
