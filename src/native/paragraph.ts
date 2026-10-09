@@ -61,7 +61,9 @@ export class Paragraph {
     this.#last = laid;
     const fragments = laid.fragments;
     while (this.#pieces.length < fragments.length) {
-      this.#pieces.push(this.#layout.createText('', {}, { position: 'absolute' }));
+      this.#pieces.push(
+        this.#layout.createText('', {}, { position: 'absolute', inset: [0, 'auto', 'auto', 0] }),
+      );
     }
     for (const piece of this.#pieces.splice(fragments.length)) {
       piece.remove();
@@ -70,7 +72,11 @@ export class Paragraph {
       const run = this.#runs[fragment.item]!;
       const piece = this.#pieces[i]!;
       piece.setText(fragment.text, { ...run.style, wrap: false });
-      piece.setStyle({ inset: [fragment.y, 'auto', 'auto', fragment.x] });
+      // Layout rounds positions to whole pixels, and drawing then rounds each
+      // run's baseline: rounding twice would move runs of different sizes off
+      // their shared baseline. The exact offset goes in the visual offset,
+      // which layout does not round.
+      piece.setVisual([fragment.x, fragment.y, -1, 0]);
       if (run.paint) {
         piece.setPaint(run.paint);
       }

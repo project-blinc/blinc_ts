@@ -134,4 +134,76 @@ try {
 } finally {
   layout.dispose();
 }
+// Runs of different sizes, weights, families and line heights on one line
+// share a baseline as drawn. Each run is drawn alone in white, the others
+// transparent, and its baseline is the bottom edge of its x's ink (no
+// descenders), to a fraction of a pixel from the last row's coverage.
+{
+  const W = 520;
+  const H = 110;
+  const styles = [
+    { fontSize: 18 },
+    { fontSize: 26, fontWeight: 700 },
+    { fontSize: 18, italic: true },
+    { fontSize: 13 },
+    { fontSize: 22, lineHeight: 2 },
+    { fontSize: 16, fontFamily: 'serif' },
+    { fontSize: 15, fontFamily: 'monospace', lineHeight: 1.6 },
+  ];
+  const layout = native.createLayout();
+  try {
+    const root = layout.createNode({ width: W, height: H, padding: 7 });
+    root.setPaint({ background: Brush.solid(0) });
+    const paragraph = new Paragraph(native, layout);
+    root.append(paragraph.node);
+    for (const scale of [1, 2]) {
+      const target = await OffscreenRenderer.create(native, W * scale, H * scale, probeShader);
+      const renderer = new SceneRenderer(target.device, layout);
+      try {
+        const baselines = [];
+        for (let only = 0; only < styles.length; only++) {
+          paragraph.runs = styles.map((style, i) => ({
+            text: i ? ' xxx' : 'xxx',
+            style,
+            paint: { textColor: i === only ? [1, 1, 1, 1] : [0, 0, 0, 0] },
+          }));
+          paragraph.update(W - 14);
+          assert.equal(paragraph.laidOut.lines.length, 1);
+          layout.compute(root, W, H);
+          const pixels = new Uint8Array(W * H * scale * scale * 4);
+          await target.captureCommandsInto(
+            pixels,
+            (encoder, view) =>
+              renderer.encode(encoder, root, view, { width: W * scale, height: H * scale, scale })
+                .drawCalls,
+          );
+          const rows = Array.from({ length: H * scale }, (_, y) => {
+            let sum = 0;
+            for (let x = 0; x < W * scale; x++) {
+              sum += pixels[(y * W * scale + x) * 4];
+            }
+            return sum;
+          });
+          let last = rows.length - 1;
+          while (last > 0 && rows[last] === 0) {
+            last--;
+          }
+          baselines.push((last + rows[last] / Math.max(...rows)) / scale);
+        }
+        const spread = Math.max(...baselines) - Math.min(...baselines);
+        assert(spread < 1, `Baselines at scale ${scale}: ${baselines.map((b) => b.toFixed(2))}`);
+        const expected = 7 + paragraph.laidOut.lines[0].baseline;
+        assert(
+          baselines.every((b) => Math.abs(b - expected) <= 1),
+          `Baseline near ${expected}`,
+        );
+      } finally {
+        renderer.dispose();
+        target.dispose();
+      }
+    }
+  } finally {
+    layout.dispose();
+  }
+}
 console.log('Native text: measurement, caret stops, inline runs and paragraphs passed');
