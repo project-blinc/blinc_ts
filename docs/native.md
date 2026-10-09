@@ -452,9 +452,16 @@ host.mount(windowHost, { scope });
     cascade needs for its pseudo-classes.
 - **Reading back.** `node.bounds()` lays out if an edit is pending and returns
   absolute bounds. `host.elementAt(x, y)` hit-tests.
-- **Batching.** Writes in one tick coalesce: paint and text per node, and layout
-  properties in one native edit. Text equal to what a node already shows is not
-  sent again. `host.flush()` submits at once.
+- **Batching.** Tree edits, layout properties, paint, text and scroll offsets
+  go into the layout's command buffer, and one native call applies the tick's
+  commands at its end, or earlier when something reads layout. Writes coalesce:
+  the last write to a property wins, and paint, text and scroll merge per node.
+  Text equal to what a node already shows is not sent again. Nodes cross as
+  numbers, and solid colors cross without a native brush. `host.flush()` submits
+  at once. The host checks tree edits for cycles and parentage before queueing
+  them; if a command still fails when applied, the flush throws and the commands
+  before it stay applied. `benchmarks/host-frame.mjs` counts native calls per
+  frame for a few thousand nodes.
 
 The host does not need the SDK's reactive graph, since Vue and Solid bring their
 own. `element.bindProperty(name, signal, context)` is an optional fast path

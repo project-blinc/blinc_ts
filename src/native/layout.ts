@@ -17,10 +17,26 @@ import type {
 } from './generated/layout.js';
 import type { Scope } from '../hmr.js';
 import { layoutDeclaration, propertyWrite, type PropertyWrite } from './properties.js';
+import { CommandQueue, type QueuedNode, type QueuedPaint } from './commands.js';
 
 export type LayoutChange = 'layout' | 'paint' | 'disposed';
 
 export type LayoutLength = number | `${number}%` | 'auto';
+function checkPaint(p: Omit<PaintStyle, 'background' | 'maskImage' | 'filter' | 'shadows'>): void {
+  const unit = (v: number) => Number.isFinite(v) && v >= 0 && v <= 1;
+  const ok =
+    (p.opacity === undefined || unit(p.opacity)) &&
+    (p.borderWidth === undefined || (Number.isFinite(p.borderWidth) && p.borderWidth >= 0)) &&
+    [p.textColor, p.borderColor].every(
+      (c) => c === undefined || (c.length === 4 && c.every(unit)),
+    ) &&
+    (p.radius === undefined ||
+      (p.radius.length === 4 && p.radius.every((v) => Number.isFinite(v) && v >= 0))) &&
+    (p.transform === undefined || (p.transform.length === 6 && p.transform.every(Number.isFinite)));
+  if (!ok) {
+    throw new RangeError('Invalid paint value');
+  }
+}
 /** One value for every side, or top, right, bottom and left. */
 export type LayoutSides<T> = T | readonly [top: T, right: T, bottom: T, left: T];
 export type LayoutAlignKeyword =
@@ -179,11 +195,11 @@ export interface NativeLayoutNode {
 export interface NativeLayout extends BrushFactory {
   setImageSource(source: string, fit: ImageFit, slot: number | null): void;
   createText(content: string, text: TextStyle, style: NativeLayoutStyle): NativeLayoutNode;
-  applyProperties(
-    nodes: readonly NativeLayoutNode[],
-    ops: Int32Array,
+  applyCommands(
+    words: Uint32Array,
     numbers: Float64Array,
     strings: readonly string[],
+    brushes: readonly NativeBrush[],
   ): void;
   prepareDisplayList(root: NativeLayoutNode, options: PaintOptions): PaintInfo;
   readDisplayList(target: Float32Array): void;
@@ -208,11 +224,8 @@ export class Layout {
   readonly #native: NativeLayout;
   #hitRevision = 0;
   readonly #listeners = new Set<(change: LayoutChange) => void>();
-  // Queued property writes: the latest write per node and property, in write order.
-  #nodes: NativeLayoutNode[] = [];
-  readonly #nodeIndex = new Map<NativeLayoutNode, number>();
-  #writes: ([node: number, write: PropertyWrite] | undefined)[] = [];
-  readonly #slots = new Map<string, number>();
+  readonly #queue = new CommandQueue();
+  readonly #beforeFlush: (() => void)[] = [];
   #scheduled = false;
 
   /** @internal Use loadNative().createLayout(scope). */
@@ -250,23 +263,11 @@ export class Layout {
     }
   }
 
-  /** @internal Queue a write; a later write to the same property replaces it. */
-  queueProperty(node: NativeLayoutNode, write: PropertyWrite): void {
+  /** @internal The command buffer, which flushes at the end of the tick. */
+  queue(): CommandQueue {
     if (this.disposed) {
       throw new Error('Layout disposed');
     }
-    let index = this.#nodeIndex.get(node);
-    if (index === undefined) {
-      index = this.#nodes.push(node) - 1;
-      this.#nodeIndex.set(node, index);
-    }
-    // Percentage and pixel ids share a field, so a replaced write moves to the end.
-    const key = `${index}:${write[0]}`;
-    const slot = this.#slots.get(key);
-    if (slot !== undefined) {
-      this.#writes[slot] = undefined;
-    }
-    this.#slots.set(key, this.#writes.push([index, write]) - 1);
     if (!this.#scheduled) {
       this.#scheduled = true;
       queueMicrotask(() => {
@@ -276,51 +277,42 @@ export class Layout {
         }
       });
     }
+    return this.#queue;
   }
 
   /**
-   * Submit queued property writes as one native edit. Writes flush on their
-   * own at the end of the tick, and before any read or other edit.
+   * Submit queued edits as one native call. They flush on their own at the
+   * end of the tick, and before any read or immediate edit. Commands apply
+   * in order; if one fails, the error is thrown and the edits before it stay.
    */
   flush(): void {
-    if (this.#writes.length === 0) {
+    for (const hook of this.#beforeFlush) {
+      hook();
+    }
+    if (this.#queue.empty) {
       return;
     }
-    const nodes = this.#nodes;
-    const writes = this.#writes.filter((write) => write !== undefined);
-    this.#nodes = [];
-    this.#writes = [];
-    this.#nodeIndex.clear();
-    this.#slots.clear();
-    this.#submit(nodes, writes);
+    const batch = this.#queue.take();
+    try {
+      this.#native.applyCommands(batch.words, batch.numbers, batch.strings, batch.brushes);
+    } finally {
+      this.changed(batch.layout ? 'layout' : 'paint');
+    }
+  }
+
+  /** @internal Run `hook` at the start of every flush, so it can queue what it deferred. */
+  beforeFlush(hook: () => void): void {
+    this.#beforeFlush.push(hook);
   }
 
   /** @internal Apply writes now, after any queued ones. */
-  applyNow(node: NativeLayoutNode, writes: readonly PropertyWrite[]): void {
-    this.flush();
+  applyNow(node: LayoutNode, writes: readonly PropertyWrite[]): void {
     if (writes.length > 0) {
-      this.#submit(
-        [node],
-        writes.map((write) => [0, write]),
-      );
+      for (const write of writes) {
+        this.#queue.property(node, write);
+      }
+      this.flush();
     }
-  }
-
-  #submit(
-    nodes: readonly NativeLayoutNode[],
-    writes: readonly (readonly [number, PropertyWrite])[],
-  ): void {
-    const ops = new Int32Array(writes.length * 3);
-    const numbers = new Float64Array(writes.length);
-    const strings: string[] = [];
-    writes.forEach(([node, [id, kind, value]], i) => {
-      ops[i * 3] = node;
-      ops[i * 3 + 1] = id;
-      ops[i * 3 + 2] = kind;
-      numbers[i] = typeof value === 'string' ? strings.push(value) - 1 : value;
-    });
-    this.#native.applyProperties(nodes, ops, numbers, strings);
-    this.changed('layout');
   }
 
   /** Changes on edits and computed geometry, including visual transforms and clipping. */
@@ -342,6 +334,7 @@ export class Layout {
   }
 
   get size(): number {
+    this.flush();
     return this.#native.size;
   }
   get disposed(): boolean {
@@ -350,9 +343,9 @@ export class Layout {
 
   createNode(style: LayoutStyle = {}): LayoutNode {
     const { native, writes } = splitStyle(style);
-    const node = this.#native.createNode(native);
+    const node = new LayoutNode(this, this.#native.createNode(native));
     this.applyNow(node, writes);
-    return new LayoutNode(this, node);
+    return node;
   }
 
   /** Bind a source/fit to the renderer's prepared image slot; null removes it. */
@@ -368,9 +361,9 @@ export class Layout {
 
   createText(content: string, text: TextStyle = {}, style: LayoutStyle = {}): LayoutNode {
     const { native, writes } = splitStyle(style);
-    const node = this.#native.createText(content, text, native);
+    const node = new LayoutNode(this, this.#native.createText(content, text, native));
     this.applyNow(node, writes);
-    return new LayoutNode(this, node);
+    return node;
   }
 
   /** Encode the computed scene once; native vectors retain capacity across frames. */
@@ -420,10 +413,7 @@ export class Layout {
     if (this.disposed) {
       return;
     }
-    this.#writes = [];
-    this.#nodes = [];
-    this.#nodeIndex.clear();
-    this.#slots.clear();
+    this.#queue.clear();
     this.#native.dispose();
     try {
       this.changed('disposed');
@@ -433,14 +423,22 @@ export class Layout {
   }
 }
 
-export class LayoutNode {
+export class LayoutNode implements QueuedNode {
   readonly #layout: Layout;
   readonly #native: NativeLayoutNode;
+  readonly #id: bigint;
+  /** @internal The raw id's low and high words, as the command buffer names nodes. */
+  readonly lo: number;
+  /** @internal */
+  readonly hi: number;
 
   /** @internal Use layout.createNode(). */
   constructor(layout: Layout, native: NativeLayoutNode) {
     this.#layout = layout;
     this.#native = native;
+    this.#id = native.id;
+    this.lo = Number(this.#id & 0xffffffffn);
+    this.hi = Number(this.#id >> 32n);
   }
 
   /** @internal */
@@ -453,7 +451,7 @@ export class LayoutNode {
 
   /** Generation-bearing identity, unique within the layout context. */
   get id(): bigint {
-    return this.#native.id;
+    return this.#id;
   }
 
   setPaint(style: PaintStyle): void {
@@ -472,32 +470,92 @@ export class LayoutNode {
     } else if (filter !== undefined) {
       patch.filter = filter;
     }
+    this.#layout.flush();
     this.#native.setPaint(patch);
     this.#layout.changed('paint');
   }
   clearPaint(): void {
+    this.#layout.flush();
     this.#native.clearPaint();
     this.#layout.changed('paint');
   }
   setText(content: string, style: TextStyle = {}): void {
+    this.#layout.flush();
     this.#native.setText(content, style);
     this.#layout.changed('layout');
   }
   setVisual(bounds: VisualBounds | null): void {
+    this.#layout.flush();
     this.#native.setVisual(bounds);
     this.#layout.changed('paint');
   }
   setPointerEvents(enabled: boolean): void {
+    this.#layout.flush();
     this.#native.setPointerEvents(enabled);
   }
   /** Reference a renderer-owned image or canvas slot; null removes the reference. */
   setResource(slot: number | null, canvas = false): void {
+    this.#layout.flush();
     this.#native.setResource(slot, canvas);
     this.#layout.changed('paint');
   }
   setScroll(x: number, y: number): void {
+    this.#layout.flush();
     this.#native.setScroll(x, y);
     this.#layout.changed('paint');
+  }
+
+  /**
+   * @internal Queue a paint patch for the end of the tick. Patches with
+   * shadows, filters or masks are applied at once, after the queue.
+   */
+  queuePaint(style: PaintStyle, clear = false): void {
+    const { background, maskImage, filter, shadows, ...fields } = style;
+    if (maskImage !== undefined || filter !== undefined || shadows !== undefined) {
+      if (clear) {
+        this.clearPaint();
+      }
+      this.setPaint(style);
+      return;
+    }
+    checkPaint(fields);
+    const patch: QueuedPaint = { ...fields, ...(clear ? { clear } : {}) };
+    if (background !== undefined) {
+      const solid = Brush.solidColor(background);
+      if (solid) {
+        patch.solid = solid;
+      } else {
+        patch.brush = this.#layout.brushValue(background);
+      }
+    }
+    this.#layout.queue().paint(this, patch);
+  }
+  /** @internal Queue text and its style for the end of the tick. */
+  queueText(content: string, style: TextStyle = {}): void {
+    this.#layout.queue().text(this, content, style);
+  }
+  /** @internal Queue a scroll offset for the end of the tick. */
+  queueScroll(x: number, y: number): void {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      throw new RangeError('Expected a finite number');
+    }
+    this.#layout.queue().scroll(this, x, y);
+  }
+  /** @internal Queue an insertion; the caller has checked it makes no cycle. */
+  queueInsertBefore(child: LayoutNode, before: LayoutNode | null): void {
+    LayoutNode.unwrap(child, this.#layout);
+    if (before) {
+      LayoutNode.unwrap(before, this.#layout);
+    }
+    this.#layout.queue().insert(this, child, before);
+  }
+  /** @internal Queue taking this node out of its parent. */
+  queueDetach(): void {
+    this.#layout.queue().detach(this);
+  }
+  /** @internal Queue removing this node and its descendants. */
+  queueRemove(): void {
+    this.#layout.queue().remove(this);
   }
 
   /** Merge the supplied style fields; omitted fields retain their values. */
@@ -507,7 +565,7 @@ export class LayoutNode {
     if (Object.keys(native).length > 0) {
       this.#native.setStyle(native);
     }
-    this.#layout.applyNow(this.#native, writes);
+    this.#layout.applyNow(this, writes);
     this.#layout.changed('layout');
   }
 
@@ -517,7 +575,7 @@ export class LayoutNode {
    * in one tick coalesce and are submitted together.
    */
   setProperty(id: number, value: number | string | null): void {
-    this.#layout.queueProperty(this.#native, propertyWrite(id, value));
+    this.#layout.queue().property(this, propertyWrite(id, value));
   }
 
   /**
@@ -531,7 +589,7 @@ export class LayoutNode {
       return false;
     }
     for (const write of writes) {
-      this.#layout.queueProperty(this.#native, write);
+      this.#layout.queue().property(this, write);
     }
     return true;
   }

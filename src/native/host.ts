@@ -499,7 +499,7 @@ export class HostElement extends HostNode {
       throw new Error('Host edit would create a cycle');
     }
     this.host.assertOwn(child);
-    this.layoutNode.insertBefore(child.layoutNode, reference?.layoutNode ?? null);
+    this.layoutNode.queueInsertBefore(child.layoutNode, reference?.layoutNode ?? null);
     child.parentNode?.unlink(child);
     const previous = reference ? reference.previousSibling : this.#last;
     HostNode.link(child, this, previous, reference);
@@ -523,7 +523,7 @@ export class HostElement extends HostNode {
     if (child.parentNode !== this) {
       throw new Error('Node is not a child of this element');
     }
-    this.layoutNode.removeChild(child.layoutNode);
+    child.layoutNode.queueDetach();
     this.unlink(child);
     return child;
   }
@@ -596,10 +596,8 @@ export class Host {
   readonly layout: Layout;
   readonly root: HostElement;
   readonly #nodes = new Map<bigint, HostNode>();
-  readonly #paint = new Map<HostElement, PaintStyle>();
   readonly #text = new Set<HostText>();
   readonly #sentText = new WeakMap<HostText, { data: string; style: TextStyle }>();
-  #scheduled = false;
   #width = 0;
   #height = 0;
   #computed = false;
@@ -611,6 +609,7 @@ export class Host {
     this.root = this.#register(new HostElement(this, layout.createNode(), 'root'));
     this.root.setProperty('width', '100%');
     this.root.setProperty('height', '100%');
+    layout.beforeFlush(() => this.#queueText());
     layout.onChange((change) => {
       if (change === 'layout') {
         this.#computed = false;
@@ -684,8 +683,7 @@ export class Host {
     if (!paint) {
       throw new Error(`Unknown property: ${name}`);
     }
-    this.#paint.set(element, { ...this.#paint.get(element), ...paint(unset ? null : value) });
-    this.#schedule();
+    element.layoutNode.queuePaint(paint(unset ? null : value));
   }
   /** @internal */
   textChanged(node: HostText): void {
@@ -707,25 +705,16 @@ export class Host {
     this.#schedule();
   }
   #schedule(): void {
-    if (!this.#scheduled) {
-      this.#scheduled = true;
-      queueMicrotask(() => {
-        this.#scheduled = false;
-        if (!this.layout.disposed) {
-          this.flush();
-        }
-      });
-    }
+    this.layout.queue();
   }
 
   /** Submit coalesced paint, text and layout writes now instead of at the end of the tick. */
   flush(): void {
-    for (const [element, paint] of this.#paint) {
-      if (!element.destroyed) {
-        element.layoutNode.setPaint(paint);
-      }
-    }
-    this.#paint.clear();
+    this.layout.flush();
+  }
+
+  /** Queue changed text, with the style it inherits, into the layout's command buffer. */
+  #queueText(): void {
     for (const node of this.#text) {
       if (node.destroyed) {
         continue;
@@ -737,14 +726,13 @@ export class Host {
       }
       // Unchanged text and style are not sent again; crossing text costs per character.
       this.#sentText.set(node, { data: node.data, style });
-      node.layoutNode.setText(node.data, style);
+      node.layoutNode.queueText(node.data, style);
       if ((sent?.data === '') !== (node.data === '')) {
         // Empty text, which renderers use as anchors, takes no space, as in the DOM.
         node.layoutNode.setLayoutProperty('display', node.data === '' ? 'none' : null);
       }
     }
     this.#text.clear();
-    this.layout.flush();
   }
 
   /** Lay the root out at this size; later reads lay out again only after edits. */
@@ -850,7 +838,7 @@ export class Host {
     entry.x = x;
     entry.y = y;
     this.#scrolls.set(element, entry);
-    element.layoutNode.setScroll(x, y);
+    element.layoutNode.queueScroll(x, y);
     element.dispatchEvent(new HostEvent('scroll'));
   }
 
@@ -957,7 +945,6 @@ export class Host {
           forget(child);
         }
         current.disposeBindings();
-        this.#paint.delete(current);
         this.#scrolls.delete(current);
         this.input.forget(current);
       } else if (current instanceof HostText) {
@@ -968,11 +955,10 @@ export class Host {
       HostNode.markDestroyed(current);
     };
     forget(node);
-    node.layoutNode.remove();
+    node.layoutNode.queueRemove();
   }
 
   dispose(): void {
-    this.#paint.clear();
     this.#text.clear();
     this.#nodes.clear();
     this.layout.dispose();

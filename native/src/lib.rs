@@ -2,6 +2,7 @@
 #![allow(non_snake_case, dead_code, unused_mut, improper_ctypes_definitions, clippy::all, unsafe_op_in_unsafe_fn)]
 mod buffers;
 mod brush;
+mod commands;
 mod enum_value;
 mod scene_values;
 mod gpu;

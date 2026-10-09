@@ -50,7 +50,7 @@ pub(crate) fn unit(value: f64) -> Result<f32> {
         Err(error("Expected a value between 0 and 1"))
     }
 }
-fn rgba(value: Vec<f64>) -> Result<[f32; 4]> {
+pub(crate) fn rgba(value: Vec<f64>) -> Result<[f32; 4]> {
     if value.len() != 4 {
         return Err(error("Expected four color channels"));
     }
@@ -155,7 +155,11 @@ pub struct TextStyle {
     pub italic: Option<bool>,
 }
 impl TextStyle {
-    fn apply(self, content: String, mut text: TextMeasureContext) -> Result<TextMeasureContext> {
+    pub(crate) fn apply(
+        self,
+        content: String,
+        mut text: TextMeasureContext,
+    ) -> Result<TextMeasureContext> {
         text.content = content;
         if let Some(v) = self.font_size {
             text.font_size = positive(v)?;
@@ -243,7 +247,7 @@ pub struct PaintStyle<'env> {
     pub clear_mask: Option<bool>,
 }
 impl PaintStyle<'_> {
-    fn apply(self, mut p: scene::RenderProps) -> Result<scene::RenderProps> {
+    pub(crate) fn apply(self, mut p: scene::RenderProps) -> Result<scene::RenderProps> {
         if let Some(v) = self.background {
             p.background = Some(match &v.style_value {
                 blinc_abi::types::Value::Brush(brush) => brush.clone(),

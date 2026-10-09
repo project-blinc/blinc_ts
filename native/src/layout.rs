@@ -1,6 +1,6 @@
 use crate::layout_values::{LayoutAlign, LayoutDirection, LayoutJustify, LayoutOverflow};
-use blinc_abi::context::{LayoutContext, Node, PropValue};
-use napi::bindgen_prelude::{ClassInstance, Either, Float64Array, Int32Array, Unknown};
+use blinc_abi::context::{LayoutContext, Node};
+use napi::bindgen_prelude::{ClassInstance, Either, Unknown};
 use napi::{Env, Error, Result, Status};
 use napi_derive::napi;
 use std::{cell::RefCell, rc::Rc};
@@ -187,54 +187,6 @@ impl NativeLayout {
                     .map_err(error)
             })
         }
-    }
-
-    /// Apply property-router writes as one atomic edit. Each write is three
-    /// entries of `ops`: an index into `nodes`, a router property id and a
-    /// kind (0 number, 1 enum, 2 text from `strings[number]`, 3 no text,
-    /// 4 unset), with its number at the same write index in `numbers`.
-    #[napi]
-    pub fn apply_properties(
-        &self,
-        nodes: Vec<ClassInstance<NativeLayoutNode>>,
-        ops: Int32Array,
-        numbers: Float64Array,
-        strings: Vec<String>,
-    ) -> Result<()> {
-        self.owner.check()?;
-        if ops.len() % 3 != 0 || numbers.len() != ops.len() / 3 {
-            return Err(error("Property writes are malformed"));
-        }
-        let mut writes = Vec::with_capacity(numbers.len());
-        for (op, &number) in ops.chunks_exact(3).zip(numbers.iter()) {
-            let node = usize::try_from(op[0])
-                .ok()
-                .and_then(|i| nodes.get(i))
-                .ok_or_else(|| error("Property write names no node"))?;
-            if !Rc::ptr_eq(&node.owner, &self.owner) {
-                return Err(error("Node belongs to another layout context"));
-            }
-            let value = match op[2] {
-                0 if !number.is_infinite() => PropValue::Number(number as f32),
-                1 if number.fract() == 0.0 && number.abs() <= f64::from(i32::MAX) => {
-                    PropValue::Enum(number as i32)
-                }
-                2 => PropValue::Text(Some(
-                    strings
-                        .get(number as usize)
-                        .ok_or_else(|| error("Property write names no string"))?,
-                )),
-                3 => PropValue::Text(None),
-                4 => PropValue::Unset,
-                _ => return Err(error("Invalid property value")),
-            };
-            writes.push((node.node, op[1], value));
-        }
-        self.owner
-            .tree
-            .borrow_mut()
-            .apply(&writes)
-            .map_err(error)
     }
 
     #[napi(getter)]

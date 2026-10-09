@@ -101,6 +101,10 @@ export class Brush {
   static image(source: string, fit: ImageFit = ImageFit.Cover): Brush {
     return new Brush({ kind: BrushKind.Image, source, fit });
   }
+  /** @internal A solid brush's color, which the command buffer carries without a native brush. */
+  static solidColor(brush: Brush): Color | undefined {
+    return brush.#descriptor.kind === BrushKind.Solid ? brush.#descriptor.color : undefined;
+  }
   /** @internal Construct once per native context; repeated assignment reuses the value. */
   static unwrap(brush: Brush, factory: BrushFactory): NativeBrush {
     let native = brush.#native.get(factory);
