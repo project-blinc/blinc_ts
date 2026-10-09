@@ -9,6 +9,7 @@ export { sceneSchema } from './scene.js';
 export type {
   Color,
   CornerRadii,
+  CornerShapes,
   AffineTransform,
   VisualBounds,
   TextStyle,

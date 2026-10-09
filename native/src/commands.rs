@@ -244,6 +244,8 @@ impl NativeLayout {
                         mask_image: None,
                         text_color: take(PAINT_TEXT_COLOR, 4)?,
                         radius: take(PAINT_RADIUS, 4)?,
+                        corner_shape: None,
+                        corner_shape_locked: None,
                         border_color: take(PAINT_BORDER_COLOR, 4)?,
                         border_width: take(PAINT_BORDER_WIDTH, 1)?.map(|v| v[0]),
                         opacity: take(PAINT_OPACITY, 1)?.map(|v| v[0]),

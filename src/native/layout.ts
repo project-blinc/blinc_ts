@@ -22,7 +22,12 @@ import { CommandQueue, type QueuedElement, type QueuedNode, type QueuedPaint } f
 export type LayoutChange = 'layout' | 'paint' | 'disposed';
 
 export type LayoutLength = number | `${number}%` | 'auto';
-function checkPaint(p: Omit<PaintStyle, 'background' | 'maskImage' | 'filter' | 'shadows'>): void {
+function checkPaint(
+  p: Omit<
+    PaintStyle,
+    'background' | 'maskImage' | 'filter' | 'shadows' | 'cornerShape' | 'cornerShapeLocked'
+  >,
+): void {
   const unit = (v: number) => Number.isFinite(v) && v >= 0 && v <= 1;
   const ok =
     (p.opacity === undefined || unit(p.opacity)) &&
@@ -690,11 +695,18 @@ export class LayoutNode implements QueuedNode {
 
   /**
    * @internal Queue a paint patch for the end of the tick. Patches with
-   * shadows, filters or masks are applied at once, after the queue.
+   * shadows, filters, masks or corner shapes are applied at once, after the queue.
    */
   queuePaint(style: PaintStyle, clear = false): void {
-    const { background, maskImage, filter, shadows, ...fields } = style;
-    if (maskImage !== undefined || filter !== undefined || shadows !== undefined) {
+    const { background, maskImage, filter, shadows, cornerShape, cornerShapeLocked, ...fields } =
+      style;
+    if (
+      maskImage !== undefined ||
+      filter !== undefined ||
+      shadows !== undefined ||
+      cornerShape !== undefined ||
+      cornerShapeLocked !== undefined
+    ) {
       if (clear) {
         this.clearPaint();
       }

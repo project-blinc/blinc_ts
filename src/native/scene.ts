@@ -7,6 +7,13 @@ export type CornerRadii = readonly [
   bottomRight: number,
   bottomLeft: number,
 ];
+/** A superellipse `n` per corner: top-left, top-right, bottom-right, bottom-left. */
+export type CornerShapes = readonly [
+  topLeft: number,
+  topRight: number,
+  bottomRight: number,
+  bottomLeft: number,
+];
 /** Applied around the node's center: x' = ax + cy + e, y' = bx + dy + f. */
 export type AffineTransform = readonly [
   a: number,
@@ -56,6 +63,15 @@ export interface PaintStyle {
   background?: Brush;
   textColor?: Color;
   radius?: CornerRadii;
+  /**
+   * Each corner's superellipse `n`, top-left first, as CSS's
+   * `corner-shape: superellipse(n)`: 1 round, 2 a squircle, 0 a bevel,
+   * negative values scoop inward. A shape other than round wins over the
+   * theme's corner smoothing; a round one is smoothed unless locked.
+   */
+  cornerShape?: CornerShapes;
+  /** Keep `cornerShape` whatever the theme's smoothing, even when it is round. */
+  cornerShapeLocked?: boolean;
   borderColor?: Color;
   borderWidth?: number;
   opacity?: number;

@@ -25,7 +25,7 @@ import { Input, WHEEL_LINE } from './input.js';
 import type { HitCache, Layout, LayoutNode, Restyled } from './layout.js';
 import { MemoryClipboard, SystemClipboard, type Clipboard } from './clipboard.js';
 import type { Computed, Disposable, ReactiveContext, Signal } from './reactive.js';
-import type { Color, CornerRadii, PaintStyle, TextStyle } from './scene.js';
+import type { Color, CornerRadii, PaintShadow, PaintStyle, TextStyle } from './scene.js';
 import type { NativeBindings } from './index.js';
 import type { NativeWindowHost, WindowSceneOptions } from './window.js';
 import type { InteractionState } from './input.js';
@@ -178,6 +178,101 @@ const unitless: ReadonlySet<string> = new Set([
 /** Properties the host reads itself beyond paint, text and layout. */
 const otherProperties: ReadonlySet<string> = new Set(['cursor']);
 
+/** `value` split at top-level `separator`s, outside parentheses. */
+function splitTop(value: string, separator: RegExp): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < value.length; i++) {
+    const c = value[i]!;
+    if (c === '(') {
+      depth++;
+    } else if (c === ')') {
+      depth--;
+    } else if (depth === 0 && separator.test(c)) {
+      parts.push(value.slice(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(value.slice(start));
+  return parts.map((part) => part.trim()).filter(Boolean);
+}
+
+const cornerKeywords: Readonly<Record<string, number>> = {
+  round: 1,
+  squircle: 2,
+  bevel: 0,
+  scoop: -1,
+  notch: -100,
+  square: 100,
+};
+/**
+ * `corner-shape`: one to four of `round`, `squircle`, `bevel`, `scoop`,
+ * `notch`, `square` or `superellipse(n)`, top-left first, and `locked` to
+ * keep them whatever the theme's smoothing.
+ */
+function cornerShape(value: PropertyValue): PaintStyle {
+  if (value === null) {
+    return { cornerShape: [1, 1, 1, 1], cornerShapeLocked: false };
+  }
+  if (typeof value !== 'string') {
+    throw new TypeError('corner-shape takes keywords or superellipse(n)');
+  }
+  const words = splitTop(value.toLowerCase(), /\s/);
+  const locked = words.includes('locked');
+  const shapes = words
+    .filter((word) => word !== 'locked')
+    .map((word) => {
+      const keyword = cornerKeywords[word];
+      if (keyword !== undefined) {
+        return keyword;
+      }
+      const n = /^superellipse\(([^)]*)\)$/.exec(word)?.[1];
+      const parsed = n === undefined ? NaN : Number(n.trim() === 'infinity' ? Infinity : n);
+      if (!Number.isFinite(parsed)) {
+        throw new TypeError(
+          `Expected round, squircle, bevel, scoop, notch, square or superellipse(n), not ${word}`,
+        );
+      }
+      return parsed;
+    });
+  if (shapes.length < 1 || shapes.length > 4) {
+    throw new TypeError('corner-shape takes one to four shapes');
+  }
+  const [a, b = a, c = a, d = b] = shapes as [number, number?, number?, number?];
+  return { cornerShape: [a, b, c, d], cornerShapeLocked: locked };
+}
+
+/** `box-shadow`: `none`, or layers of two to four lengths and a colour. */
+function boxShadow(value: PropertyValue): PaintStyle {
+  if (value === null || value === 'none') {
+    return { shadows: [] };
+  }
+  if (typeof value !== 'string') {
+    throw new TypeError('box-shadow takes CSS text');
+  }
+  const shadows = splitTop(value, /,/).map((layer): PaintShadow => {
+    const lengths: number[] = [];
+    let color: Color = [0, 0, 0, 1];
+    for (const word of splitTop(layer, /\s/)) {
+      if (word === 'inset') {
+        throw new TypeError('inset shadows are not supported');
+      }
+      if (/^-?(\d+\.?\d*|\.\d+)(px)?$/.test(word)) {
+        lengths.push(px(word));
+      } else {
+        color = parseColor(word);
+      }
+    }
+    if (lengths.length < 2 || lengths.length > 4) {
+      throw new TypeError('a shadow takes two to four lengths');
+    }
+    const [x, y, blur = 0, spread = 0] = lengths as [number, number, number?, number?];
+    return { x, y, blur: Math.max(blur, 0), spread, color };
+  });
+  return { shadows };
+}
+
 /** Paint properties by CSS name. A null value clears the field. */
 const paintProperties: Readonly<Record<string, (value: PropertyValue) => PaintStyle>> = {
   background: (v) => ({
@@ -194,6 +289,8 @@ const paintProperties: Readonly<Record<string, (value: PropertyValue) => PaintSt
     borderColor: v === null ? [0, 0, 0, 0] : parseColor(v as string | Color),
   }),
   visibility: (v) => ({ visible: v !== 'hidden' }),
+  'corner-shape': cornerShape,
+  'box-shadow': boxShadow,
 };
 
 /** A node of the host tree: an element or a text node. */
@@ -867,6 +964,10 @@ export class Host {
           } catch {
             // A value the renderer cannot take is left at its default.
           }
+        }
+        const tracking = /^(-?[\d.]+)em$/.exec(now.get('letter-spacing')?.trim() ?? '')?.[1];
+        if (tracking !== undefined) {
+          style.letterSpacing = Number(tracking) * (style.fontSize ?? defaultText.fontSize!);
         }
         this.#textStyles.set(node, style);
         this.#text.add(node);

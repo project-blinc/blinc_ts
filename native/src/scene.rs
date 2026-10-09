@@ -14,7 +14,7 @@ use napi::{Env, Error, Result, Status, Unknown};
 use napi_derive::napi;
 use scene::blinc_core::{
     Color, CornerRadius, Transform,
-    layer::{Affine2D, Shadow},
+    layer::{Affine2D, CornerShape, Shadow},
 };
 use std::cell::RefCell;
 fn error(message: impl Into<String>) -> Error {
@@ -234,6 +234,8 @@ pub struct PaintStyle<'env> {
     pub background: Option<ClassInstance<'env, NativeBrush>>,
     pub text_color: Option<Vec<f64>>,
     pub radius: Option<Vec<f64>>,
+    pub corner_shape: Option<Vec<f64>>,
+    pub corner_shape_locked: Option<bool>,
     pub border_color: Option<Vec<f64>>,
     pub border_width: Option<f64>,
     pub opacity: Option<f64>,
@@ -269,6 +271,20 @@ impl PaintStyle<'_> {
                 positive(v[3])?,
             );
             p.border_radius_explicit = true;
+        }
+        if let Some(v) = self.corner_shape {
+            if v.len() != 4 {
+                return Err(error("Expected four corner shapes"));
+            }
+            p.corner_shape = CornerShape::new(
+                number(v[0])?,
+                number(v[1])?,
+                number(v[2])?,
+                number(v[3])?,
+            );
+        }
+        if let Some(v) = self.corner_shape_locked {
+            p.corner_shape_locked = v;
         }
         if let Some(v) = self.border_color {
             p.border_color = Some(color(v)?);
