@@ -56,7 +56,11 @@ export class NativeWindowHost {
   #error: unknown;
   #stats: SceneRenderStats | undefined;
 
+  /** The bindings the window was opened with, for its clipboard and other services. */
+  readonly bindings: NativeBindings;
+
   constructor(bindings: NativeBindings, options: NativeWindowOptions = {}) {
+    this.bindings = bindings;
     this.closed = new Promise<void>((resolve) => {
       this.#resolveClosed = resolve;
     });

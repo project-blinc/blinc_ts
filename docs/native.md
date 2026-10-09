@@ -447,9 +447,19 @@ host.mount(windowHost, { scope });
   - Wheel: unless cancelled, the innermost element whose `overflow` is
     `scroll` or `auto` scrolls within its content, and what it cannot take
     passes to the containers around it. Each scroll dispatches `scroll`.
-  - State: `element.interaction` holds hover, active, focus, focus-visible and
-    focus-within, and `input.onInteraction` reports each change, as the CSS
-    cascade needs for its pseudo-classes.
+  - State: `element.interaction` holds hover, active, focus, focus-visible,
+    focus-within and disabled, and `input.onInteraction` reports each change,
+    as the CSS cascade needs for its pseudo-classes. Disabling the focused
+    element blurs it.
+  - Cursor: the `cursor` property of the element under the pointer, or its
+    nearest ancestor that sets one, is `input.cursor`; a mounted host shows it
+    in the window.
+  - Clipboard: `host.clipboard` reads and writes text or any MIME type. It is
+    held in the process until the host is mounted, then it is the system's.
+    The platform's copy, cut and paste shortcuts send `copy`, `cut` and
+    `paste` to the focused element, and listeners use `event.clipboard`.
+  - Hit testing reuses the last hit region while the pointer stays inside it
+    and nothing has changed, so quiet movement makes no native call.
 - **Reading back.** `node.bounds()` lays out if an edit is pending and returns
   absolute bounds. `host.elementAt(x, y)` hit-tests.
 - **Batching.** Tree edits, layout properties, paint, text and scroll offsets

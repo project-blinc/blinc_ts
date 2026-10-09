@@ -16,7 +16,8 @@ import {
 } from './events.js';
 import { window as win } from './index.js';
 import { Input, WHEEL_LINE } from './input.js';
-import type { Layout, LayoutNode } from './layout.js';
+import type { HitCache, Layout, LayoutNode } from './layout.js';
+import { MemoryClipboard, SystemClipboard, type Clipboard } from './clipboard.js';
 import { layoutPropertyNames } from './properties.js';
 import type { Computed, Disposable, ReactiveContext, Signal } from './reactive.js';
 import type { Color, CornerRadii, PaintStyle, TextStyle } from './scene.js';
@@ -417,6 +418,7 @@ export class HostElement extends HostNode {
     if (name === 'style') {
       this.#applyStyleText(value);
     }
+    this.host.input.attributeChanged(this, name);
   }
   removeAttribute(name: string): void {
     if (name === 'class') {
@@ -425,6 +427,7 @@ export class HostElement extends HostNode {
       this.#applyStyleText('');
     }
     this.#attributes.delete(name);
+    this.host.input.attributeChanged(this, name);
   }
   #applyStyleText(text: string): void {
     const names: string[] = [];
@@ -603,6 +606,10 @@ export class Host {
   #computed = false;
   /** Pointer, focus, keyboard and scrolling state, and the entry points a window feeds. */
   readonly input: Input = new Input(this);
+  /** Held in the process until the host is mounted in a window, then the system's. */
+  clipboard: Clipboard = new MemoryClipboard();
+  readonly #cursors = new Map<HostElement, string>();
+  #hits: HitCache | undefined;
 
   constructor(layout: Layout, scope?: Scope) {
     this.layout = layout;
@@ -667,6 +674,17 @@ export class Host {
       if (name === 'overflow' || name === 'overflow-x' || name === 'overflow-y') {
         this.#overflow(element, name, value);
       }
+      return;
+    }
+    if (name === 'cursor') {
+      if (unset) {
+        this.#cursors.delete(element);
+      } else if (typeof value === 'string') {
+        this.#cursors.set(element, value.trim());
+      } else {
+        throw new TypeError('cursor takes a CSS cursor name');
+      }
+      this.input.updateCursor();
       return;
     }
     const text = textProperties[name];
@@ -759,8 +777,10 @@ export class Host {
   /** The topmost element at a point, or null; text hits resolve to their element. */
   elementAt(x: number, y: number): HostElement | null {
     this.#ensureLayout();
-    for (const hit of this.layout.hitTest(this.root.layoutNode, x, y)) {
-      const node = this.#nodes.get(hit.nodeId);
+    // The cache answers repeated points inside the last hit region without a native call.
+    this.#hits ??= this.layout.createHitCache(this.root.layoutNode);
+    for (const id of this.#hits.pathAt(x, y)) {
+      const node = this.#nodes.get(id);
       const element = node instanceof HostText ? node.parentNode : node;
       if (element instanceof HostElement) {
         return element;
@@ -807,6 +827,10 @@ export class Host {
     }
     this.#scrolls.set(element, entry);
   }
+  /** @internal The `cursor` property `element` sets, if any. */
+  cursorOf(element: HostElement): string | undefined {
+    return this.#cursors.get(element);
+  }
   /** @internal How far `element` is scrolled right and down. */
   scrollOf(element: HostElement): [number, number] {
     const entry = this.#scrolls.get(element);
@@ -851,6 +875,10 @@ export class Host {
     const { scope, ...scene } = options;
     this.flush();
     window.attachScene(this.layout, this.root.layoutNode, scene, scope);
+    this.clipboard = new SystemClipboard(window.bindings.window);
+    const offCursor = this.input.onCursor((cursor) => {
+      window.window.setCursorIcon(cursorIcon(cursor));
+    });
     const off = window.onEvent((event) => {
       const ratio = window.window.scaleFactor();
       if (event.kind === 'Resized') {
@@ -924,6 +952,7 @@ export class Host {
       if (mounted) {
         mounted = false;
         off();
+        offCursor();
         if (!window.disposed) {
           window.detachScene();
         }
@@ -945,6 +974,7 @@ export class Host {
           forget(child);
         }
         current.disposeBindings();
+        this.#cursors.delete(current);
         this.#scrolls.delete(current);
         this.input.forget(current);
       } else if (current instanceof HostText) {
@@ -990,6 +1020,16 @@ function inheritedText(node: HostText): TextStyle {
   }
   return style;
 }
+const cursorNames: Readonly<Record<string, number>> = Object.fromEntries(
+  Object.entries(win.CursorIcon).map(([name, icon]) => [
+    name.replace(/[A-Z]/g, (c, i: number) => (i ? '-' : '') + c.toLowerCase()),
+    icon,
+  ]),
+);
+/** A CSS cursor name as the window's icon; unknown names show the default. */
+function cursorIcon(cursor: string): win.CursorIcon {
+  return (cursorNames[cursor] ?? win.CursorIcon.Default) as win.CursorIcon;
+}
 function sameText(a: TextStyle, b: TextStyle): boolean {
   const keys = new Set([...Object.keys(a), ...Object.keys(b)] as (keyof TextStyle)[]);
   return [...keys].every((key) => a[key] === b[key]);
@@ -1031,6 +1071,14 @@ function mouseButton(button: { kind: string }): number {
   return button.kind === 'Right' ? 2 : button.kind === 'Middle' ? 1 : 0;
 }
 
+export {
+  MemoryClipboard,
+  SystemClipboard,
+  HostClipboardEvent,
+  TEXT as CLIPBOARD_TEXT,
+  type Clipboard,
+  type ClipboardEntry,
+} from './clipboard.js';
 export {
   Input,
   HostKeyboardEvent,

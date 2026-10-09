@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
 import { loadNative } from '../dist/native/index.js';
 import { Host } from '../dist/native/host.js';
 
@@ -241,4 +242,86 @@ try {
 } finally {
   host.dispose();
 }
-console.log('Native input: hover, clicks, capture, focus, keys, composition and scrolling passed');
+// Disabled state, cursors, clipboard shortcuts and cached hit regions.
+{
+  const host2 = Host.create(native);
+  const { input: input2, root: root2 } = host2;
+  try {
+    const button = host2.createElement('button');
+    button.setProperty('width', 40);
+    button.setProperty('height', 20);
+    button.setProperty('cursor', 'pointer');
+    const inner = host2.createElement('span');
+    inner.setProperty('width', 10);
+    inner.setProperty('height', 10);
+    button.appendChild(inner);
+    root2.appendChild(button);
+    host2.compute(200, 100);
+    const states = [];
+    input2.onInteraction((element, state) => states.push(`${element.tag}:${state.disabled}`));
+    const cursors = [];
+    input2.onCursor((cursor) => cursors.push(cursor));
+    input2.pointerMove(5, 5);
+    assert.equal(input2.cursor, 'pointer', 'An ancestor sets the cursor');
+    inner.setProperty('cursor', 'text');
+    assert.equal(input2.cursor, 'text');
+    inner.setProperty('cursor', null);
+    input2.pointerMove(150, 50);
+    assert.deepEqual(cursors, ['pointer', 'text', 'pointer', 'default']);
+
+    button.focus();
+    assert.equal(input2.focused, button);
+    button.setAttribute('disabled', '');
+    assert(button.interaction.disabled);
+    assert.equal(input2.focused, null, 'Disabling the focused element blurs it');
+    assert.equal(button.focus(), false);
+    button.removeAttribute('disabled');
+    assert(!button.interaction.disabled);
+    assert(states.includes('button:true') && states.at(-1) === 'button:false');
+
+    // The platform's shortcut sends copy, cut and paste to the focused element.
+    const meta = process.platform === 'darwin';
+    const mods = { shift: false, control: !meta, alt: false, meta };
+    button.focus();
+    button.addEventListener('copy', (event) => event.clipboard.setText('copied'));
+    let pasted = '';
+    root2.addEventListener('paste', (event) => (pasted = event.clipboard.text()));
+    input2.keyDown({ key: 'c', modifiers: mods });
+    input2.keyDown({ key: 'v', modifiers: mods });
+    assert.equal(pasted, 'copied');
+    assert.deepEqual(host2.clipboard.types(), ['text/plain']);
+    host2.clipboard.write([
+      { type: 'text/html', data: new TextEncoder().encode('<b>x</b>') },
+      { type: 'text/plain', data: new TextEncoder().encode('x') },
+    ]);
+    assert.equal(host2.clipboard.text(), 'x');
+    input2.keyDown({ key: 'c' });
+    assert.equal(host2.clipboard.text(), 'x', 'Without the modifier, c is only a key');
+
+    // Repeated points inside one hit region cross no native boundary.
+    const addon = createRequire(import.meta.url)('../native/blinc_ts.node');
+    const region = addon.NativeLayout.prototype.hitTestRegion;
+    let walks = 0;
+    addon.NativeLayout.prototype.hitTestRegion = function (...args) {
+      walks++;
+      return region.apply(this, args);
+    };
+    try {
+      input2.pointerMove(150, 50);
+      for (let x = 150; x < 160; x++) {
+        input2.pointerMove(x, 50);
+      }
+      assert(walks <= 1, 'Quiet movement reuses the hit region');
+      button.setProperty('width', 180);
+      input2.pointerMove(151, 5);
+      assert.equal(input2.hovered, button, 'An edit invalidates the region');
+    } finally {
+      addon.NativeLayout.prototype.hitTestRegion = region;
+    }
+  } finally {
+    host2.dispose();
+  }
+}
+console.log(
+  'Native input: hover, clicks, capture, focus, keys, composition, scrolling, cursors, clipboard and hit caching passed',
+);

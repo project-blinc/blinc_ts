@@ -7,6 +7,7 @@
  */
 import { HostEvent, HostPointerEvent, type HostEventInit } from './events.js';
 import type { Host, HostElement } from './host.js';
+import { HostClipboardEvent } from './clipboard.js';
 
 export interface KeyModifiers {
   shift: boolean;
@@ -99,6 +100,8 @@ export interface InteractionState {
   focus: boolean;
   focusVisible: boolean;
   focusWithin: boolean;
+  /** The element has a `disabled` attribute: it takes no presses, clicks or focus. */
+  disabled: boolean;
 }
 export type InteractionChange = (element: HostElement, state: Readonly<InteractionState>) => void;
 
@@ -125,6 +128,8 @@ export class Input {
   readonly #host: Host;
   readonly #states = new Map<HostElement, InteractionState>();
   readonly #listeners = new Set<InteractionChange>();
+  readonly #cursorListeners = new Set<(cursor: string) => void>();
+  #cursor = 'default';
   #x = 0;
   #y = 0;
   #inside = false;
@@ -183,6 +188,7 @@ export class Input {
         focus: false,
         focusVisible: false,
         focusWithin: false,
+        disabled: false,
       }
     );
   }
@@ -201,6 +207,7 @@ export class Input {
       focus: false,
       focusVisible: false,
       focusWithin: false,
+      disabled: false,
     };
     if (state[key] === value) {
       return;
@@ -213,6 +220,47 @@ export class Input {
     }
     for (const listener of this.#listeners) {
       listener(element, state);
+    }
+  }
+
+  /** The CSS cursor of the element under the pointer, or its nearest ancestor that sets one. */
+  get cursor(): string {
+    return this.#cursor;
+  }
+  /** Called when the cursor changes; a mounted host shows it in its window. */
+  onCursor(listener: (cursor: string) => void): () => void {
+    const callback = (cursor: string) => listener(cursor);
+    this.#cursorListeners.add(callback);
+    return () => {
+      this.#cursorListeners.delete(callback);
+    };
+  }
+  /** @internal Work out the cursor again, after hover or an element's `cursor` changed. */
+  updateCursor(): void {
+    let cursor = 'default';
+    for (const element of this.#chain) {
+      const own = this.#host.cursorOf(element);
+      if (own !== undefined && own !== 'auto') {
+        cursor = own;
+        break;
+      }
+    }
+    if (cursor !== this.#cursor) {
+      this.#cursor = cursor;
+      for (const listener of this.#cursorListeners) {
+        listener(cursor);
+      }
+    }
+  }
+  /** @internal An attribute changed: `disabled` changes interaction state and drops focus. */
+  attributeChanged(element: HostElement, name: string): void {
+    if (name !== 'disabled') {
+      return;
+    }
+    const disabled = element.hasAttribute('disabled');
+    this.#set(element, 'disabled', disabled);
+    if (disabled && this.#focused && chainOf(this.#focused).includes(element)) {
+      this.blur();
     }
   }
 
@@ -269,6 +317,7 @@ export class Input {
     if (newTarget && newTarget !== oldTarget) {
       newTarget.dispatchEvent(this.#pointerEvent('pointerover', {}));
     }
+    this.updateCursor();
   }
 
   /** The pointer moved to (x, y), in layout units. */
@@ -534,7 +583,17 @@ export class Input {
   keyDown(init: HostKeyboardEventInit): boolean {
     this.#byKeyboard = true;
     const allowed = this.#key('keydown', init);
-    if (allowed && init.key === 'Tab') {
+    const m = init.modifiers ?? this.#modifiers;
+    const shortcut = process.platform === 'darwin' ? m.meta : m.control;
+    const clipboard =
+      shortcut && !m.alt
+        ? ({ c: 'copy', x: 'cut', v: 'paste' } as const)[init.key.toLowerCase()]
+        : undefined;
+    if (allowed && clipboard) {
+      (this.#focused ?? this.#host.root).dispatchEvent(
+        new HostClipboardEvent(clipboard, this.#host.clipboard),
+      );
+    } else if (allowed && init.key === 'Tab') {
       this.moveFocus(init.modifiers?.shift ?? this.#modifiers.shift);
     } else if (allowed && init.key === 'Enter') {
       this.#activate();
