@@ -384,6 +384,65 @@ paint/layout invalidation and replacement, and captures the same demo offscreen.
 the window and device survive. The lower-level `NativeProbeHost` uses the same
 surface lifecycle for the GPU smoke test.
 
+## Host interface for frameworks
+
+`blinc_ts/native/host` is the layer a framework renders through: a JSX
+runtime, a Vue custom renderer, a Solid or Svelte renderer, or a hand-written
+DSL. It follows the DOM operations those renderers already target, and it
+knows nothing about any framework.
+
+```ts
+import { loadNative } from 'blinc_ts/native';
+import { Host } from 'blinc_ts/native/host';
+
+const host = Host.create(loadNative(), scope);
+const button = host.createElement('button');
+button.setProperty('padding', '6px 12px');
+button.setProperty('background', '#3d7eff');
+button.appendChild(host.createTextNode('Save'));
+button.addEventListener('click', () => save());
+host.root.appendChild(button);
+host.mount(windowHost, { scope });
+```
+
+- **Nodes.** `createElement(tag)` makes an element; `builtinTags` lists the
+  built-in names, and other valid names make plain boxes. `createTextNode`
+  makes text, and `createComment` makes a placeholder that takes no space.
+  Empty text nodes take no space either, so renderers can use them as anchors.
+- **Tree.** `insertBefore`, `appendChild`, `removeChild` and `remove` keep
+  `parentNode`, `firstChild`, `nextSibling` and the other links, and each makes
+  one native edit. A removed node can be inserted again. `destroy()` releases a
+  node and its subtree, with their listeners and bindings.
+- **Properties.** `setProperty(name, value)` takes a CSS property name. Layout
+  properties go through the property router, paint properties (`background`,
+  `color`, `opacity`, `border-radius`, `border-color`, `visibility`) set the
+  node's paint, and text properties (`font-size`, `font-family`, `font-weight`,
+  `font-style`, `line-height`, `letter-spacing`, `white-space`) are inherited
+  by the text nodes inside. Numbers are pixels, and null restores the default.
+  The `style` attribute is parsed the same way.
+- **Attributes.** `setAttribute`, `id` and `classList` are kept on the node for
+  the CSS cascade.
+- **Events.** `addEventListener` and `removeEventListener` take `capture`,
+  `once`, `passive` and `signal`. `dispatchEvent` runs the capture, target and
+  bubble phases. `host.dispatchPointer` sends a pointer event to the element
+  under a point, and a press and release over one element also send `click`.
+  A mounted host routes the window's pointer and wheel input this way.
+- **Reading back.** `node.bounds()` lays out if an edit is pending and returns
+  absolute bounds. `host.elementAt(x, y)` hit-tests.
+- **Batching.** Writes in one tick coalesce: paint and text per node, and layout
+  properties in one native edit. Text equal to what a node already shows is not
+  sent again. `host.flush()` submits at once.
+
+The host does not need the SDK's reactive graph, since Vue and Solid bring their
+own. `element.bindProperty(name, signal, context)` is an optional fast path
+that keeps a property equal to an SDK signal without the framework handling
+each change.
+
+Two reference adapters live outside the SDK, in `adapters/`: a JSX runtime for
+TypeScript's `react-jsx` transform and a Vue custom renderer built on
+`createRenderer` from `@vue/runtime-core`. Both render the same scene, and
+`npm run test:adapters` checks that their trees, pixels and event order match.
+
 ## GPU canvases
 
 A canvas inserts synchronous custom drawing into the scene's paint order. It

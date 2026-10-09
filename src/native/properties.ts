@@ -1,8 +1,7 @@
 /**
  * Layout properties by router id, and CSS layout declarations turned into
- * router writes. Ids follow blinc_abi's property router (ashui's
- * `PropertyId` numbering), so a CSS cascade and these setters write through
- * the same native path.
+ * router writes. Ids are those of blinc_abi's property router, so a CSS
+ * cascade and these setters write through the same native path.
  */
 
 /** Router property ids. A `*Percent` id takes a fraction of the parent, 0 to 1. */

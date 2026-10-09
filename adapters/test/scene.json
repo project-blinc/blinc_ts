@@ -1,0 +1,76 @@
+{
+  "tag": "root",
+  "children": [
+    {
+      "tag": "div",
+      "id": "app",
+      "children": [
+        {
+          "tag": "div",
+          "class": "header",
+          "children": [
+            {
+              "text": "Blinc host"
+            },
+            {
+              "tag": "button",
+              "id": "counter",
+              "children": [
+                {
+                  "text": "Clicks: 0"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "tag": "div",
+          "class": "cards",
+          "children": [
+            {
+              "tag": "div",
+              "class": "card",
+              "children": [
+                {
+                  "text": "Card A"
+                }
+              ]
+            },
+            {
+              "tag": "div",
+              "class": "card",
+              "children": [
+                {
+                  "text": "Card B"
+                },
+                {
+                  "tag": "div",
+                  "class": "badge",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "tag": "div",
+              "class": "card first",
+              "children": [
+                {
+                  "text": "Card C"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "tag": "div",
+          "class": "footer",
+          "children": [
+            {
+              "text": "footer"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

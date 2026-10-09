@@ -1,0 +1,12 @@
+{
+  "extends": "../tsconfig.build.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist",
+    "jsx": "react-jsx",
+    "jsxImportSource": "#jsx",
+    "declaration": false,
+    "declarationMap": false
+  },
+  "include": ["jsx/**/*.ts", "jsx/**/*.tsx", "vue/**/*.ts", "scene/**/*.ts", "scene/**/*.tsx"]
+}

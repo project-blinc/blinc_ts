@@ -11,6 +11,8 @@ openbox > .blinc/openbox.log 2>&1 & wm=$!
 trap 'kill "$wm" 2>/dev/null || true' EXIT
 sleep 1
 npm run test:native
+npm --prefix adapters ci
+npm --prefix adapters test
 X11
 fi
 export XDG_RUNTIME_DIR
@@ -35,3 +37,5 @@ export WAYLAND_DISPLAY
 WAYLAND_DISPLAY=$(basename "$socket")
 unset DISPLAY
 npm run test:native
+npm --prefix adapters ci
+npm --prefix adapters test

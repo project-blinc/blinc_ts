@@ -7,6 +7,8 @@ import tseslint from 'typescript-eslint';
 export default defineConfig(
   globalIgnores([
     'dist/**',
+    // Type-checked by the adapters package's own build, which installs their dependencies.
+    'adapters/**',
     'node_modules/**',
     '.shader-build/**',
     '.test-fixtures/**',
