@@ -1,11 +1,15 @@
 //! The reactive graph for JavaScript. Items are named by generation-checked
-//! numeric keys, and callbacks stay in a JavaScript table: native code keeps
-//! each callback's id and calls one dispatcher function per context with it.
-use blinc_abi::graph::{ComputedKey, EffectKey, GraphContext, SignalKey};
+//! numeric keys, and callbacks stay in a JavaScript table. A computed keeps
+//! its callback's id, and native code calls one dispatcher function per
+//! context with it while the graph evaluates. Effects are run by JavaScript:
+//! calls that can make effects due return how many are due, `takeDue`
+//! hands their tags over, and JavaScript runs each between `beginEffect` and
+//! `endEffect`.
+use blinc_abi::graph::{ComputedKey, GraphContext, HostEffectKey, SignalKey};
 use napi::bindgen_prelude::{Function, FunctionRef, ToNapiValue};
 use napi::{Env, Error, JsValue, Result, Status, Unknown, check_status, sys};
 use napi_derive::napi;
-use std::{cell::RefCell, rc::Rc, sync::Mutex, thread::ThreadId};
+use std::{cell::RefCell, rc::Rc, thread::ThreadId};
 
 fn error(message: impl Into<String>) -> Error {
     Error::new(Status::GenericFailure, message.into())
@@ -18,7 +22,7 @@ struct Dispatch {
     env: sys::napi_env,
     function: FunctionRef<f64, ()>,
     thread: ThreadId,
-    errors: Mutex<Vec<Error>>,
+    errors: RefCell<Vec<Error>>,
 }
 impl Dispatch {
     fn call(&self, id: u32) {
@@ -54,7 +58,7 @@ impl Dispatch {
             }
         })();
         if let Err(error) = result {
-            self.errors.lock().unwrap().push(error);
+            self.errors.borrow_mut().push(error);
         }
     }
 }
@@ -63,7 +67,7 @@ enum Item {
     Free,
     Signal(SignalKey),
     Computed(ComputedKey),
-    Effect(EffectKey),
+    Effect(HostEffectKey),
 }
 struct Slot {
     generation: u32,
@@ -81,9 +85,20 @@ struct Owner {
     graph: GraphContext,
     slots: RefCell<Vec<Slot>>,
     free: RefCell<Vec<u32>>,
+    /// Tags of due effects, waiting for JavaScript to take them.
+    due: RefCell<Vec<u32>>,
+    /// Open batches: no effect becomes due inside one.
+    batches: std::cell::Cell<u32>,
+    /// Effect runs now open, innermost last, kept so a run whose effect was
+    /// released while it ran can still be closed.
+    runs: RefCell<Vec<(f64, HostEffectKey)>>,
     dispatch: Box<Dispatch>,
 }
 impl Owner {
+    /// Whether a batch or an effect run is open, so nothing new can be due.
+    fn holding(&self) -> bool {
+        self.batches.get() > 0 || !self.runs.borrow().is_empty()
+    }
     fn check(&self) -> Result<()> {
         if self.dispatch.thread != std::thread::current().id() {
             return Err(error("Reactive context must run on its owning thread"));
@@ -97,7 +112,10 @@ impl Owner {
         if self.graph.is_evaluating() {
             return value.map_err(error);
         }
-        let errors = std::mem::take(&mut *self.dispatch.errors.lock().unwrap());
+        if self.dispatch.errors.borrow().is_empty() {
+            return value.map_err(error);
+        }
+        let errors = std::mem::take(&mut *self.dispatch.errors.borrow_mut());
         if let Some(error) = errors.into_iter().next() {
             // JsError coercion would wrap non-Error thrown values. Convert the
             // retained value directly and leave the original exception pending.
@@ -192,11 +210,14 @@ impl NativeGraph {
                 graph: GraphContext::new(),
                 slots: RefCell::new(Vec::new()),
                 free: RefCell::new(Vec::new()),
+                due: RefCell::new(Vec::new()),
+                batches: std::cell::Cell::new(0),
+                runs: RefCell::new(Vec::new()),
                 dispatch: Box::new(Dispatch {
                     env: env.raw(),
                     function: dispatch.create_ref()?,
                     thread: std::thread::current().id(),
-                    errors: Mutex::new(Vec::new()),
+                    errors: RefCell::new(Vec::new()),
                 }),
             }),
         })
@@ -217,20 +238,76 @@ impl NativeGraph {
             .map_err(error)?;
         Ok(self.owner.insert(Item::Computed(key)))
     }
-    #[napi]
-    pub fn effect(&self, callback: u32) -> Result<f64> {
-        self.owner.check()?;
-        let key = self
-            .owner
+    /// Collect the tags of the effects now due, returning how many wait for `takeDue`.
+    fn due(&self) -> Result<u32> {
+        let mut due = self.owner.due.borrow_mut();
+        self.owner
             .graph
-            .effect(self.owner.callback(callback))
+            .take_due_host_effects(&mut due)
             .map_err(error)?;
-        // Initial callback errors must not leak an effect whose key was never returned.
-        if let Err(error) = self.owner.finish(Ok(())) {
-            let _ = self.owner.graph.remove_effect(&key);
-            return Err(error);
+        Ok(due.len() as u32)
+    }
+    /// Move up to `target.length` waiting due tags into `target`, oldest
+    /// first, returning how many were written.
+    #[napi]
+    pub fn take_due(&self, env: Env, target: Unknown<'_>) -> Result<u32> {
+        self.owner.check()?;
+        // No JavaScript runs while the output storage is borrowed.
+        unsafe {
+            crate::buffers::u32_output(env, target, |target| {
+                let mut due = self.owner.due.borrow_mut();
+                let count = due.len().min(target.len());
+                target[..count].copy_from_slice(&due[..count]);
+                due.drain(..count);
+                Ok(count as u32)
+            })
         }
-        Ok(self.owner.insert(Item::Effect(key)))
+    }
+    /// An effect reported by `tag` when due. It is due at once: its tag
+    /// waits for `takeDue`.
+    #[napi]
+    pub fn effect(&self, tag: u32) -> Result<f64> {
+        self.owner.check()?;
+        let key = self.owner.graph.host_effect(tag).map_err(error)?;
+        let key = self.owner.insert(Item::Effect(key));
+        self.due()?;
+        Ok(key)
+    }
+    /// Track the JavaScript run of effect `key`. False if it was released.
+    #[napi]
+    pub fn begin_effect(&self, key: f64) -> Result<bool> {
+        self.owner.check()?;
+        let Some(Some(effect)) = self.owner.slot(key, |item| match item {
+            Item::Effect(e) => Some(*e),
+            _ => None,
+        }) else {
+            return Ok(false);
+        };
+        let begun = self.owner.finish(self.owner.graph.begin_effect(effect))?;
+        if begun {
+            self.owner.runs.borrow_mut().push((key, effect));
+        }
+        Ok(begun)
+    }
+    /// Close effect `key`'s run. Writes it made apply now, at the outermost
+    /// run; returns how many due tags wait for `takeDue`.
+    #[napi]
+    pub fn end_effect(&self, key: f64) -> Result<u32> {
+        if self.owner.graph.is_disposed() {
+            return Ok(0);
+        }
+        self.owner.check()?;
+        let open = self.owner.runs.borrow().iter().rposition(|&(k, _)| k == key);
+        if let Some(at) = open {
+            let effect = self.owner.runs.borrow()[at].1;
+            // Runs opened inside this one and never closed close with it.
+            self.owner.runs.borrow_mut().truncate(at);
+            self.owner.finish(self.owner.graph.end_effect(effect))?;
+        }
+        if self.owner.holding() {
+            return Ok(0);
+        }
+        self.due()
     }
     #[napi]
     pub fn track(&self, signal: f64) -> Result<()> {
@@ -244,11 +321,16 @@ impl NativeGraph {
         let key = self.owner.signal(signal)?;
         self.owner.finish(self.owner.graph.check_signal(key))
     }
+    /// Write signal `key`; returns how many due tags wait for `takeDue`.
     #[napi]
-    pub fn notify(&self, signal: f64) -> Result<()> {
+    pub fn notify(&self, signal: f64) -> Result<u32> {
         self.owner.check()?;
         let key = self.owner.signal(signal)?;
-        self.owner.finish(self.owner.graph.notify(key))
+        self.owner.finish(self.owner.graph.notify(key))?;
+        if self.owner.holding() {
+            return Ok(0);
+        }
+        self.due()
     }
     #[napi]
     pub fn track_computed(&self, computed: f64) -> Result<()> {
@@ -267,7 +349,7 @@ impl NativeGraph {
         let result = match self.owner.take(key) {
             Some(Item::Signal(s)) => self.owner.graph.remove_signal(s),
             Some(Item::Computed(c)) => self.owner.graph.remove_computed(c),
-            Some(Item::Effect(e)) => self.owner.graph.remove_effect(&e),
+            Some(Item::Effect(e)) => self.owner.graph.remove_host_effect(e),
             Some(Item::Free) | None => Ok(()),
         };
         self.owner.finish(result)
@@ -275,12 +357,22 @@ impl NativeGraph {
     #[napi]
     pub fn begin_batch(&self) -> Result<()> {
         self.owner.check()?;
-        self.owner.finish(self.owner.graph.begin_batch())
+        self.owner.finish(self.owner.graph.begin_batch())?;
+        self.owner.batches.set(self.owner.batches.get() + 1);
+        Ok(())
     }
+    /// Returns how many due tags wait for `takeDue`.
     #[napi]
-    pub fn end_batch(&self) -> Result<()> {
+    pub fn end_batch(&self) -> Result<u32> {
         self.owner.check()?;
-        self.owner.finish(self.owner.graph.end_batch())
+        self.owner
+            .batches
+            .set(self.owner.batches.get().saturating_sub(1));
+        self.owner.finish(self.owner.graph.end_batch())?;
+        if self.owner.holding() {
+            return Ok(0);
+        }
+        self.due()
     }
     #[napi]
     pub fn stats(&self) -> Result<NativeGraphStats> {
@@ -307,7 +399,10 @@ impl NativeGraph {
         self.owner.graph.dispose();
         self.owner.slots.borrow_mut().clear();
         self.owner.free.borrow_mut().clear();
-        self.owner.dispatch.errors.lock().unwrap().clear();
+        self.owner.due.borrow_mut().clear();
+        self.owner.runs.borrow_mut().clear();
+        self.owner.batches.set(0);
+        self.owner.dispatch.errors.borrow_mut().clear();
         Ok(())
     }
 }

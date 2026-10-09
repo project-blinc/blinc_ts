@@ -9,22 +9,29 @@ export interface GraphStats {
   effects: number;
 }
 /**
- * @internal Native graph items are named by generation-checked numeric keys;
- * computeds and effects name their callback by an id in the context's table,
- * which the native graph passes to the dispatcher given at construction.
+ * @internal Native graph items are named by generation-checked numeric keys.
+ * Computeds and effects name their callback by an id in the context's table.
+ * The native graph calls the dispatcher with a computed's id while it
+ * evaluates; effects are run here, by the ids of due effects that writes,
+ * batches and effect creation leave for `takeDue`.
  */
 export interface NativeGraph {
   readonly disposed: boolean;
   signal(): number;
   computed(callback: number): number;
-  effect(callback: number): number;
+  /** An effect named by `tag` when due; it is due at once. */
+  effect(tag: number): number;
+  beginEffect(effect: number): boolean;
+  /** Calls that can make effects due return how many tags wait for `takeDue`. */
+  endEffect(effect: number): number;
+  takeDue(target: Uint32Array): number;
   track(signal: number): void;
   peek(signal: number): void;
-  notify(signal: number): void;
+  notify(signal: number): number;
   trackComputed(computed: number): void;
   release(key: number): void;
   beginBatch(): void;
-  endBatch(): void;
+  endBatch(): number;
   stats(): GraphStats;
   dispose(): void;
 }
@@ -45,6 +52,11 @@ export class ReactiveContext implements Disposable {
   /** Computed and effect callbacks by id; native code holds only the ids. */
   readonly #callbacks: ((() => void) | undefined)[] = [];
   readonly #freeIds: number[] = [];
+  /** Due effects in the order they became due; a pass runs them all. */
+  readonly #due: number[] = [];
+  #dueBuffer = new Uint32Array(64);
+  #running = false;
+  #batches = 0;
   #disposed = false;
   /** @internal Use loadNative().createReactive(scope). */
   constructor(create: NativeGraphFactory, scope?: Scope) {
@@ -60,6 +72,58 @@ export class ReactiveContext implements Disposable {
     const id = this.#freeIds.pop() ?? this.#callbacks.length;
     this.#callbacks[id] = callback;
     return id;
+  }
+  /**
+   * @internal Take the `waiting` due effects from native code, and run them
+   * and those they make due in
+   * one pass. Inside a pass or a batch they wait for it to end. Every due
+   * effect runs; the first error is thrown after the pass.
+   */
+  schedule(waiting: number): void {
+    if (waiting > 0) {
+      if (waiting > this.#dueBuffer.length) {
+        this.#dueBuffer = new Uint32Array(waiting);
+      }
+      let count;
+      do {
+        count = this.#native.takeDue(this.#dueBuffer);
+        for (let i = 0; i < count; i++) {
+          this.#due.push(this.#dueBuffer[i]!);
+        }
+      } while (count === this.#dueBuffer.length);
+    }
+    if (this.#running || this.#batches > 0 || this.#due.length === 0 || this.#disposed) {
+      return;
+    }
+    this.#running = true;
+    let errors: unknown[] | undefined;
+    let runs: Map<number, number> | undefined;
+    const initial = this.#due.length;
+    try {
+      for (let i = 0; i < this.#due.length && !this.#disposed; i++) {
+        const id = this.#due[i]!;
+        if (i >= initial) {
+          // An effect that keeps writing what it reads would never settle.
+          runs ??= new Map();
+          const count = (runs.get(id) ?? 0) + 1;
+          if (count > 1024) {
+            throw new Error('Reactive update cycle exceeded 1024 flush waves');
+          }
+          runs.set(id, count);
+        }
+        try {
+          this.#callbacks[id]?.();
+        } catch (error) {
+          (errors ??= []).push(error);
+        }
+      }
+    } finally {
+      this.#due.length = 0;
+      this.#running = false;
+    }
+    if (errors) {
+      throw errors[0];
+    }
   }
   /** @internal */
   unregister(id: number): void {
@@ -154,6 +218,7 @@ export class ReactiveContext implements Disposable {
   batch<T>(run: () => T): T {
     this.check(true);
     this.#native.beginBatch();
+    this.#batches++;
     let result: T | undefined;
     let failed = false;
     let failure: unknown;
@@ -164,8 +229,9 @@ export class ReactiveContext implements Disposable {
       failure = error;
     }
     try {
+      this.#batches--;
       if (!this.#disposed) {
-        this.#native.endBatch();
+        this.schedule(this.#native.endBatch());
       }
     } catch (error) {
       if (failed) {
@@ -257,7 +323,7 @@ export class Signal<T> implements Disposable {
       return;
     }
     this.#value = value;
-    this.#context.native.notify(this.#key);
+    this.#context.schedule(this.#context.native.notify(this.#key));
   }
   update(update: (value: T) => T): void {
     this.set(update(this.peek()));
@@ -357,6 +423,7 @@ export class Computed<T> implements Disposable {
 }
 
 /** One object per effect: its key, callback id and the scope of its current run. */
+/** One object per effect: its key, its callback id and the scope of its current run. */
 class Effect implements Disposable {
   readonly #context: ReactiveContext;
   readonly #run: (scope: Scope) => void;
@@ -372,19 +439,41 @@ class Effect implements Disposable {
       this.#key = context.native.effect(this.#id);
     } catch (error) {
       context.unregister(this.#id);
-      context.cleanupAfterError(this.#current, error);
+      throw error;
     }
+    // Run now, or with the pass or batch this was created in.
+    context.schedule(1);
   }
+  /** Run the effect between the native begin and end, which track what it reads. */
   #tick(): void {
     if (this.#disposed || this.#context.disposed) {
       return;
     }
-    this.#context.cleanup(this.#current);
-    const current = (this.#current = new Scope());
+    const native = this.#context.native;
+    if (!native.beginEffect(this.#key)) {
+      return;
+    }
+    const first = this.#current === undefined;
+    let failure: { error: unknown } | undefined;
     try {
-      this.#context.evaluate(false, () => this.#run(current), current);
+      this.#context.cleanup(this.#current);
+      const current = (this.#current = new Scope());
+      try {
+        this.#context.evaluate(false, () => this.#run(current), current);
+      } catch (error) {
+        this.#context.cleanupAfterError(current, error);
+      }
     } catch (error) {
-      this.#context.cleanupAfterError(current, error);
+      failure = { error };
+    } finally {
+      this.#context.schedule(native.endEffect(this.#key));
+    }
+    if (failure) {
+      // A first run that fails leaves no effect behind, as if creation failed.
+      if (first) {
+        this.dispose();
+      }
+      throw failure.error;
     }
   }
   dispose(): void {

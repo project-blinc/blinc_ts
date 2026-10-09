@@ -22,6 +22,8 @@ unsafe fn view(
     if status != sys::Status::napi_ok || kind != expected {
         return Err(error(if expected == sys::TypedarrayType::float32_array {
             "Expected a Float32Array"
+        } else if expected == sys::TypedarrayType::uint32_array {
+            "Expected a Uint32Array"
         } else {
             "Expected a Uint8Array"
         }));
@@ -48,6 +50,20 @@ pub unsafe fn f32_output<T>(
     run: impl FnOnce(&mut [f32]) -> Result<T>,
 ) -> Result<T> {
     let (data, len) = unsafe { view(env, value, sys::TypedarrayType::float32_array)? };
+    let output = if len == 0 {
+        &mut []
+    } else {
+        unsafe { std::slice::from_raw_parts_mut(data.cast(), len) }
+    };
+    run(output)
+}
+/// The closure must not execute JS or retain references to the borrowed backing store.
+pub unsafe fn u32_output<T>(
+    env: Env,
+    value: Unknown<'_>,
+    run: impl FnOnce(&mut [u32]) -> Result<T>,
+) -> Result<T> {
+    let (data, len) = unsafe { view(env, value, sys::TypedarrayType::uint32_array)? };
     let output = if len == 0 {
         &mut []
     } else {

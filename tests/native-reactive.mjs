@@ -127,14 +127,52 @@ assert.throws(() => graph.signal(1), /disposed/);
 
 // Raw adapter callbacks must preserve exception identity and finish other effects.
 const addon = createRequire(import.meta.url)('../native/blinc_ts.node');
-// The raw graph takes keys and calls one dispatcher with callback ids.
+// The raw graph takes keys, calls one dispatcher with computed ids, and
+// returns due effect tags for the caller to run between begin and end.
 function rawGraph() {
   const callbacks = [];
   const graph = new addon.NativeGraph((id) => callbacks[id]());
+  const keys = [];
   const id = (callback) => callbacks.push(callback) - 1;
+  const runs = [];
+  const buffer = new Uint32Array(4);
+  const take = (waiting) => {
+    const tags = [];
+    for (let n = waiting; n > 0;) {
+      n = graph.takeDue(buffer);
+      tags.push(...buffer.subarray(0, n));
+      n = n === buffer.length ? 1 : 0;
+    }
+    return tags;
+  };
+  const run = (waiting) => runTags(take(waiting));
+  const runTags = (tags) => {
+    const queue = [...tags];
+    while (queue.length) {
+      const tag = queue.shift();
+      runs.push(tag);
+      if (graph.beginEffect(keys[tag])) {
+        try {
+          callbacks[tag]();
+        } finally {
+          queue.push(...take(graph.endEffect(keys[tag])));
+        }
+      }
+    }
+  };
   return {
     graph,
-    effect: (callback) => graph.effect(id(callback)),
+    runs,
+    run,
+    effect(callback) {
+      const tag = id(callback);
+      const key = graph.effect(tag);
+      keys[tag] = key;
+      const due = take(1);
+      assert.deepEqual(due, [tag], 'An effect is due when made');
+      runTags(due);
+      return key;
+    },
     computed: (callback) => graph.computed(id(callback)),
   };
 }
@@ -142,39 +180,36 @@ const raw = rawGraph();
 const native = raw.graph;
 try {
   const s = native.signal();
-  let armed = false;
-  let survived = 0;
-  const failure = new Error('callback failed');
+  let reads = 0;
   const first = raw.effect(() => {
     native.track(s);
-    if (armed) {
-      throw failure;
+    reads++;
+  });
+  // Writing what it read makes it due again; the write waits for the end of the run.
+  let writes = 0;
+  const writer = raw.effect(() => {
+    native.track(s);
+    if (writes < 2) {
+      writes++;
+      assert.equal(native.notify(s), 0, 'Writes inside a run wait for its end');
     }
   });
-  const second = raw.effect(() => {
-    native.track(s);
-    survived++;
-  });
-  armed = true;
-  assert.throws(
-    () => native.notify(s),
-    (e) => e === failure,
-  );
-  assert.equal(survived, 2);
-  armed = false;
-  native.notify(s);
-  assert.equal(survived, 3);
-  const count = native.stats().effects;
-  assert.throws(
-    () =>
-      raw.effect(() => {
-        throw failure;
-      }),
-    (e) => e === failure,
-  );
-  assert.equal(native.stats().effects, count);
+  assert.equal(writes, 2);
+  assert.equal(reads, 3);
+  raw.runs.length = 0;
+  raw.run(native.notify(s));
+  assert.deepEqual(raw.runs.length, 2);
+  native.beginBatch();
+  assert.equal(native.notify(s), 0);
+  assert.equal(native.notify(s), 0);
+  const batched = native.endBatch();
+  assert.equal(batched, 2, 'A batch makes each effect due once');
+  raw.run(batched);
   native.release(first);
-  native.release(second);
+  native.release(writer);
+  assert.equal(native.beginEffect(first), false, 'A released effect cannot begin');
+  assert.equal(native.endEffect(first), 0);
+  assert.throws(() => native.takeDue(new Float32Array(2)), /Uint32Array/);
   native.release(s);
   assert.deepEqual(native.stats(), { signals: 0, computeds: 0, effects: 0 });
   // A reused slot gets a new generation, so a stale key cannot reach its successor.
@@ -200,7 +235,7 @@ disposingRaw.effect(() => {
   }
 });
 armed = true;
-disposing.notify(trigger);
+disposingRaw.run(disposing.notify(trigger));
 assert.equal(disposing.disposed, true);
 disposing.release(trigger);
 // The initial callback runs before effect() can register its returned handle.
@@ -299,6 +334,7 @@ try {
   const signal = rawLifecycle.signal();
   assert.throws(() => rawLifecycle.trackComputed(signal), /disposed/);
   const effect = lifecycleRaw.effect(() => rawLifecycle.track(signal));
+  assert.equal(rawLifecycle.stats().effects, 1);
   rawLifecycle.release(effect);
   rawLifecycle.release(effect);
   rawLifecycle.release(signal);
@@ -306,6 +342,54 @@ try {
   assert.deepEqual(rawLifecycle.stats(), { signals: 0, computeds: 0, effects: 0 });
 } finally {
   rawLifecycle.dispose();
+}
+// An effect that writes what it read runs again until it settles, in one pass;
+// one that never settles is stopped.
+{
+  const context = api.createReactive();
+  const n = context.signal(0);
+  const seen = [];
+  context.effect(() => {
+    seen.push(n.get());
+    if (n.peek() < 3) {
+      n.set(n.peek() + 1);
+    }
+  });
+  assert.deepEqual(seen, [0, 1, 2, 3]);
+  const order = [];
+  const a = context.signal(0);
+  context.effect(() => order.push(`x${a.get()}`));
+  context.effect(() => order.push(`y${a.get()}`));
+  order.length = 0;
+  a.set(1);
+  assert.deepEqual(order, ['x1', 'y1'], 'Due effects run in the order they were made');
+  // An effect that disposes itself mid-run still closes its run, so later writes apply.
+  const self = context.signal(0);
+  let selfRuns = 0;
+  const once = context.effect(() => {
+    self.get();
+    selfRuns++;
+    if (selfRuns === 2) {
+      once.dispose();
+      self.set(5);
+    }
+  });
+  const watcher = [];
+  context.effect(() => watcher.push(self.get()));
+  self.set(1);
+  assert.equal(selfRuns, 2);
+  assert.deepEqual(watcher, [0, 5], 'The watcher, due once, sees the write made before it ran');
+  self.set(6);
+  assert.deepEqual(watcher, [0, 5, 6]);
+  const loop = context.signal(0);
+  assert.throws(
+    () =>
+      context.effect(() => {
+        loop.set(loop.get() + 1);
+      }),
+    /cycle/,
+  );
+  context.dispose();
 }
 console.log(
   'Native reactivity: branching, batching, identity, errors, nested effects and disposal passed',
