@@ -69,7 +69,7 @@ export type UtilityClass =
   | 'rounded'
   | `rounded-${Exclude<RadiusToken, 'default'>}`
   | 'shadow'
-  | `shadow-${Exclude<ShadowToken, 'default' | 'inner'>}`
+  | `shadow-${Exclude<ShadowToken, 'default'>}`
   | `text-${TextSize}`
   | `font-${FontWeightName | FontFamilyName}`
   | `leading-${LineHeightName}`
@@ -111,11 +111,8 @@ function rules(): [name: string, declarations: string][] {
     ]);
   }
   for (const shadow of shadowTokens) {
-    // Inset shadows are not drawn yet.
-    if (shadow !== 'inner') {
-      const name = shadow === 'default' ? 'shadow' : `shadow-${shadow}`;
-      out.push([name, `box-shadow: var(--${name})`]);
-    }
+    const name = shadow === 'default' ? 'shadow' : `shadow-${shadow}`;
+    out.push([name, `box-shadow: var(--${name})`]);
   }
   for (const size of textSizes) {
     out.push([`text-${size}`, `font-size: var(--text-${size})`]);

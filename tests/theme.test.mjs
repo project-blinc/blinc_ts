@@ -165,7 +165,8 @@ test('utility classes are generated from the token names', () => {
   assert.ok(utilityClasses.includes('bg-surface-elevated'));
   assert.ok(utilityClasses.includes('p-0.5'));
   assert.ok(utilityClasses.includes('rounded'));
-  assert.ok(!utilityClasses.includes('shadow-inner'));
+  assert.ok(utilityClasses.includes('shadow-inner'));
+  assert.match(css, /^\.shadow-inner \{ box-shadow: var\(--shadow-inner\); \}$/m);
   assert.equal(new Set(utilityClasses).size, utilityClasses.length, 'names are unique');
   assert.match(css, /^\.bg-surface-elevated \{ background: var\(--surface-elevated\); \}$/m);
   assert.match(css, /^\.p-0\\\.5 \{ padding: var\(--space-0-5\); \}$/m);

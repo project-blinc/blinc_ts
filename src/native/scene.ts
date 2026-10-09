@@ -42,6 +42,8 @@ export interface PaintShadow {
   blur: number;
   spread?: number;
   color: Color;
+  /** Cast inside the padding box, over the fill and under the border, as CSS's `inset`. */
+  inset?: boolean;
 }
 /** A complete filter value. Omitted members use their identity values. */
 export interface PaintFilter {
@@ -56,7 +58,7 @@ export interface PaintFilter {
   /** Gaussian standard deviation in logical pixels. */
   blur?: number;
   /** The rendered group's alpha casts the shadow; blur is twice its standard deviation. */
-  dropShadow?: Omit<PaintShadow, 'spread'>;
+  dropShadow?: Omit<PaintShadow, 'spread' | 'inset'>;
 }
 /** Partial paint update; clearPaint resets all paint fields. */
 export interface PaintStyle {
@@ -77,6 +79,7 @@ export interface PaintStyle {
   opacity?: number;
   visible?: boolean;
   transform?: AffineTransform;
+  /** Outer and inset layers, the first drawn on top, as `box-shadow` lists them. */
   shadows?: readonly PaintShadow[];
   /** Filters the group as a whole. Null clears the filter. */
   filter?: PaintFilter | null;

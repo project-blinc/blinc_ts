@@ -251,6 +251,11 @@ router, and paint, text, cursor and overflow come back to the host, which
 draws with them. Declarations that cannot be applied are reported to
 `host.onStyleErrors` listeners, or logged as warnings when there are none.
 
+`box-shadow` takes any mix of outer and `inset` layers, the first drawn on
+top. Inset layers are cast inside the padding box, over the background and
+under the border, and follow its radius and corner shape. `setPaint` takes the
+same layers as `shadows`, each with `inset: true` for an inner one.
+
 `LayoutNode.setLayoutProperty(name, value)` reads a CSS layout declaration with
 the same native parser a sheet's go through.
 
@@ -328,7 +333,7 @@ full radius or half the box's shorter side stay round, so circles and pills
 keep their shape. Smoothing is off when `cornerSmoothing` is 0 or the
 threshold is infinite, which `shapeOff` is.
 
-The shape applies to fills, borders, shadows, glass and the clips children
+The shape applies to fills, borders, outer and inset shadows, glass and the clips children
 inherit, and a theme change updates all of them. A node's own `corner-shape`
 wins over it: `round`, `squircle`, `bevel`, `scoop`, `notch`, `square` or
 `superellipse(n)`, one to four values from the top-left corner. A round
@@ -353,7 +358,7 @@ card.className = classes('bg-surface', 'rounded-lg', 'shadow-md', 'p-4');
 They cover colours (`bg-`, `text-` and `border-` with each colour's name),
 spacing (`p-`, `px-`, `m-`, `gap-`, `w-`, `h-`, `size-` and the rest with each
 step, such as `p-0.5`), radii (`rounded`, `rounded-lg`), shadows (`shadow`,
-`shadow-md`), type (`text-lg`, `font-semibold`, `font-mono`,
+`shadow-md`, `shadow-inner`), type (`text-lg`, `font-semibold`, `font-mono`,
 `leading-snug`, `tracking-wide`) and corner shapes (`corner-squircle`,
 `corner-round-locked`). `classes(...)` takes only these names, so a misspelt
 one is a type error, and `utilityCss()` returns the sheet as text for a build

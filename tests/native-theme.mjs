@@ -215,7 +215,7 @@ try {
       'left: 130px; top: 10px; width: 100px; height: 80px; border-radius: 28px; border-width: 4px; border-color: #c02050',
     );
     const shadow = box(
-      'left: 250px; top: 20px; width: 90px; height: 70px; border-radius: 28px; background: #ffffff; box-shadow: 0 0 0 8px #20a050',
+      'left: 250px; top: 20px; width: 90px; height: 70px; border-radius: 28px; background: #ffffff; box-shadow: 0 0 6px 6px #20a050',
     );
     const small = box(
       'left: 10px; top: 120px; width: 60px; height: 60px; border-radius: 8px; background: #2050c0',
@@ -295,10 +295,69 @@ try {
     state.dispose();
     host.dispose();
   }
+
+  // Inset shadows draw inside the padding box, mixed with outer layers, and
+  // follow the radius and the theme's corner shape.
+  {
+    const host = Host.create(native);
+    const errors = [];
+    host.onStyleErrors((e) => errors.push(...e));
+    addUtilities(host.layout);
+    const state = new ThemeState(context, neutralTheme, { scheme: 'light' });
+    state.attach(host.layout);
+    const box = (left, top, className = '') => {
+      const element = host.createElement('div');
+      element.className = className;
+      element.setAttribute(
+        'style',
+        `position: absolute; left: ${left}px; top: ${top}px; width: 100px; height: 80px; border-radius: 28px; background: #ffffff`,
+      );
+      host.root.appendChild(element);
+      return element;
+    };
+    const inset = box(20, 20);
+    const mixed = box(180, 20);
+    const token = box(20, 150, 'shadow-inner');
+    inset.setProperty('box-shadow', 'inset 0 0 12px 4px #000000');
+    mixed.setProperty('box-shadow', '12px 0 2px #20a050, inset 0 0 12px 4px #000000');
+    const shadowed = await capture(host, 'inset');
+    const layout = geometry(host.root);
+    assert.deepEqual(errors, []);
+
+    const lum = (pixels, x, y) => pixel(pixels, x, y)[0];
+    assert.ok(lum(shadowed, 23, 60) < 160, 'the inside edge darkens');
+    assert.ok(lum(shadowed, 70, 60) > 250, 'the centre stays the fill');
+    assert.ok(near(pixel(shadowed, 16, 60), [0, 0, 0, 0]), 'nothing is drawn outside');
+    assert.ok(near(pixel(shadowed, 23, 23), [0, 0, 0, 0]), 'the rounded corner clips it');
+    assert.ok(near(pixel(shadowed, 284, 60), [0x20, 0xa0, 0x50, 255]), 'the outer layer draws');
+    assert.ok(lum(shadowed, 183, 60) < 160, 'the inset layer draws beside it');
+
+    inset.setProperty('box-shadow', null);
+    mixed.setProperty('box-shadow', null);
+    token.className = '';
+    const plain = await capture(host, 'inset-none');
+    assert.deepEqual(geometry(host.root), layout, 'inset shadows leave the geometry alone');
+    assert.ok(lum(plain, 23, 60) > 250);
+    assert.ok(lum(shadowed, 70, 153) < lum(plain, 70, 153), 'the shadow-inner token draws');
+
+    // The inset layers take the theme's corner shape with the fill.
+    inset.setProperty('box-shadow', 'inset 0 0 12px 4px #000000');
+    const corner = [20, 20, 28, 28];
+    const roundInset = await capture(host);
+    state.setBundle(extendBundle(neutralTheme, { shape: shapeTokens(0.4, 3.3, 12) }));
+    assert.equal(host.layout.shape.cornerShape, 1.3334237337112427);
+    const smoothInset = await capture(host, 'inset-hybrid');
+    assert.ok(!region(roundInset, corner).equals(region(smoothInset, corner)));
+    inset.setProperty('box-shadow', null);
+    const smoothPlain = await capture(host);
+    assert.ok(!region(smoothPlain, corner).equals(region(smoothInset, corner)));
+    state.dispose();
+    host.dispose();
+  }
 } finally {
   context.dispose();
   target.dispose();
 }
 console.log(
-  'Native theme: scheme switches, overrides, system scheme, bundle css and corner smoothing passed',
+  'Native theme: scheme switches, overrides, system scheme, bundle css, corner smoothing and inset shadows passed',
 );

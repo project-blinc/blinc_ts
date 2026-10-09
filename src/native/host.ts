@@ -251,7 +251,7 @@ function cornerShape(value: PropertyValue): PaintStyle {
   return { cornerShape: [a, b, c, d], cornerShapeLocked: locked };
 }
 
-/** `box-shadow`: `none`, or layers of two to four lengths and a colour. */
+/** `box-shadow`: `none`, or layers of two to four lengths, a colour and `inset`. */
 function boxShadow(value: PropertyValue): PaintStyle {
   if (value === null || value === 'none') {
     return { shadows: [] };
@@ -262,9 +262,11 @@ function boxShadow(value: PropertyValue): PaintStyle {
   const shadows = splitTop(value, /,/).map((layer): PaintShadow => {
     const lengths: number[] = [];
     let color: Color = [0, 0, 0, 1];
+    let inset = false;
     for (const word of splitTop(layer, /\s/)) {
       if (word === 'inset') {
-        throw new TypeError('inset shadows are not supported');
+        inset = true;
+        continue;
       }
       if (/^-?(\d+\.?\d*|\.\d+)(px)?$/.test(word)) {
         lengths.push(px(word));
@@ -276,7 +278,7 @@ function boxShadow(value: PropertyValue): PaintStyle {
       throw new TypeError('a shadow takes two to four lengths');
     }
     const [x, y, blur = 0, spread = 0] = lengths as [number, number, number?, number?];
-    return { x, y, blur: Math.max(blur, 0), spread, color };
+    return { x, y, blur: Math.max(blur, 0), spread, color, ...(inset ? { inset } : {}) };
   });
   return { shadows };
 }

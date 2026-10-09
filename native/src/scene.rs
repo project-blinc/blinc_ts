@@ -205,6 +205,7 @@ pub struct PaintShadow {
     pub blur: f64,
     pub spread: Option<f64>,
     pub color: Vec<f64>,
+    pub inset: Option<bool>,
 }
 #[napi(object)]
 pub struct PaintFilter {
@@ -316,11 +317,20 @@ impl PaintStyle<'_> {
                 ],
             }));
         }
+        // Outer and inset layers keep their CSS order within each list.
         if let Some(v) = self.shadows {
-            p.shadow = v
-                .into_iter()
-                .map(PaintShadow::into_shadow)
-                .collect::<Result<_>>()?;
+            let (mut outer, mut inner) = (Vec::new(), Vec::new());
+            for layer in v {
+                let inset = layer.inset == Some(true);
+                let shadow = layer.into_shadow()?;
+                if inset {
+                    inner.push(shadow);
+                } else {
+                    outer.push(shadow);
+                }
+            }
+            p.shadow = outer;
+            p.inner_shadow = inner;
         }
         if self.clear_filter == Some(true) {
             p.filter = None;
@@ -335,6 +345,9 @@ impl PaintStyle<'_> {
             filter.saturate = positive(v.saturate.unwrap_or(1.0))?;
             filter.sepia = unit(v.sepia.unwrap_or(0.0))?;
             filter.blur = positive(v.blur.unwrap_or(0.0))?;
+            if v.drop_shadow.as_ref().is_some_and(|d| d.inset == Some(true)) {
+                return Err(error("A drop shadow cannot be inset"));
+            }
             filter.drop_shadow = v.drop_shadow.map(PaintShadow::into_shadow).transpose()?;
         }
         if self.clear_mask == Some(true) {
