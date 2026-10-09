@@ -1,0 +1,126 @@
+/**
+ * A plain grey theme for tests, examples and a starting point. Apps supply
+ * their own themes; this one has no smoothing and no brand colour.
+ */
+import { hex } from './color.js';
+import { shapeOff } from './shape.js';
+import {
+  animationScale,
+  defineTheme,
+  radiusScale,
+  shadowScale,
+  spacingScale,
+  typographyScale,
+  type ThemeBundle,
+} from './theme.js';
+import type { ColorTokens } from './tokens.js';
+
+const light: ColorTokens = {
+  primary: hex(0x3f5f8f),
+  primaryHover: hex(0x35517a),
+  primaryActive: hex(0x2b4365),
+  secondary: hex(0x6b7280),
+  secondaryHover: hex(0x5b616d),
+  secondaryActive: hex(0x4b505a),
+  success: hex(0x2f7d4f),
+  successBg: hex(0xe6f2ea),
+  warning: hex(0x9a6a10),
+  warningBg: hex(0xf6efe0),
+  error: hex(0xb03a3a),
+  errorBg: hex(0xf6e6e6),
+  info: hex(0x3a6ea5),
+  infoBg: hex(0xe6eef6),
+  background: hex(0xf7f7f7),
+  surface: hex(0xffffff),
+  surfaceElevated: hex(0xffffff),
+  surfaceOverlay: hex(0x000000, 0.4),
+  textPrimary: hex(0x1d1d1f),
+  textSecondary: hex(0x555559),
+  textTertiary: hex(0x88888c),
+  textInverse: hex(0xffffff),
+  textLink: hex(0x3f5f8f),
+  border: hex(0xdcdcde),
+  borderSecondary: hex(0xeaeaec),
+  borderHover: hex(0xc4c4c8),
+  borderFocus: hex(0x3f5f8f),
+  borderError: hex(0xb03a3a),
+  inputBg: hex(0xffffff),
+  inputBgHover: hex(0xfafafa),
+  inputBgFocus: hex(0xffffff),
+  inputBgDisabled: hex(0xf0f0f0),
+  selection: hex(0x3f5f8f, 0.25),
+  selectionText: hex(0x1d1d1f),
+  accent: hex(0x3f5f8f),
+  accentSubtle: hex(0xe8edf4),
+  tooltipBg: hex(0x2a2a2d),
+  tooltipText: hex(0xffffff),
+};
+
+const dark: ColorTokens = {
+  ...light,
+  primary: hex(0x8aa6d1),
+  primaryHover: hex(0x9db5da),
+  primaryActive: hex(0xb0c4e3),
+  secondary: hex(0x9a9ca3),
+  secondaryHover: hex(0xaaacb2),
+  secondaryActive: hex(0xbabcc1),
+  success: hex(0x6fbf8f),
+  successBg: hex(0x1d2e24),
+  warning: hex(0xd7a94a),
+  warningBg: hex(0x302818),
+  error: hex(0xe07a7a),
+  errorBg: hex(0x351e1e),
+  info: hex(0x7aa7d7),
+  infoBg: hex(0x1c2733),
+  background: hex(0x161618),
+  surface: hex(0x1f1f22),
+  surfaceElevated: hex(0x29292d),
+  surfaceOverlay: hex(0x000000, 0.6),
+  textPrimary: hex(0xf2f2f3),
+  textSecondary: hex(0xb4b4b8),
+  textTertiary: hex(0x7c7c81),
+  textInverse: hex(0x1d1d1f),
+  textLink: hex(0x8aa6d1),
+  border: hex(0x38383d),
+  borderSecondary: hex(0x2d2d31),
+  borderHover: hex(0x4a4a50),
+  borderFocus: hex(0x8aa6d1),
+  borderError: hex(0xe07a7a),
+  inputBg: hex(0x1f1f22),
+  inputBgHover: hex(0x252529),
+  inputBgFocus: hex(0x1f1f22),
+  inputBgDisabled: hex(0x2a2a2d),
+  selection: hex(0x8aa6d1, 0.3),
+  selectionText: hex(0xf2f2f3),
+  accent: hex(0x8aa6d1),
+  accentSubtle: hex(0x232b37),
+  tooltipBg: hex(0xe8e8ea),
+  tooltipText: hex(0x1d1d1f),
+};
+
+const shared = {
+  typography: typographyScale(),
+  spacing: spacingScale(4),
+  radii: radiusScale(),
+  animations: animationScale(),
+  shape: shapeOff,
+};
+
+/** Grey light and dark schemes on the default scales. */
+export const neutralTheme: ThemeBundle = Object.freeze({
+  name: 'Neutral',
+  light: defineTheme({
+    name: 'Neutral',
+    scheme: 'light',
+    colors: light,
+    shadows: shadowScale([0.05, 0.1, 0.1, 0.1, 0.1, 0.25, 0.05]),
+    ...shared,
+  }),
+  dark: defineTheme({
+    name: 'Neutral',
+    scheme: 'dark',
+    colors: dark,
+    shadows: shadowScale([0.2, 0.3, 0.3, 0.3, 0.3, 0.5, 0.15]),
+    ...shared,
+  }),
+});

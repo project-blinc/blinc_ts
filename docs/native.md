@@ -272,6 +272,93 @@ the build at its file, line and column. The plugin also writes
 `allowArbitraryExtensions`, so a misspelt class name is a type error.
 `compileCss(source, { file, load })` is the same compiler as a function.
 
+## Themes
+
+`blinc_ts/theme` gives a theme typed token sets: colours, typography,
+spacing, radii, shadows, animation durations and easing curves, and the
+corner shape. A `Theme` is one scheme, light or dark, and a `ThemeBundle`
+pairs the two with any stylesheets that come with them. blinc_ts does not
+ship a brand's palettes. Apps and add-ons supply their themes, and
+`neutralTheme`, a plain grey bundle, serves tests and examples.
+
+`ThemeState` holds the bundle in use, the scheme and any overrides in
+signals of a reactive context. `attach(layout)` keeps the layout's CSS
+variables, its colour scheme and its corner smoothing equal to the theme, so
+a theme change restyles the nodes in place through the native cascade
+rather than rebuilding them:
+
+```ts
+import { ThemeState, extendBundle, hex, neutralTheme, shapeTokens } from 'blinc_ts/theme';
+
+const app = extendBundle(neutralTheme, {
+  name: 'My app',
+  radii: { default: 12 },
+  shape: shapeTokens(0.4, 3.3, 12),
+});
+const theme = new ThemeState(native.createReactive(), app); // follows the system scheme
+theme.attach(host.layout);
+theme.followSystem(windowHost); // reads the window's light or dark mode and its changes
+
+theme.setScheme('dark'); // or 'light', or 'system' again
+theme.override({ colors: { primary: hex('#2563eb') } }); // kept across scheme switches
+theme.setBundle(otherBundle); // clears overrides
+```
+
+Each token becomes a custom property that stylesheets read with `var()`:
+colours by name (`--surface-elevated`, `--text-primary`), spacing as
+`--space-4`, radii as `--radius-lg`, type as `--text-lg`, `--font-semibold`,
+`--font-sans`, `--leading-normal` and `--tracking-wide`, shadows as
+`--shadow-md`, motion as `--duration-normal` and `--ease-spring`, and the
+corner shape as `--corner-smoothing`, `--corner-exponent`,
+`--smoothing-threshold` and `--corner-n`. A sheet's own `:root` variables
+stand over the theme's. `theme.theme` and `theme.variables` are computeds, so
+an effect that reads a token runs again when it changes. `extendTheme` and
+`extendBundle` make a variant that keeps the tokens it does not change.
+
+### Corner shape
+
+`ShapeTokens` turn rounded corners into squircles. `cornerSmoothing`, from 0
+to 1, pulls the superellipse exponent from 2, a circle, toward
+`cornerExponent`: the exponent is
+`2 + (max(cornerExponent, 2) − 2) × clamp(cornerSmoothing, 0, 1)`, and the
+renderer draws with `n = log2(exponent)`, kept as a fraction. Smoothing 0.4
+and exponent 3.3 give an exponent of 2.52 and `n` of about 1.3334237. Only
+corners of at least `smoothingThreshold` pixels are smoothed; corners near the
+full radius or half the box's shorter side stay round, so circles and pills
+keep their shape. Smoothing is off when `cornerSmoothing` is 0 or the
+threshold is infinite, which `shapeOff` is.
+
+The shape applies to fills, borders, shadows, glass and the clips children
+inherit, and a theme change updates all of them. A node's own `corner-shape`
+wins over it: `round`, `squircle`, `bevel`, `scoop`, `notch`, `square` or
+`superellipse(n)`, one to four values from the top-left corner. A round
+shape is still smoothed by the theme unless it is written `round locked`.
+A stylesheet can set the smoothing for the whole tree with
+`:root { corner-smoothing: 0.6; corner-exponent: 4; smoothing-threshold: 12px; }`,
+over the theme's. Paint options that set `cornerShape` win over both.
+
+### Utility classes
+
+`blinc_ts/theme/utilities` generates utility classes from the token names.
+An app that does not import it pays nothing for it. Each class reads its
+token through a variable, so one sheet serves every theme:
+
+```ts
+import { addUtilities, classes } from 'blinc_ts/theme/utilities';
+
+addUtilities(host.layout); // first among the sheets, so the app's own rules win
+card.className = classes('bg-surface', 'rounded-lg', 'shadow-md', 'p-4');
+```
+
+They cover colours (`bg-`, `text-` and `border-` with each colour's name),
+spacing (`p-`, `px-`, `m-`, `gap-`, `w-`, `h-`, `size-` and the rest with each
+step, such as `p-0.5`), radii (`rounded`, `rounded-lg`), shadows (`shadow`,
+`shadow-md`), type (`text-lg`, `font-semibold`, `font-mono`,
+`leading-snug`, `tracking-wide`) and corner shapes (`corner-squircle`,
+`corner-round-locked`). `classes(...)` takes only these names, so a misspelt
+one is a type error, and `utilityCss()` returns the sheet as text for a build
+step.
+
 ## Measuring text and inline runs
 
 `measureText(text, style, wrapWidth?)` lays text out as the renderer draws
@@ -333,7 +420,8 @@ adds refraction, tint, grain and adjustable chromatic separation. Rounded and
 shaped boxes, gradients, borders, analytic shadows, clipping, text and RGBA images
 use the same packed records. Set `cornerShape: 2` in render options for squircle
 smoothing, with `smoothingThreshold` and `fullRadius` controlling which corners
-remain circular. Fill, border, shadow, child clipping and glass refraction all
+remain circular; without it, the layout's theme shape applies (see
+[Corner shape](#corner-shape)). Fill, border, shadow, child clipping and glass refraction all
 follow the resolved corner shape. The output is premultiplied RGBA; use an unorm target
 without automatic sRGB encoding.
 

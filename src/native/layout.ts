@@ -17,6 +17,13 @@ import type {
 } from './generated/layout.js';
 import type { Scope } from '../hmr.js';
 import { propertyWrite } from './properties.js';
+import {
+  shapeOff,
+  shapeOptions,
+  shapeTokens,
+  type ShapeOptions,
+  type ShapeTokens,
+} from '../theme/shape.js';
 import { CommandQueue, type QueuedElement, type QueuedNode, type QueuedPaint } from './commands.js';
 
 export type LayoutChange = 'layout' | 'paint' | 'disposed';
@@ -279,6 +286,10 @@ export class Layout {
   readonly #layoutNames = new Map<string, boolean>();
   readonly #restyleListeners = new Set<(restyled: Restyled) => void>();
   #styled = false;
+  #shapeTokens: ShapeTokens | null = null;
+  #shapeOverride: Partial<ShapeTokens> = {};
+  #fullRadius = 9999;
+  #shapes: ShapeOptions | undefined;
   #dark = false;
   #environment = '';
   readonly #beforeFlush: (() => void)[] = [];
@@ -426,7 +437,56 @@ export class Layout {
   /** Encode the computed scene once; native vectors retain capacity across frames. */
   prepareDisplayList(root: LayoutNode, options: PaintOptions = {}): PaintInfo {
     this.flush();
-    return this.#native.prepareDisplayList(LayoutNode.unwrap(root, this), options);
+    const shapes = this.#shapes;
+    return this.#native.prepareDisplayList(
+      LayoutNode.unwrap(root, this),
+      shapes && options.cornerShape === undefined ? { ...shapes, ...options } : options,
+    );
+  }
+
+  /**
+   * The theme's corner smoothing: every node drawn without a corner shape
+   * of its own takes it. Paint options that set `cornerShape` still win.
+   * Null turns it off.
+   */
+  setShape(shape: ShapeTokens | null, fullRadius = 9999): void {
+    this.#shapeTokens = shape;
+    this.#fullRadius = fullRadius;
+    this.#resolveShape();
+  }
+  /** @internal Shape tokens a stylesheet declares on the root, over the theme's. */
+  setShapeOverride(override: Partial<ShapeTokens>): void {
+    this.#shapeOverride = override;
+    this.#resolveShape();
+  }
+  /** The corner smoothing paint uses when its options set none, as `setShape` and the root's CSS give it. */
+  get shape(): ShapeOptions | undefined {
+    return this.#shapes;
+  }
+  #resolveShape(): void {
+    const base = this.#shapeTokens;
+    const over = this.#shapeOverride;
+    const any = Object.keys(over).length > 0;
+    const next =
+      base || any
+        ? shapeOptions(
+            shapeTokens(
+              over.cornerSmoothing ?? base?.cornerSmoothing ?? shapeOff.cornerSmoothing,
+              over.cornerExponent ?? base?.cornerExponent ?? shapeOff.cornerExponent,
+              over.smoothingThreshold ?? base?.smoothingThreshold ?? shapeOff.smoothingThreshold,
+            ),
+            this.#fullRadius,
+          )
+        : undefined;
+    const now = this.#shapes;
+    if (
+      now?.cornerShape !== next?.cornerShape ||
+      now?.smoothingThreshold !== next?.smoothingThreshold ||
+      now?.fullRadius !== next?.fullRadius
+    ) {
+      this.#shapes = next;
+      this.changed('paint');
+    }
   }
 
   /** Copy prepared records; edits invalidate them until the next preparation. */

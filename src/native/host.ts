@@ -26,6 +26,7 @@ import type { HitCache, Layout, LayoutNode, Restyled } from './layout.js';
 import { MemoryClipboard, SystemClipboard, type Clipboard } from './clipboard.js';
 import type { Computed, Disposable, ReactiveContext, Signal } from './reactive.js';
 import type { Color, CornerRadii, PaintShadow, PaintStyle, TextStyle } from './scene.js';
+import type { ShapeTokens } from '../theme/shape.js';
 import type { NativeBindings } from './index.js';
 import type { NativeWindowHost, WindowSceneOptions } from './window.js';
 import type { InteractionState } from './input.js';
@@ -175,8 +176,15 @@ const unitless: ReadonlySet<string> = new Set([
   'aspect-ratio',
 ]);
 
+/** The root's properties that set the corner smoothing of everything drawn, over the theme's. */
+const shapeProperties: Readonly<Record<string, keyof ShapeTokens>> = {
+  'corner-smoothing': 'cornerSmoothing',
+  'corner-exponent': 'cornerExponent',
+  'smoothing-threshold': 'smoothingThreshold',
+};
+
 /** Properties the host reads itself beyond paint, text and layout. */
-const otherProperties: ReadonlySet<string> = new Set(['cursor']);
+const otherProperties: ReadonlySet<string> = new Set(['cursor', ...Object.keys(shapeProperties)]);
 
 /** `value` split at top-level `separator`s, outside parentheses. */
 function splitTop(value: string, separator: RegExp): string[] {
@@ -986,6 +994,9 @@ export class Host {
       if (!(node instanceof HostElement)) {
         continue;
       }
+      if (node === this.root) {
+        this.#rootShape(now);
+      }
       let paint: PaintStyle = {};
       for (const name of before.keys()) {
         if (!now.has(name) && paintProperties[name]) {
@@ -1021,6 +1032,24 @@ export class Host {
         }
       }
     }
+  }
+  /** The corner smoothing the root's declarations set, over the theme's. */
+  #rootShape(declared: ReadonlyMap<string, string>): void {
+    const override: { -readonly [K in keyof ShapeTokens]?: number } = {};
+    for (const [name, token] of Object.entries(shapeProperties)) {
+      const value = declared.get(name)?.trim();
+      if (value === undefined || value === '') {
+        continue;
+      }
+      const n =
+        value === 'infinity' || value === 'none' ? Infinity : Number(value.replace(/px$/, ''));
+      if (Number.isNaN(n)) {
+        this.#reportOne(`${name}: ${value}: expected a number`);
+      } else {
+        override[token] = n;
+      }
+    }
+    this.layout.setShapeOverride(override);
   }
   #reportOne(error: string): void {
     if (this.#styleErrorListeners.size === 0) {
