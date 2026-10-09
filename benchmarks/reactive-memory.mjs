@@ -3,6 +3,10 @@
 // Each case runs in its own process. "alive" is footprint per item while the items
 // exist; "rounds" is footprint per item after each of six rounds of making and
 // disposing them, with N-API finalizers given ticks to run after each GC.
+// "settled" splits the last round: V8's committed heap (mostly young-generation
+// space V8 keeps after a busy round, whatever the items were), the rest of the
+// footprint (native heap and V8 overhead), and the footprint after a
+// memory-reducing GC, which hands the young-generation space back.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { setImmediate as tick } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
@@ -57,6 +61,7 @@ const make = (i) =>
 await settle();
 const base = footprint();
 const baseHeap = process.memoryUsage().heapUsed;
+const baseCommitted = process.memoryUsage().heapTotal;
 const per = (bytes) => Math.round(bytes / N);
 let alive;
 const rounds = [];
@@ -84,5 +89,13 @@ for (let round = 0; round < 6; round++) {
   await settle();
   rounds.push(per(footprint() - base));
 }
-console.log(JSON.stringify({ kind, alive, rounds, sink: sink > 0 }));
+const committed = per(process.memoryUsage().heapTotal - baseCommitted);
+globalThis.gc({ type: 'major', execution: 'sync', flavor: 'last-resort' });
+await settle();
+const settled = {
+  v8Committed: committed,
+  rest: rounds.at(-1) - committed,
+  afterReducingGc: per(footprint() - base),
+};
+console.log(JSON.stringify({ kind, alive, rounds, settled, sink: sink > 0 }));
 graph.dispose();
