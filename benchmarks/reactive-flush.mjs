@@ -1,5 +1,6 @@
-// Time to run many due effects: one write that N effects read, and a batch of
-// N writes that one effect each reads. Run: node benchmarks/reactive-flush.mjs.
+// Time to run many due effects: one write that N effects read, a batch of N
+// writes that one effect each reads, and 1,000 effects that each read 1, 5 or
+// 20 signals, all rerun by one batch. Run: node benchmarks/reactive-flush.mjs.
 import { loadNative } from '../dist/native/index.js';
 
 const native = loadNative();
@@ -52,6 +53,34 @@ for (const N of [1000, 10000]) {
     nsPerEffect: Math.round((fanOut * 1e6) / N),
     batchOfNWritesMs: Number(batched.toFixed(3)),
     nsPerWriteAndEffect: Math.round((batched * 1e6) / N),
+  };
+  if (sink === 0) {
+    throw new Error('Effects did not run');
+  }
+}
+for (const reads of [1, 5, 20]) {
+  const N = 1000;
+  const graph = native.createReactive();
+  let sink = 0;
+  const signals = Array.from({ length: reads }, (_, i) => graph.signal(i));
+  for (let i = 0; i < N; i++) {
+    graph.effect(() => {
+      for (const signal of signals) {
+        sink += signal.get();
+      }
+    });
+  }
+  const time = median((n) =>
+    graph.batch(() => {
+      for (const signal of signals) {
+        signal.set(n);
+      }
+    }),
+  );
+  graph.dispose();
+  results[`1000 effects reading ${reads}`] = {
+    ms: Number(time.toFixed(3)),
+    nsPerEffect: Math.round((time * 1e6) / N),
   };
   if (sink === 0) {
     throw new Error('Effects did not run');

@@ -132,7 +132,9 @@ const addon = createRequire(import.meta.url)('../native/blinc_ts.node');
 function rawGraph() {
   const callbacks = [];
   const graph = new addon.NativeGraph((id) => callbacks[id]());
-  const keys = [];
+  const scratch = new Float64Array(8);
+  graph.setScratch(scratch);
+  const effects = [];
   const id = (callback) => callbacks.push(callback) - 1;
   const runs = [];
   const buffer = new Uint32Array(4);
@@ -151,11 +153,13 @@ function rawGraph() {
     while (queue.length) {
       const tag = queue.shift();
       runs.push(tag);
-      if (graph.beginEffect(keys[tag])) {
+      const effect = effects[tag];
+      if (graph.beginEffect(effect.key)) {
+        let reads = 0;
         try {
-          callbacks[tag]();
+          reads = effect.run(scratch) ?? 0;
         } finally {
-          queue.push(...take(graph.endEffect(keys[tag])));
+          queue.push(...take(graph.endEffect(effect.key, reads)));
         }
       }
     }
@@ -164,12 +168,14 @@ function rawGraph() {
     graph,
     runs,
     run,
-    effect(callback) {
-      const tag = id(callback);
-      const key = graph.effect(tag);
-      keys[tag] = key;
+    scratch,
+    /** `body` may write signal keys into the scratch array and return how many. */
+    effect(body) {
+      const key = graph.effect();
+      const tag = key % 2 ** 32;
+      effects[tag] = { key, run: body };
       const due = take(1);
-      assert.deepEqual(due, [tag], 'An effect is due when made');
+      assert.deepEqual(due, [tag], 'An effect is due when made, reported by its slot index');
       runTags(due);
       return key;
     },
@@ -208,10 +214,28 @@ try {
   native.release(first);
   native.release(writer);
   assert.equal(native.beginEffect(first), false, 'A released effect cannot begin');
-  assert.equal(native.endEffect(first), 0);
+  assert.equal(native.endEffect(first, 0), 0);
   assert.throws(() => native.takeDue(new Float32Array(2)), /Uint32Array/);
   native.release(s);
   assert.deepEqual(native.stats(), { signals: 0, computeds: 0, effects: 0 });
+  // Reads reported through the scratch array subscribe as tracked ones do;
+  // keys that are not live signals are ignored.
+  const [p, q] = [native.signal(), native.signal()];
+  let reported = 0;
+  const reporter = raw.effect((scratch) => {
+    reported++;
+    scratch[0] = p;
+    scratch[1] = -7;
+    scratch[2] = 0.5;
+    return 3;
+  });
+  raw.run(native.notify(p));
+  raw.run(native.notify(q));
+  assert.equal(reported, 2);
+  native.release(reporter);
+  native.release(p);
+  native.release(q);
+  assert.throws(() => native.setScratch(new Float32Array(4)), /Float64Array/);
   // A reused slot gets a new generation, so a stale key cannot reach its successor.
   const reused = native.signal();
   assert.notEqual(reused, s);
@@ -390,6 +414,40 @@ try {
     /cycle/,
   );
   context.dispose();
+}
+// An effect that reads more signals than the scratch array holds subscribes to
+// all of them; reads in an effect, and peeks anywhere, make no native call.
+{
+  const context = api.createReactive();
+  const many = Array.from({ length: 700 }, (_, i) => context.signal(i));
+  let total = 0;
+  const calls = { track: 0, peek: 0 };
+  const proto = addon.NativeGraph.prototype;
+  const original = { track: proto.track, peek: proto.peek };
+  for (const name of ['track', 'peek']) {
+    proto[name] = function (...args) {
+      calls[name]++;
+      return original[name].apply(this, args);
+    };
+  }
+  try {
+    context.effect(() => {
+      total = many.reduce((sum, signal) => sum + signal.get(), 0);
+    });
+    many[699].set(0);
+    assert.equal(
+      total,
+      (699 * 700) / 2 - 699,
+      'The last signal past the first array is a dependency',
+    );
+    many[0].peek();
+    many[0].get();
+    assert.deepEqual(calls, { track: 0, peek: 0 });
+  } finally {
+    proto.track = original.track;
+    proto.peek = original.peek;
+    context.dispose();
+  }
 }
 console.log(
   'Native reactivity: branching, batching, identity, errors, nested effects and disposal passed',

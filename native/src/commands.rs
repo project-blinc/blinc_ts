@@ -231,7 +231,8 @@ impl NativeLayout {
                         border_color: take(PAINT_BORDER_COLOR, 4)?,
                         border_width: take(PAINT_BORDER_WIDTH, 1)?.map(|v| v[0]),
                         opacity: take(PAINT_OPACITY, 1)?.map(|v| v[0]),
-                        visible: (mask & PAINT_VISIBLE != 0).then_some(mask & PAINT_VISIBLE_ON != 0),
+                        visible: (mask & PAINT_VISIBLE != 0)
+                            .then_some(mask & PAINT_VISIBLE_ON != 0),
                         transform: take(PAINT_TRANSFORM, 6)?,
                         z_index: take(PAINT_Z_INDEX, 1)?.map(|v| v[0]),
                         shadows: None,

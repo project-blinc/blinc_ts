@@ -10,20 +10,27 @@ export interface GraphStats {
 }
 /**
  * @internal Native graph items are named by generation-checked numeric keys.
- * Computeds and effects name their callback by an id in the context's table.
- * The native graph calls the dispatcher with a computed's id while it
- * evaluates; effects are run here, by the ids of due effects that writes,
- * batches and effect creation leave for `takeDue`.
+ * A computed names its callback by an id in the context's table, and the
+ * native graph calls the dispatcher with it while it evaluates. An effect is
+ * named by its key; writes, batches and effect creation leave the slot
+ * indexes of due effects for `takeDue`, and JavaScript runs each between
+ * `beginEffect` and `endEffect`.
  */
 export interface NativeGraph {
   readonly disposed: boolean;
   signal(): number;
   computed(callback: number): number;
-  /** An effect named by `tag` when due; it is due at once. */
-  effect(tag: number): number;
+  /** An effect, reported by its key's low 32 bits when due; it is due at once. */
+  effect(): number;
   beginEffect(effect: number): boolean;
-  /** Calls that can make effects due return how many tags wait for `takeDue`. */
-  endEffect(effect: number): number;
+  /**
+   * Close a run, with the first `reads` keys of the scratch array as the
+   * signals it read. Calls that can make effects due return how many wait
+   * for `takeDue`.
+   */
+  endEffect(effect: number, reads: number): number;
+  /** Register the array effect runs write read signal keys into. */
+  setScratch(scratch: Float64Array): void;
   takeDue(target: Uint32Array): number;
   track(signal: number): void;
   peek(signal: number): void;
@@ -45,14 +52,26 @@ interface Evaluation {
 }
 let active: Evaluation | undefined;
 
-/** JavaScript values retain identity; Blinc owns dependency tracking and scheduling. */
+/**
+ * Signal values stay in JavaScript, keeping their identity. Blinc's native
+ * graph owns everything else: which signals each computed and effect depends
+ * on, subscriber order, what is dirty, and which effects are due and in what
+ * order. This side keeps no graph. While an effect runs it only notes the
+ * keys of the signals it reads, in one scratch array, and hands that list to
+ * the native graph when the run ends, instead of one native call per read.
+ */
 export class ReactiveContext implements Disposable {
   readonly #native: NativeGraph;
   readonly #owned = new Set<Disposable>();
-  /** Computed and effect callbacks by id; native code holds only the ids. */
+  /** Computed callbacks by id; native code holds only the ids. */
   readonly #callbacks: ((() => void) | undefined)[] = [];
   readonly #freeIds: number[] = [];
-  /** Due effects in the order they became due; a pass runs them all. */
+  /** Effects by the slot index the native graph reports them by when due. */
+  readonly #effects: (Effect | undefined)[] = [];
+  /** The keys of the signals the running effect has read so far, and how many. */
+  #scratch = new Float64Array(256);
+  #reads = 0;
+  /** The native graph's due effects, in its order, as this pass takes them. */
   readonly #due: number[] = [];
   #dueBuffer = new Uint32Array(64);
   #running = false;
@@ -61,7 +80,36 @@ export class ReactiveContext implements Disposable {
   /** @internal Use loadNative().createReactive(scope). */
   constructor(create: NativeGraphFactory, scope?: Scope) {
     this.#native = create((id) => this.#callbacks[id]?.());
+    this.#native.setScratch(this.#scratch);
     scope?.onCleanup(() => this.dispose());
+  }
+  /** @internal Start noting an effect run's reads. */
+  beginReads(): void {
+    this.#reads = 0;
+  }
+  /** @internal How many reads the run noted. */
+  get reads(): number {
+    return this.#reads;
+  }
+  /** @internal Note that the running effect read signal `key`. */
+  read(key: number): void {
+    const reads = this.#reads;
+    if (reads > 0 && this.#scratch[reads - 1] === key) {
+      return;
+    }
+    if (reads === this.#scratch.length) {
+      // Native code holds the array's address, so a larger one is registered again.
+      const larger = new Float64Array(reads * 2);
+      larger.set(this.#scratch);
+      this.#native.setScratch(larger);
+      this.#scratch = larger;
+    }
+    this.#scratch[reads] = key;
+    this.#reads = reads + 1;
+  }
+  /** @internal */
+  addEffect(index: number, effect: Effect | undefined): void {
+    this.#effects[index] = effect;
   }
   /** @internal */
   get native(): NativeGraph {
@@ -74,10 +122,10 @@ export class ReactiveContext implements Disposable {
     return id;
   }
   /**
-   * @internal Take the `waiting` due effects from native code, and run them
-   * and those they make due in
-   * one pass. Inside a pass or a batch they wait for it to end. Every due
-   * effect runs; the first error is thrown after the pass.
+   * @internal Take the `waiting` due effects from the native graph and run
+   * them, then the ones their runs make due, in one pass and in the graph's
+   * order. Inside a pass or a batch they wait for it to end. Every due effect
+   * runs; the first error is thrown after the pass.
    */
   schedule(waiting: number): void {
     if (waiting > 0) {
@@ -112,7 +160,7 @@ export class ReactiveContext implements Disposable {
           runs.set(id, count);
         }
         try {
-          this.#callbacks[id]?.();
+          this.#effects[id]?.run();
         } catch (error) {
           (errors ??= []).push(error);
         }
@@ -305,16 +353,22 @@ export class Signal<T> implements Disposable {
   }
   get(): T {
     this.#check();
-    if (active?.tracking === false) {
-      this.#context.native.peek(this.#key);
-    } else {
-      this.#context.native.track(this.#key);
+    // A computed's reads are tracked by the native graph as it evaluates; an
+    // effect's are noted for the end of its run. Elsewhere a read subscribes
+    // nothing, and the checks above are all it needs.
+    if (active?.tracking) {
+      if (active.computed) {
+        this.#context.native.track(this.#key);
+      } else {
+        this.#context.read(this.#key);
+      }
     }
     return this.#value as T;
   }
   peek(): T {
+    // This object and its context are disposed whenever the native signal is,
+    // so these checks stand in for a native one.
     this.#check();
-    this.#context.native.peek(this.#key);
     return this.#value as T;
   }
   set(value: T): void {
@@ -422,51 +476,53 @@ export class Computed<T> implements Disposable {
   }
 }
 
-/** One object per effect: its key, callback id and the scope of its current run. */
-/** One object per effect: its key, its callback id and the scope of its current run. */
+/** One object per effect: its key and the scope of its current run. */
 class Effect implements Disposable {
   readonly #context: ReactiveContext;
   readonly #run: (scope: Scope) => void;
-  readonly #id: number;
-  #key = -1;
+  readonly #key: number;
+  readonly #index: number;
   #current: Scope | undefined;
   #disposed = false;
   constructor(context: ReactiveContext, run: (scope: Scope) => void) {
     this.#context = context;
     this.#run = run;
-    this.#id = context.register(() => this.#tick());
-    try {
-      this.#key = context.native.effect(this.#id);
-    } catch (error) {
-      context.unregister(this.#id);
-      throw error;
-    }
+    this.#key = context.native.effect();
+    // The native graph reports a due effect by its key's low 32 bits.
+    this.#index = this.#key % 2 ** 32;
+    context.addEffect(this.#index, this);
     // Run now, or with the pass or batch this was created in.
     context.schedule(1);
   }
-  /** Run the effect between the native begin and end, which track what it reads. */
-  #tick(): void {
+  /**
+   * @internal Run the effect between the native begin and end. The end
+   * passes the signals it read; the native graph records them as its
+   * dependencies.
+   */
+  run(): void {
     if (this.#disposed || this.#context.disposed) {
       return;
     }
-    const native = this.#context.native;
+    const context = this.#context;
+    const native = context.native;
     if (!native.beginEffect(this.#key)) {
       return;
     }
+    context.beginReads();
     const first = this.#current === undefined;
     let failure: { error: unknown } | undefined;
     try {
-      this.#context.cleanup(this.#current);
+      context.cleanup(this.#current);
       const current = (this.#current = new Scope());
       try {
-        this.#context.evaluate(false, () => this.#run(current), current);
+        context.evaluate(false, () => this.#run(current), current);
       } catch (error) {
-        this.#context.cleanupAfterError(current, error);
+        context.cleanupAfterError(current, error);
       }
     } catch (error) {
       failure = { error };
     } finally {
-      this.#context.schedule(native.endEffect(this.#key));
+      context.schedule(native.endEffect(this.#key, context.reads));
     }
     if (failure) {
       // A first run that fails leaves no effect behind, as if creation failed.
@@ -488,7 +544,7 @@ class Effect implements Disposable {
     try {
       this.#context.native.release(this.#key);
     } finally {
-      this.#context.unregister(this.#id);
+      this.#context.addEffect(this.#index, undefined);
       // Cleanup remains valid while the context itself is being disposed.
       this.#context.cleanup(this.#current);
     }

@@ -580,12 +580,16 @@ preserve the original thrown value; other scheduled effects still run.
 Signals, computeds and effects are plain JavaScript objects holding a numeric
 key into the native graph; no native object is wrapped per item, and disposing
 an item frees its native memory at once rather than at a later finalizer. The
-callbacks of computeds and effects stay in a JavaScript table per context. The
-native graph calls one dispatcher function with a computed's id while it
-evaluates. Effects hold no native callback: writes, batches and new effects
-report how many effects are due, the context takes their ids in one call, and
-runs each in JavaScript between a native begin and end that record what it
-read. Writes an effect makes apply when its run ends, so an effect that writes
+callbacks of computeds stay in a JavaScript table per context, and the native
+graph calls one dispatcher function with a computed's id while it evaluates.
+Effects hold no native callback: writes, batches and new effects report how
+many effects are due, the context takes them in one call, and runs each in
+JavaScript between a native begin and end. While an effect runs, each signal
+read writes the signal's key into a scratch array the native graph registered
+once, with no native call, and the end hands the native graph that list as
+the run's reads. Blinc's graph keeps the dependencies, subscriptions,
+dirtiness and scheduling; JavaScript keeps only the current run's keys.
+`peek()`, and a read outside any computed or effect, make no native call. Writes an effect makes apply when its run ends, so an effect that writes
 what it read runs again in the same pass. `benchmarks/reactive-flush.mjs`
 measures the cost of running many due effects.
 `benchmarks/reactive-memory.mjs` measures process memory per item (macOS).

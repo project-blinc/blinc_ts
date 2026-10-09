@@ -80,13 +80,38 @@ fn key(index: usize, generation: u32) -> f64 {
     (u64::from(generation) << 32 | index as u64) as f64
 }
 
+/// The registered scratch array: its storage and a reference that keeps it alive.
+struct Scratch {
+    data: *const f64,
+    len: usize,
+    reference: sys::napi_ref,
+}
+impl Default for Scratch {
+    fn default() -> Self {
+        Self {
+            data: std::ptr::null(),
+            len: 0,
+            reference: std::ptr::null_mut(),
+        }
+    }
+}
+
 struct Owner {
     // Declared before `dispatch`, so the graph and its callbacks drop first.
     graph: GraphContext,
     slots: RefCell<Vec<Slot>>,
     free: RefCell<Vec<u32>>,
-    /// Tags of due effects, waiting for JavaScript to take them.
+    /// Slot indexes of due effects, waiting for JavaScript to take them.
     due: RefCell<Vec<u32>>,
+    /// Raw ids from the graph, reused between takes.
+    due_raw: RefCell<Vec<u64>>,
+    /// For each effect, by the graph's own index for it, our slot index.
+    effect_slots: RefCell<Vec<u32>>,
+    /// Signal keys an effect run read, written by JavaScript into a
+    /// Float64Array this context registered once (see `setScratch`).
+    scratch: RefCell<Scratch>,
+    /// Raw signal ids resolved from the scratch keys, reused between runs.
+    reads: RefCell<Vec<u64>>,
     /// Open batches: no effect becomes due inside one.
     batches: std::cell::Cell<u32>,
     /// Effect runs now open, innermost last, kept so a run whose effect was
@@ -158,7 +183,8 @@ impl Owner {
         let (index, generation) = ((raw & 0xffff_ffff) as usize, (raw >> 32) as u32);
         let slots = self.slots.borrow();
         let slot = slots.get(index)?;
-        (slot.generation == generation && !matches!(slot.item, Item::Free)).then(|| read(&slot.item))
+        (slot.generation == generation && !matches!(slot.item, Item::Free))
+            .then(|| read(&slot.item))
     }
     /// Free the slot `key` names, returning its item; `None` if already freed.
     fn take(&self, key: f64) -> Option<Item> {
@@ -211,6 +237,10 @@ impl NativeGraph {
                 slots: RefCell::new(Vec::new()),
                 free: RefCell::new(Vec::new()),
                 due: RefCell::new(Vec::new()),
+                due_raw: RefCell::new(Vec::new()),
+                effect_slots: RefCell::new(Vec::new()),
+                scratch: RefCell::new(Scratch::default()),
+                reads: RefCell::new(Vec::new()),
                 batches: std::cell::Cell::new(0),
                 runs: RefCell::new(Vec::new()),
                 dispatch: Box::new(Dispatch {
@@ -238,13 +268,21 @@ impl NativeGraph {
             .map_err(error)?;
         Ok(self.owner.insert(Item::Computed(key)))
     }
-    /// Collect the tags of the effects now due, returning how many wait for `takeDue`.
+    /// Collect the effects now due, returning how many wait for `takeDue`.
     fn due(&self) -> Result<u32> {
-        let mut due = self.owner.due.borrow_mut();
+        let mut raw = self.owner.due_raw.borrow_mut();
+        raw.clear();
         self.owner
             .graph
-            .take_due_host_effects(&mut due)
+            .take_due_host_effects(&mut raw)
             .map_err(error)?;
+        let slots = self.owner.effect_slots.borrow();
+        let mut due = self.owner.due.borrow_mut();
+        // The graph's index for an effect is the low half of its raw id.
+        due.extend(
+            raw.iter()
+                .filter_map(|&id| slots.get((id & 0xffff_ffff) as usize).copied()),
+        );
         Ok(due.len() as u32)
     }
     /// Move up to `target.length` waiting due tags into `target`, oldest
@@ -263,15 +301,70 @@ impl NativeGraph {
             })
         }
     }
-    /// An effect reported by `tag` when due. It is due at once: its tag
-    /// waits for `takeDue`.
+    /// An effect. Its slot index (the key's low 32 bits) is what `takeDue`
+    /// reports when it is due, which it is at once.
     #[napi]
-    pub fn effect(&self, tag: u32) -> Result<f64> {
+    pub fn effect(&self) -> Result<f64> {
         self.owner.check()?;
-        let key = self.owner.graph.host_effect(tag).map_err(error)?;
-        let key = self.owner.insert(Item::Effect(key));
+        let effect = self.owner.graph.host_effect().map_err(error)?;
+        let key = self.owner.insert(Item::Effect(effect));
+        let index = (effect.raw() & 0xffff_ffff) as usize;
+        let mut slots = self.owner.effect_slots.borrow_mut();
+        if slots.len() <= index {
+            slots.resize(index + 1, u32::MAX);
+        }
+        slots[index] = (key as u64 & 0xffff_ffff) as u32;
+        drop(slots);
         self.due()?;
         Ok(key)
+    }
+    /// Register `scratch`, a Float64Array that effect runs write the keys of
+    /// the signals they read into. Native code keeps its address and a
+    /// reference; a larger array is registered the same way, replacing it.
+    #[napi]
+    pub fn set_scratch(&self, env: Env, scratch: Unknown<'_>) -> Result<()> {
+        self.owner.check()?;
+        let (mut kind, mut len, mut data, mut buffer, mut offset) =
+            (0, 0, std::ptr::null_mut(), std::ptr::null_mut(), 0);
+        let mut reference = std::ptr::null_mut();
+        unsafe {
+            check_status!(sys::napi_get_typedarray_info(
+                env.raw(),
+                scratch.raw(),
+                &mut kind,
+                &mut len,
+                &mut data,
+                &mut buffer,
+                &mut offset,
+            ))
+            .map_err(|_| error("Expected a Float64Array"))?;
+            if kind != sys::TypedarrayType::float64_array {
+                return Err(error("Expected a Float64Array"));
+            }
+            let mut ordinary = false;
+            check_status!(sys::napi_is_arraybuffer(env.raw(), buffer, &mut ordinary))?;
+            if !ordinary {
+                return Err(error("Shared scratch storage is not supported"));
+            }
+            check_status!(sys::napi_create_reference(
+                env.raw(),
+                scratch.raw(),
+                1,
+                &mut reference
+            ))?;
+        }
+        let old = std::mem::replace(
+            &mut *self.owner.scratch.borrow_mut(),
+            Scratch {
+                data: data.cast(),
+                len,
+                reference,
+            },
+        );
+        if !old.reference.is_null() {
+            unsafe { sys::napi_delete_reference(env.raw(), old.reference) };
+        }
+        Ok(())
     }
     /// Track the JavaScript run of effect `key`. False if it was released.
     #[napi]
@@ -289,20 +382,46 @@ impl NativeGraph {
         }
         Ok(begun)
     }
-    /// Close effect `key`'s run. Writes it made apply now, at the outermost
-    /// run; returns how many due tags wait for `takeDue`.
+    /// Close effect `key`'s run, with the first `reads` keys of the scratch
+    /// array as signals it read, beside those tracked natively (through
+    /// computeds). Writes it made apply now, at the outermost run; returns
+    /// how many due effects wait for `takeDue`.
     #[napi]
-    pub fn end_effect(&self, key: f64) -> Result<u32> {
+    pub fn end_effect(&self, key: f64, reads: u32) -> Result<u32> {
         if self.owner.graph.is_disposed() {
             return Ok(0);
         }
         self.owner.check()?;
-        let open = self.owner.runs.borrow().iter().rposition(|&(k, _)| k == key);
+        let open = self
+            .owner
+            .runs
+            .borrow()
+            .iter()
+            .rposition(|&(k, _)| k == key);
         if let Some(at) = open {
             let effect = self.owner.runs.borrow()[at].1;
             // Runs opened inside this one and never closed close with it.
             self.owner.runs.borrow_mut().truncate(at);
-            self.owner.finish(self.owner.graph.end_effect(effect))?;
+            let mut raw = self.owner.reads.borrow_mut();
+            raw.clear();
+            {
+                let scratch = self.owner.scratch.borrow();
+                let count = (reads as usize).min(scratch.len);
+                // SAFETY: the reference keeps the array alive, its storage is
+                // not shared, and no JavaScript runs while it is read.
+                let keys = if count == 0 {
+                    &[][..]
+                } else {
+                    unsafe { std::slice::from_raw_parts(scratch.data, count) }
+                };
+                for &read in keys {
+                    if let Ok(signal) = self.owner.signal(read) {
+                        raw.push(signal.raw());
+                    }
+                }
+            }
+            self.owner
+                .finish(self.owner.graph.end_effect_with_reads(effect, &raw))?;
         }
         if self.owner.holding() {
             return Ok(0);
@@ -400,6 +519,11 @@ impl NativeGraph {
         self.owner.slots.borrow_mut().clear();
         self.owner.free.borrow_mut().clear();
         self.owner.due.borrow_mut().clear();
+        self.owner.effect_slots.borrow_mut().clear();
+        let scratch = std::mem::take(&mut *self.owner.scratch.borrow_mut());
+        if !scratch.reference.is_null() {
+            unsafe { sys::napi_delete_reference(self.owner.dispatch.env, scratch.reference) };
+        }
         self.owner.runs.borrow_mut().clear();
         self.owner.batches.set(0);
         self.owner.dispatch.errors.borrow_mut().clear();
