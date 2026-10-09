@@ -226,6 +226,7 @@ export interface NativeLayout extends BrushFactory {
   cssIntern(names: string[]): Uint32Array;
   cssRestyle(root: NativeLayoutNode): {
     errors: string[];
+    restyled: number;
     nodes: Uint32Array;
     counts: Uint32Array;
     names: string[];
@@ -251,6 +252,8 @@ export interface CssDiagnostic {
 export interface Restyled {
   /** Declarations that could not be applied, as `property: value: reason`. */
   readonly errors: readonly string[];
+  /** How many nodes the restyle matched again. */
+  readonly matched: number;
   /** By node id: the paint and text declarations that apply to it now, `var()`s resolved. */
   readonly nodes: ReadonlyMap<bigint, readonly (readonly [property: string, value: string])[]>;
 }
@@ -552,7 +555,7 @@ export class Layout {
       }
       nodes.set(id, declarations);
     }
-    const restyled: Restyled = { errors: r.errors, nodes };
+    const restyled: Restyled = { errors: r.errors, nodes, matched: r.restyled };
     if (this.#restyleListeners.size === 0) {
       for (const error of r.errors) {
         console.warn(`CSS: ${error}`);

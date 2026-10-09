@@ -179,6 +179,8 @@ pub struct NativeSheet {
 pub struct NativeRestyle {
     /// Declarations that could not be applied, as `property: value: reason`.
     pub errors: Vec<String>,
+    /// How many nodes the restyle matched again.
+    pub restyled: u32,
     /// Nodes whose paint and text declarations changed: raw ids, low then high word.
     pub nodes: Uint32Array,
     /// How many declarations each of `nodes` has now, in `names` and `values`.
@@ -407,6 +409,7 @@ impl NativeLayout {
         }
         Ok(NativeRestyle {
             errors,
+            restyled: state.styles.last_restyled() as u32,
             nodes: Uint32Array::new(nodes),
             counts: Uint32Array::new(counts),
             names,
@@ -415,12 +418,15 @@ impl NativeLayout {
     }
 }
 
-/// An element read from the command buffer: atoms, as `cssIntern` gave them.
-pub(crate) fn element(words: &mut impl FnMut() -> Result<u32>) -> Result<Element> {
-    let atom = |w: u32| Atom(w);
+/// An element read from the command buffer: names as atoms, as `cssIntern`
+/// gave them; inline values as indexes into the batch's strings.
+pub(crate) fn element(
+    words: &mut impl FnMut() -> Result<u32>,
+    strings: &[String],
+) -> Result<Element> {
     let mut list = |words: &mut dyn FnMut() -> Result<u32>| -> Result<Vec<Atom>> {
         let n = words()?;
-        (0..n).map(|_| words().map(atom)).collect()
+        (0..n).map(|_| words().map(Atom)).collect()
     };
     let types = list(words)?;
     let id = match words()? {
@@ -428,14 +434,20 @@ pub(crate) fn element(words: &mut impl FnMut() -> Result<u32>) -> Result<Element
         w => Some(Atom(w)),
     };
     let classes = list(words)?;
-    let mut pairs = |words: &mut dyn FnMut() -> Result<u32>| -> Result<Vec<(Atom, Atom)>> {
-        let n = words()?;
-        (0..n)
-            .map(|_| Ok((Atom(words()?), Atom(words()?))))
-            .collect()
-    };
-    let attributes = pairs(words)?;
-    let inline = pairs(words)?;
+    let n = words()?;
+    let attributes = (0..n)
+        .map(|_| Ok((Atom(words()?), Atom(words()?))))
+        .collect::<Result<Vec<_>>>()?;
+    let n = words()?;
+    let inline = (0..n)
+        .map(|_| {
+            let name = Atom(words()?);
+            let value = strings
+                .get(words()? as usize)
+                .ok_or_else(|| error("Element names no string"))?;
+            Ok((name, value.clone()))
+        })
+        .collect::<Result<Vec<_>>>()?;
     let anonymous = words()? != 0;
     Ok(Element {
         types,
@@ -456,11 +468,8 @@ impl OwnedLayout {
         let ok = element.types.iter().all(|a| a.0 < n)
             && element.id.is_none_or(|a| a.0 < n)
             && element.classes.iter().all(|a| a.0 < n)
-            && element
-                .attributes
-                .iter()
-                .chain(&element.inline)
-                .all(|(a, b)| a.0 < n && b.0 < n);
+            && element.attributes.iter().all(|(a, b)| a.0 < n && b.0 < n)
+            && element.inline.iter().all(|(a, _)| a.0 < n);
         if ok {
             Ok(())
         } else {

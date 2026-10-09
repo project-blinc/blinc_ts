@@ -793,11 +793,12 @@ export class Host {
       }
       const attributes = [...node.attributeEntries].filter(([name]) => name !== 'style');
       const inline = [...node.style];
+      // Names cross as atoms; inline values are free text.
       const names = [
         node.tag,
         ...node.classList,
         ...attributes.flat(),
-        ...inline.flat(),
+        ...inline.map(([name]) => name),
         ...(node.id ? [node.id] : []),
       ];
       const atoms = this.layout.intern(names);
@@ -806,7 +807,7 @@ export class Host {
       const types = [next()];
       const classes = [...node.classList].map(next);
       const attributePairs = attributes.map(() => [next(), next()] as const);
-      const inlinePairs = inline.map(() => [next(), next()] as const);
+      const inlinePairs = inline.map(([, value]) => [next(), value] as const);
       const id = node.id ? next() : -1;
       node.layoutNode.queueElement({
         types,

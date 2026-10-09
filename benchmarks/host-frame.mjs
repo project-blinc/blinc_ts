@@ -1,7 +1,8 @@
 // Native calls and time per frame for host edits on a few thousand nodes.
 // Run: node benchmarks/host-frame.mjs. Each frame repaints and retexts a tenth of
-// the cells, moves a few cells between rows, and lays out; it counts every call
-// into the addon's layout objects made while the frame runs.
+// the cells (each to a value it did not hold), moves a few cells between rows,
+// and lays out; it counts every call into the addon's layout objects made while
+// the frame runs, and how many nodes the CSS restyle matched again.
 import { createRequire } from 'node:module';
 import { loadNative } from '../dist/native/index.js';
 import { Host } from '../dist/native/host.js';
@@ -30,6 +31,8 @@ for (const cls of [addon.NativeLayout, addon.NativeLayoutNode]) {
 const ROWS = 30;
 const CELLS = 100;
 const host = Host.create(native);
+let matched = 0;
+host.layout.onRestyle((restyled) => (matched += restyled.matched));
 const rows = [];
 const cells = [];
 const labels = [];
@@ -50,7 +53,7 @@ host.compute(1200, 800);
 const nodes = ROWS * CELLS * 2 + ROWS + 1;
 function frame(n) {
   for (let i = n % 10; i < cells.length; i += 10) {
-    cells[i].setProperty('background', n % 2 ? '#336699' : '#993366');
+    cells[i].setProperty('background', Math.floor(n / 10) % 2 ? '#336699' : '#993366');
     labels[i].data = `${i}:${n}`;
   }
   for (let r = 0; r < ROWS; r++) {
@@ -65,6 +68,7 @@ for (let n = 0; n < 5; n++) {
 }
 const samples = [];
 calls = 0;
+matched = 0;
 for (const key of Object.keys(counted)) {
   delete counted[key];
 }
@@ -80,6 +84,7 @@ console.log(
     nodes,
     editsPerFrame: { paint: cells.length / 10, text: cells.length / 10, moves: ROWS },
     nativeCallsPerFrame: calls / FRAMES,
+    restyledPerFrame: matched / FRAMES,
     byMethod: Object.fromEntries(Object.entries(counted).map(([k, v]) => [k, v / FRAMES])),
     medianMs: Number(samples[FRAMES >> 1].toFixed(3)),
   }),

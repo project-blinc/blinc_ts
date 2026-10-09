@@ -26,7 +26,8 @@ export interface QueuedElement {
   id: number;
   classes: readonly number[];
   attributes: readonly (readonly [name: number, value: number])[];
-  inline: readonly (readonly [name: number, value: number])[];
+  /** Property names as atoms; values as text. */
+  inline: readonly (readonly [name: number, value: string])[];
   anonymous: boolean;
 }
 
@@ -298,7 +299,11 @@ export class CommandQueue {
           words.push(e.types.length, ...e.types, e.id < 0 ? 0xffffffff : e.id);
           words.push(e.classes.length, ...e.classes);
           words.push(e.attributes.length, ...e.attributes.flat());
-          words.push(e.inline.length, ...e.inline.flat(), e.anonymous ? 1 : 0);
+          words.push(e.inline.length);
+          for (const [name, value] of e.inline) {
+            words.push(name, strings.push(value) - 1);
+          }
+          words.push(e.anonymous ? 1 : 0);
           layout = true;
           break;
         }

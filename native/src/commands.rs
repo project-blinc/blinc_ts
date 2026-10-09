@@ -280,7 +280,7 @@ impl NativeLayout {
                 }
                 ELEMENT => {
                     let node = r.node(&tree)?;
-                    let element = crate::css::element(&mut || r.word())?;
+                    let element = crate::css::element(&mut || r.word(), &strings)?;
                     self.owner.check_atoms(&element)?;
                     self.owner.styles.borrow_mut().set_element(node, element);
                 }
