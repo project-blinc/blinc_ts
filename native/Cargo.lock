@@ -209,6 +209,7 @@ dependencies = [
  "blinc_layout",
  "blinc_svg",
  "blinc_text",
+ "rustc-hash 2.1.3",
  "swash",
  "taffy",
 ]

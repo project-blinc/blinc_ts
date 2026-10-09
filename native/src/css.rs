@@ -65,8 +65,10 @@ impl StyleState {
     }
 }
 
-/// Tree edits that also tell the cascade what moved, so structural
-/// selectors and inheritance are matched again where they could change.
+/// Tree edits that also tell the cascade what moved: a child under a new
+/// parent is `moved`, and a parent that gained, lost or reordered children
+/// has its children changed, so the cascade matches again only what that
+/// can reach.
 pub(crate) fn insert(
     tree: &mut LayoutContext,
     styles: &mut StyleState,
@@ -76,10 +78,13 @@ pub(crate) fn insert(
 ) -> std::result::Result<(), &'static str> {
     let old = tree.parent(child)?;
     tree.insert_before(parent, child, before)?;
-    if let Some(old) = old.filter(|&old| old != parent) {
-        styles.styles.moved(old);
+    if old != Some(parent) {
+        styles.styles.moved(child);
+        if let Some(old) = old {
+            styles.styles.children_changed(old);
+        }
     }
-    styles.styles.moved(parent);
+    styles.styles.children_changed(parent);
     Ok(())
 }
 pub(crate) fn detach(
@@ -89,10 +94,10 @@ pub(crate) fn detach(
 ) -> std::result::Result<(), &'static str> {
     let parent = tree.parent(node)?;
     tree.detach(node)?;
+    // Placed again later, it is moved then.
     if let Some(parent) = parent {
-        styles.styles.moved(parent);
+        styles.styles.children_changed(parent);
     }
-    styles.styles.moved(node);
     Ok(())
 }
 pub(crate) fn remove(
@@ -114,7 +119,7 @@ pub(crate) fn remove(
         styles.resolved.remove(&n.raw());
     }
     if let Some(parent) = parent {
-        styles.styles.moved(parent);
+        styles.styles.children_changed(parent);
     }
     Ok(())
 }
@@ -124,19 +129,21 @@ pub(crate) fn set_children(
     parent: Node,
     children: &[Node],
 ) -> std::result::Result<(), &'static str> {
-    let mut old = Vec::new();
+    let mut arrived = Vec::new();
     for &child in children {
-        if let Some(p) = tree.parent(child)?
-            && p != parent
-        {
-            old.push(p);
+        let p = tree.parent(child)?;
+        if p != Some(parent) {
+            arrived.push((child, p));
         }
     }
     tree.set_children(parent, children)?;
-    for p in old {
-        styles.styles.moved(p);
+    for (child, old) in arrived {
+        styles.styles.moved(child);
+        if let Some(old) = old {
+            styles.styles.children_changed(old);
+        }
     }
-    styles.styles.moved(parent);
+    styles.styles.children_changed(parent);
     Ok(())
 }
 
