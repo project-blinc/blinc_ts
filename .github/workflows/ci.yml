@@ -68,6 +68,7 @@ jobs:
         with:
           workspaces: deps/blinc_ts/native -> target
           shared-key: native-linux
+          cache-on-failure: true
       - name: Native window and software GPU dependencies
         run: |
           sudo apt-get update
@@ -86,4 +87,5 @@ jobs:
         with:
           name: native-${{ matrix.display }}-diagnostics
           path: deps/blinc_ts/.blinc/
-          if-no-files-found: ignore
+          if-no-files-found: error
+          include-hidden-files: true

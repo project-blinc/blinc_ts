@@ -408,3 +408,8 @@ from component names.
 CI runs the native suite on software Vulkan under both X11 and Wayland, with
 pinned binding dependencies. These jobs include snapshots, resource ownership,
 idle wake/deadline delivery, multiple windows, snapshot watch recovery and HMR.
+
+The common reference tolerance remains two channel levels. The layered 2×
+software-Vulkan capture additionally permits one pixel at delta three, while
+reporting that pixel in its saved diff. Larger deltas or more outlying pixels
+still fail. CI uploads the captures and motion/debug diagnostics on failure.
