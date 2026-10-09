@@ -124,7 +124,8 @@ export class ReactiveContext implements Disposable {
     this.own(value, scope);
     return value;
   }
-  #cleanup(scope: Scope | undefined): void {
+  /** @internal */
+  cleanup(scope: Scope | undefined): void {
     const previous = active;
     active = { context: this, computed: false, tracking: false };
     try {
@@ -133,9 +134,10 @@ export class ReactiveContext implements Disposable {
       active = previous;
     }
   }
-  #cleanupAfterError(scope: Scope | undefined, error: unknown): never {
+  /** @internal */
+  cleanupAfterError(scope: Scope | undefined, error: unknown): never {
     try {
-      this.#cleanup(scope);
+      this.cleanup(scope);
     } catch (cleanupError) {
       throw new AggregateError([error, cleanupError], 'Effect and cleanup failed', {
         cause: cleanupError,
@@ -145,46 +147,7 @@ export class ReactiveContext implements Disposable {
   }
   effect(run: (scope: Scope) => void, scope?: Scope): Disposable {
     this.check(true);
-    let current: Scope | undefined;
-    let disposed = false;
-    let key = -1;
-    const id = this.register(() => {
-      if (disposed || this.#disposed) {
-        return;
-      }
-      this.#cleanup(current);
-      current = new Scope();
-      try {
-        this.evaluate(false, () => run(current!), current);
-      } catch (error) {
-        this.#cleanupAfterError(current, error);
-      }
-    });
-    try {
-      key = this.#native.effect(id);
-    } catch (error) {
-      this.unregister(id);
-      this.#cleanupAfterError(current, error);
-    }
-    const effect: Disposable = {
-      dispose: () => {
-        if (disposed) {
-          return;
-        }
-        if (!this.#disposed) {
-          this.check(true);
-        }
-        disposed = true;
-        this.forget(effect);
-        try {
-          this.#native.release(key);
-        } finally {
-          this.unregister(id);
-          // Cleanup remains valid while the context itself is being disposed.
-          this.#cleanup(current);
-        }
-      },
-    };
+    const effect = new Effect(this, run);
     this.own(effect, scope);
     return effect;
   }
@@ -389,6 +352,56 @@ export class Computed<T> implements Disposable {
       this.#context.native.release(this.#key);
     } finally {
       this.#context.unregister(this.#id);
+    }
+  }
+}
+
+/** One object per effect: its key, callback id and the scope of its current run. */
+class Effect implements Disposable {
+  readonly #context: ReactiveContext;
+  readonly #run: (scope: Scope) => void;
+  readonly #id: number;
+  #key = -1;
+  #current: Scope | undefined;
+  #disposed = false;
+  constructor(context: ReactiveContext, run: (scope: Scope) => void) {
+    this.#context = context;
+    this.#run = run;
+    this.#id = context.register(() => this.#tick());
+    try {
+      this.#key = context.native.effect(this.#id);
+    } catch (error) {
+      context.unregister(this.#id);
+      context.cleanupAfterError(this.#current, error);
+    }
+  }
+  #tick(): void {
+    if (this.#disposed || this.#context.disposed) {
+      return;
+    }
+    this.#context.cleanup(this.#current);
+    const current = (this.#current = new Scope());
+    try {
+      this.#context.evaluate(false, () => this.#run(current), current);
+    } catch (error) {
+      this.#context.cleanupAfterError(current, error);
+    }
+  }
+  dispose(): void {
+    if (this.#disposed) {
+      return;
+    }
+    if (!this.#context.disposed) {
+      this.#context.check(true);
+    }
+    this.#disposed = true;
+    this.#context.forget(this);
+    try {
+      this.#context.native.release(this.#key);
+    } finally {
+      this.#context.unregister(this.#id);
+      // Cleanup remains valid while the context itself is being disposed.
+      this.#context.cleanup(this.#current);
     }
   }
 }
