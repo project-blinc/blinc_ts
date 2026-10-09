@@ -25,6 +25,27 @@ export { ReactiveContext, Signal, Computed } from './reactive.js';
 export type { GraphStats, Disposable } from './reactive.js';
 import type { Scope } from '../hmr.js';
 import { Layout, type NativeLayout } from './layout.js';
+import {
+  TextMeasurement,
+  toInlineLayout,
+  type InlineAlign,
+  type InlineItem,
+  type InlineLayout,
+  type NativeText,
+} from './text.js';
+import type { TextStyle } from './scene.js';
+export { TextMeasurement } from './text.js';
+export { Paragraph } from './paragraph.js';
+export type { ParagraphRun } from './paragraph.js';
+export type {
+  Caret,
+  TextLine,
+  InlineAlign,
+  InlineItem,
+  InlineFragment,
+  InlineLine,
+  InlineLayout,
+} from './text.js';
 export { Layout, LayoutNode, HitCache } from './layout.js';
 export type {
   LayoutStyle,
@@ -65,6 +86,8 @@ interface Addon {
   decodeImage(bytes: Uint8Array): NativeImage;
   rasterizeSvg(markup: string, width: number, height: number): NativeImage;
   NativeLayout: new () => NativeLayout;
+  measureText: NativeText['measureText'];
+  layoutInline: NativeText['layoutInline'];
   NativeGraph: new (dispatch: (callback: number) => void) => NativeGraph;
   buildProfile(): string;
   gpuCall: NativeBinding['call'];
@@ -104,6 +127,14 @@ export interface NativeBindings {
   rasterizeSvg(markup: string, width: number, height: number, scope?: Scope): ImageResource;
   readonly buildProfile: string;
   createLayout(scope?: Scope): Layout;
+  /** `text` in `style`, laid out as it is drawn; with `wrapWidth`, wrapped at it. */
+  measureText(text: string, style?: TextStyle, wrapWidth?: number): TextMeasurement;
+  /** A paragraph of differently styled runs and boxes laid out as one flow `width` wide. */
+  layoutInline(
+    items: readonly InlineItem[],
+    width: number,
+    options?: { align?: InlineAlign; breakWords?: boolean },
+  ): InlineLayout;
   createReactive(scope?: Scope): ReactiveContext;
   gpu: GpuBindings;
   window: WindowBindings;
@@ -130,6 +161,10 @@ export function loadNative(
     rasterizeSvg: (markup, width, height, scope) =>
       new ImageResource(addon.rasterizeSvg(markup, width, height), scope),
     createLayout: (scope?: Scope) => new Layout(new addon.NativeLayout(), scope),
+    measureText: (text, style = {}, wrapWidth) =>
+      new TextMeasurement(text, addon.measureText(text, style, wrapWidth)),
+    layoutInline: (items, width, options = {}) =>
+      toInlineLayout(addon, items, width, options.align ?? 'left', options.breakWords ?? false),
     createReactive: (scope?: Scope) =>
       new ReactiveContext((dispatch) => new addon.NativeGraph(dispatch), scope),
     gpu: bindGpu({ call: addon.gpuCall }),

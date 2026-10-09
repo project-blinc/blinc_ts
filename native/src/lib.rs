@@ -17,6 +17,7 @@ mod layout_values;
 mod reactive;
 mod scene;
 mod scene_values;
+mod text;
 mod window;
 
 #[napi_derive::napi]

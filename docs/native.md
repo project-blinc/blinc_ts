@@ -230,6 +230,30 @@ updates and deterministic captures at both 1× and 2×. `tests/native-layers.mjs
 checks nested opacity, filters, drop shadows, transformed gradient masks and
 backdrops within layers, including clearing effects and resizing targets.
 
+## Measuring text and inline runs
+
+`measureText(text, style, wrapWidth?)` lays text out as the renderer draws
+it, without a layout tree: its lines (each a UTF-16 range and a width), the
+line height, the font's ascender and descender, and every place a caret can
+stand. `caretAt(index)` finds the caret before an index, and
+`caretNear(x, y)` the one nearest a point, for hit-testing a click.
+
+```ts
+const native = loadNative();
+const m = native.measureText('Hello world', { fontSize: 16 }, 80);
+m.lineCount; // 2 when the words do not fit on one line of 80
+m.caretNear(30, 0); // { index, x, line }
+```
+
+`layoutInline(items, width, { align, breakWords })` lays a paragraph of text
+runs in different styles, inline boxes and line breaks out as one flow: they
+wrap together at the width, each line's pieces sit on one baseline, and lines
+are aligned left, centre, right or justified. Whitespace collapses as HTML's
+does. A word longer than the line breaks inside only with `breakWords`. The
+result gives each line's part of each run as a fragment with its position,
+and the paragraph's natural and minimum widths. `Paragraph` shows a layout's
+runs as text nodes placed under one layout node, sized to its height.
+
 ## Drawing a scene
 
 `SceneRenderer` draws an owned layout into a texture view or window surface.

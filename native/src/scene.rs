@@ -185,7 +185,7 @@ impl TextStyle {
         Ok(text)
     }
 }
-fn default_text() -> TextMeasureContext {
+pub(crate) fn default_text() -> TextMeasureContext {
     TextMeasureContext {
         content: String::new(),
         font_size: 16.0,
