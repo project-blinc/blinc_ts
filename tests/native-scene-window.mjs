@@ -78,7 +78,14 @@ try {
   assert.equal(computes, beforeLayout + 1, 'Geometry changes recompute layout once');
   host.window.setVisible(false);
   demo.glass.setPaint({ opacity: 1 });
-  assert.equal(host.render(), false, 'Hidden windows defer drawing');
+  if (process.platform === 'linux' && host.window.platform() === 4) {
+    // xwindow platform 4 is Wayland: winit cannot hide its toplevels.
+    assert.equal(host.window.isVisible(), true);
+    assert.equal(host.render(), true, 'Unsupported hiding must not suspend a visible surface');
+  } else {
+    assert.equal(host.window.isVisible(), false, 'The native window is hidden');
+    assert.equal(host.render(), false, 'Hidden windows defer drawing');
+  }
   host.window.setVisible(true);
   const atResize = host.frames;
   host.window.setSize(760, 520);

@@ -72,7 +72,7 @@ jobs:
       - name: Native window and software GPU dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev libxcursor-dev mesa-vulkan-drivers xvfb xauth openbox sway
+          sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-0 libwayland-dev libx11-dev libxrandr-dev libxi-dev libxcursor-dev mesa-vulkan-drivers xvfb xauth openbox sway
       - run: npm ci
       - run: npm run build
       - run: npm run build:native

@@ -17,7 +17,11 @@ export XDG_RUNTIME_DIR
 XDG_RUNTIME_DIR=$(mktemp -d)
 trap 'kill "${compositor:-}" 2>/dev/null || true; rm -rf "$XDG_RUNTIME_DIR"' EXIT
 mkdir -p .blinc
-printf 'output HEADLESS-1 resolution 1280x800\n' > "$XDG_RUNTIME_DIR/sway.conf"
+cat > "$XDG_RUNTIME_DIR/sway.conf" <<'SWAY'
+output HEADLESS-1 resolution 1280x800
+# Let native resize requests take effect; tiling deliberately overrides them.
+for_window [title=".*"] floating enable
+SWAY
 WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman \
   sway -c "$XDG_RUNTIME_DIR/sway.conf" > .blinc/sway.log 2>&1 & compositor=$!
 for _ in $(seq 100); do
