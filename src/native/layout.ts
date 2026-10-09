@@ -172,6 +172,7 @@ export interface NativeLayoutNode {
   insertBefore(child: NativeLayoutNode, before: NativeLayoutNode | null | undefined): void;
   removeChild(child: NativeLayoutNode): void;
   detach(): void;
+  contentSize(): number[];
   remove(): void;
 }
 /** @internal */
@@ -564,6 +565,16 @@ export class LayoutNode {
     this.#layout.flush();
     this.#native.removeChild(LayoutNode.unwrap(child, this.#layout));
     this.#layout.changed('layout');
+  }
+
+  /**
+   * How far laid-out content reaches, right and down from this node's
+   * top-left, after compute: past its size when content overflows.
+   */
+  contentSize(): [width: number, height: number] {
+    this.#layout.flush();
+    const [width, height] = this.#native.contentSize();
+    return [width!, height!];
   }
 
   /** Take this node out of its parent, keeping it valid. */

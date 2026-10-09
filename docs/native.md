@@ -424,9 +424,32 @@ host.mount(windowHost, { scope });
   the CSS cascade.
 - **Events.** `addEventListener` and `removeEventListener` take `capture`,
   `once`, `passive` and `signal`. `dispatchEvent` runs the capture, target and
-  bubble phases. `host.dispatchPointer` sends a pointer event to the element
-  under a point, and a press and release over one element also send `click`.
-  A mounted host routes the window's pointer and wheel input this way.
+  bubble phases, with `stopPropagation`, `stopImmediatePropagation` and
+  `preventDefault`.
+- **Input.** `host.input` takes what a window reports and dispatches it. A
+  mounted host feeds it from the window; tests and other hosts call it
+  directly.
+  - Pointer: `pointermove`, with `pointerenter`, `pointerleave`, `pointerover`
+    and `pointerout` as hover changes; `pointerdown` and `pointerup`; `click`
+    on the deepest element both the press and the release were over, with
+    `detail` counting quick presses, and `dblclick`. Elements with a `disabled`
+    attribute take no presses. `setPointerCapture` sends later pointer events
+    to one element until release.
+  - Focus: a press focuses the nearest focusable element (a `tabindex`, or a
+    built-in control), and Tab and Shift+Tab move through them, positive
+    `tabindex` values first. `focus`, `blur`, `focusin` and `focusout` follow
+    the DOM. `input.trapFocus(element)` keeps Tab inside a dialog.
+  - Keys: `keydown` and `keyup` go to the focused element, or the root, with
+    the DOM's `key` and `code` names and the modifiers. Unless cancelled, Enter
+    and Space click the focused element. Typed text arrives as `textinput`, and
+    input-method composition as `compositionstart`, `compositionupdate` and
+    `compositionend`.
+  - Wheel: unless cancelled, the innermost element whose `overflow` is
+    `scroll` or `auto` scrolls within its content, and what it cannot take
+    passes to the containers around it. Each scroll dispatches `scroll`.
+  - State: `element.interaction` holds hover, active, focus, focus-visible and
+    focus-within, and `input.onInteraction` reports each change, as the CSS
+    cascade needs for its pseudo-classes.
 - **Reading back.** `node.bounds()` lays out if an edit is pending and returns
   absolute bounds. `host.elementAt(x, y)` hit-tests.
 - **Batching.** Writes in one tick coalesce: paint and text per node, and layout

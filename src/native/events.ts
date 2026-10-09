@@ -148,6 +148,7 @@ export interface HostPointerEventInit extends HostEventInit {
   deltaX?: number;
   deltaY?: number;
   detail?: number;
+  modifiers?: { shift: boolean; control: boolean; alt: boolean; meta: boolean };
 }
 export class HostPointerEvent extends HostEvent {
   readonly x: number;
@@ -158,6 +159,10 @@ export class HostPointerEvent extends HostEvent {
   readonly deltaY: number;
   /** For click, the number of quick presses at about the same place. */
   readonly detail: number;
+  readonly shiftKey: boolean;
+  readonly ctrlKey: boolean;
+  readonly altKey: boolean;
+  readonly metaKey: boolean;
   constructor(type: string, init: HostPointerEventInit) {
     super(type, { bubbles: init.bubbles ?? true, cancelable: init.cancelable ?? true });
     this.x = init.x;
@@ -167,6 +172,10 @@ export class HostPointerEvent extends HostEvent {
     this.deltaX = init.deltaX ?? 0;
     this.deltaY = init.deltaY ?? 0;
     this.detail = init.detail ?? 0;
+    this.shiftKey = init.modifiers?.shift ?? false;
+    this.ctrlKey = init.modifiers?.control ?? false;
+    this.altKey = init.modifiers?.alt ?? false;
+    this.metaKey = init.modifiers?.meta ?? false;
   }
 }
 

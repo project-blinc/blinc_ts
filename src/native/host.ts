@@ -8,13 +8,21 @@
  */
 import type { Scope } from '../hmr.js';
 import { Brush } from './brush.js';
-import { HostEventTarget, HostPointerEvent, type HostPointerEventInit } from './events.js';
+import {
+  HostEvent,
+  HostEventTarget,
+  HostPointerEvent,
+  type HostPointerEventInit,
+} from './events.js';
+import { window as win } from './index.js';
+import { Input, WHEEL_LINE } from './input.js';
 import type { Layout, LayoutNode } from './layout.js';
 import { layoutPropertyNames } from './properties.js';
 import type { Computed, Disposable, ReactiveContext, Signal } from './reactive.js';
 import type { Color, CornerRadii, PaintStyle, TextStyle } from './scene.js';
 import type { NativeBindings } from './index.js';
 import type { NativeWindowHost, WindowSceneOptions } from './window.js';
+import type { InteractionState } from './input.js';
 
 /** The built-in element names, after HTML's. Other valid names make plain boxes. */
 export const builtinTags: ReadonlySet<string> = new Set([
@@ -535,6 +543,35 @@ export class HostElement extends HostNode {
     }
     HostNode.link(child, null, null, null);
   }
+  /** Give this element focus, if it can take it. */
+  focus(): boolean {
+    return this.host.input.focus(this, false);
+  }
+  blur(): void {
+    if (this.host.input.focused === this) {
+      this.host.input.blur();
+    }
+  }
+  /** Hover, active, focus, focus-visible and focus-within, as CSS pseudo-classes match them. */
+  get interaction(): Readonly<InteractionState> {
+    return this.host.input.stateOf(this);
+  }
+  get scrollLeft(): number {
+    return this.host.scrollOf(this)[0];
+  }
+  get scrollTop(): number {
+    return this.host.scrollOf(this)[1];
+  }
+  /** Scroll this element's content to (x, y), unclamped, dispatching `scroll`. */
+  scrollTo(x: number, y: number): void {
+    this.host.scrollTo(this, x, y);
+  }
+  setPointerCapture(): void {
+    this.host.input.setPointerCapture(this);
+  }
+  releasePointerCapture(): void {
+    this.host.input.releasePointerCapture(this);
+  }
   /** Release this element, its subtree and their bindings. */
   destroy(): void {
     this.host.destroyNode(this);
@@ -566,9 +603,8 @@ export class Host {
   #width = 0;
   #height = 0;
   #computed = false;
-  #pressed: { target: HostNode; button: number } | undefined;
-  #buttons = 0;
-  #lastClick = { time: -Infinity, x: 0, y: 0, count: 0 };
+  /** Pointer, focus, keyboard and scrolling state, and the entry points a window feeds. */
+  readonly input: Input = new Input(this);
 
   constructor(layout: Layout, scope?: Scope) {
     this.layout = layout;
@@ -629,6 +665,9 @@ export class Host {
         throw new TypeError(`${name} takes a string or a number`);
       }
       element.layoutNode.setLayoutProperty(name, unset ? null : value);
+      if (name === 'overflow' || name === 'overflow-x' || name === 'overflow-y') {
+        this.#overflow(element, name, value);
+      }
       return;
     }
     const text = textProperties[name];
@@ -743,55 +782,87 @@ export class Host {
   }
 
   /**
-   * Dispatch a pointer event to the element at (x, y), bubbling to the root.
-   * `pointerdown` then `pointerup` over the same element also dispatch `click`.
-   * Returns false if a listener cancelled it.
+   * Feed a pointer event at (x, y) through `input`, as a window would:
+   * `pointermove`, `pointerdown`, `pointerup` and `wheel` update hover,
+   * presses, clicks and scrolling; other types dispatch to the element under
+   * the point. Returns false if a listener cancelled it.
    */
   dispatchPointer(type: string, init: HostPointerEventInit): boolean {
-    const target = this.elementAt(init.x, init.y) ?? this.root;
-    const button = init.button ?? -1;
-    if (type === 'pointerdown' && button >= 0) {
-      this.#buttons |= buttonBit(button);
-    } else if (type === 'pointerup' && button >= 0) {
-      this.#buttons &= ~buttonBit(button);
+    const moved = this.input.pointerMove(init.x, init.y);
+    if (init.modifiers) {
+      this.input.setModifiers(init.modifiers);
     }
-    const result = target.dispatchEvent(
-      new HostPointerEvent(type, { buttons: this.#buttons, ...init }),
-    );
-    if (type === 'pointerdown') {
-      this.#pressed = { target, button };
-    } else if (type === 'pointerup') {
-      const pressed = this.#pressed;
-      this.#pressed = undefined;
-      if (pressed?.button === button && contains(pressed.target, target)) {
-        const now = performance.now();
-        const last = this.#lastClick;
-        const repeat =
-          now - last.time < 500 && Math.abs(init.x - last.x) < 4 && Math.abs(init.y - last.y) < 4;
-        this.#lastClick = { time: now, x: init.x, y: init.y, count: repeat ? last.count + 1 : 1 };
-        pressed.target.dispatchEvent(
-          new HostPointerEvent(button === 0 ? 'click' : 'auxclick', {
-            ...init,
-            detail: this.#lastClick.count,
-            buttons: this.#buttons,
-          }),
-        );
-      }
+    switch (type) {
+      case 'pointermove':
+        return moved;
+      case 'pointerdown':
+        return this.input.pointerDown(init.button ?? 0);
+      case 'pointerup':
+        return this.input.pointerUp(init.button ?? 0);
+      case 'wheel':
+        return this.input.wheel(init.deltaX ?? 0, init.deltaY ?? 0);
+      default:
+        return (this.input.hovered ?? this.root).dispatchEvent(new HostPointerEvent(type, init));
     }
-    return result;
+  }
+
+  /** Whether `element` scrolls along x and y: `overflow` set to scroll or auto. */
+  #scrolls = new Map<HostElement, { axes: [boolean, boolean]; x: number; y: number }>();
+  #overflow(element: HostElement, name: string, value: PropertyValue): void {
+    const scrolls = value === 'scroll' || value === 'auto';
+    const entry = this.#scrolls.get(element) ?? { axes: [false, false], x: 0, y: 0 };
+    if (name !== 'overflow-y') {
+      entry.axes[0] = scrolls;
+    }
+    if (name !== 'overflow-x') {
+      entry.axes[1] = scrolls;
+    }
+    this.#scrolls.set(element, entry);
+  }
+  /** @internal How far `element` is scrolled right and down. */
+  scrollOf(element: HostElement): [number, number] {
+    const entry = this.#scrolls.get(element);
+    return entry ? [entry.x, entry.y] : [0, 0];
+  }
+  /**
+   * @internal Scroll `element` by (dx, dy) within its content, if it is a
+   * scroll container, and return what it could not take.
+   */
+  scrollBy(element: HostElement, dx: number, dy: number): [number, number] {
+    const entry = this.#scrolls.get(element);
+    if (!entry || (!entry.axes[0] && !entry.axes[1])) {
+      return [dx, dy];
+    }
+    const [, , width, height] = this.boundsOf(element);
+    const [contentWidth, contentHeight] = element.layoutNode.contentSize();
+    const clamp = (value: number, max: number) => Math.min(Math.max(value, 0), Math.max(max, 0));
+    const x = entry.axes[0] ? clamp(entry.x + dx, contentWidth - width) : entry.x;
+    const y = entry.axes[1] ? clamp(entry.y + dy, contentHeight - height) : entry.y;
+    const rest: [number, number] = [dx - (x - entry.x), dy - (y - entry.y)];
+    if (x !== entry.x || y !== entry.y) {
+      this.scrollTo(element, x, y);
+    }
+    return rest;
+  }
+  /** @internal Scroll `element` to (x, y) and dispatch `scroll` to it. */
+  scrollTo(element: HostElement, x: number, y: number): void {
+    const entry = this.#scrolls.get(element) ?? { axes: [false, false], x: 0, y: 0 };
+    entry.x = x;
+    entry.y = y;
+    this.#scrolls.set(element, entry);
+    element.layoutNode.setScroll(x, y);
+    element.dispatchEvent(new HostEvent('scroll'));
   }
 
   /**
    * Present the root in a window, laying out at its size, and route its
-   * pointer input to dispatchPointer. Returns the unmount function, which
-   * `options.scope` also runs.
+   * pointer, wheel, keyboard and input-method events to `input`. Returns the
+   * unmount function, which `options.scope` also runs.
    */
   mount(window: NativeWindowHost, options: HostMountOptions = {}): () => void {
     const { scope, ...scene } = options;
     this.flush();
     window.attachScene(this.layout, this.root.layoutNode, scene, scope);
-    let x = 0,
-      y = 0;
     const off = window.onEvent((event) => {
       const ratio = window.window.scaleFactor();
       if (event.kind === 'Resized') {
@@ -799,23 +870,62 @@ export class Host {
         this.#height = Number(event.height) / ratio;
         this.#computed = false;
       } else if (event.kind === 'CursorMoved') {
-        x = event.x / ratio;
-        y = event.y / ratio;
-        this.dispatchPointer('pointermove', { x, y });
+        this.input.pointerMove(event.x / ratio, event.y / ratio);
+      } else if (event.kind === 'CursorLeft') {
+        this.input.pointerLeave();
       } else if (event.kind === 'MouseInput') {
-        this.dispatchPointer(event.state === 0 ? 'pointerdown' : 'pointerup', {
-          x,
-          y,
-          button: mouseButton(event.button),
-        });
+        const button = mouseButton(event.button);
+        if (event.state === win.MouseElementState.Pressed) {
+          this.input.pointerDown(button);
+        } else {
+          this.input.pointerUp(button);
+        }
       } else if (event.kind === 'MouseWheel') {
         const delta = event.delta;
         // Line deltas scroll a fixed distance per line; pixel deltas are device pixels.
         const [dx, dy] =
           delta.kind === 'LineDelta'
-            ? [delta.x * 40, delta.y * 40]
+            ? [delta.x * WHEEL_LINE, delta.y * WHEEL_LINE]
             : [delta.x / ratio, delta.y / ratio];
-        this.dispatchPointer('wheel', { x, y, deltaX: -dx, deltaY: -dy });
+        this.input.wheel(-dx, -dy);
+      } else if (event.kind === 'ModifiersChanged') {
+        const m = event.modifiers;
+        this.input.setModifiers({
+          shift: m.shift,
+          control: m.control,
+          alt: m.alt,
+          meta: m.super_key,
+        });
+      } else if (event.kind === 'KeyboardInput') {
+        const key = event.event;
+        const init = {
+          key: keyName(key.logical_key),
+          code: codeName(key.physical_key),
+          location: key.location,
+          repeat: key.repeat,
+        };
+        if (key.state === win.MouseElementState.Pressed) {
+          const allowed = this.input.keyDown(init);
+          const text = key.text.kind === 'Some' ? key.text.text : '';
+          // Control characters are keys, not text.
+          if (allowed && [...text].some((c) => c >= ' ' && c !== '\u007f')) {
+            this.input.text(text);
+          }
+        } else {
+          this.input.keyUp(init);
+        }
+      } else if (event.kind === 'Ime') {
+        const ime = event.event;
+        if (ime.kind === 'Preedit') {
+          const cursor = ime.cursor.kind === 'Range' ? Number(ime.cursor.start) : -1;
+          this.input.composition(ime.text, cursor);
+        } else if (ime.kind === 'Commit') {
+          this.input.text(ime.text);
+        } else if (ime.kind === 'Disabled') {
+          this.input.composition('');
+        }
+      } else if (event.kind === 'Focused' && !event.focused) {
+        this.input.pointerLeave();
       }
     }, scope);
     const ratio = window.window.scaleFactor();
@@ -848,6 +958,8 @@ export class Host {
         }
         current.disposeBindings();
         this.#paint.delete(current);
+        this.#scrolls.delete(current);
+        this.input.forget(current);
       } else if (current instanceof HostText) {
         this.#text.delete(current);
       }
@@ -896,8 +1008,30 @@ function sameText(a: TextStyle, b: TextStyle): boolean {
   const keys = new Set([...Object.keys(a), ...Object.keys(b)] as (keyof TextStyle)[]);
   return [...keys].every((key) => a[key] === b[key]);
 }
-function buttonBit(button: number): number {
-  return button === 1 ? 4 : button === 2 ? 2 : 1 << button;
+const namedKeys = new Map<number, string>(
+  Object.entries(win.NamedKey).map(([name, code]) => [code, name]),
+);
+const keyCodes = new Map<number, string>(
+  Object.entries(win.KeyCode).map(([name, code]) => [code, name]),
+);
+/** A logical key as the DOM's `key` names it. */
+function keyName(key: win.Key): string {
+  switch (key.kind) {
+    case 'Named': {
+      const name = namedKeys.get(key.key) ?? 'Unidentified';
+      return name === 'Space' ? ' ' : name;
+    }
+    case 'Character':
+      return key.text;
+    case 'Dead':
+      return 'Dead';
+    case 'Unidentified':
+      return 'Unidentified';
+  }
+}
+/** A physical key as the DOM's `code` names it. */
+function codeName(key: win.PhysicalKey): string {
+  return key.kind === 'Code' ? (keyCodes.get(key.code) ?? '') : '';
 }
 function contains(ancestor: HostNode, node: HostNode | null): boolean {
   for (let current = node; current; current = current.parentNode) {
@@ -911,6 +1045,18 @@ function mouseButton(button: { kind: string }): number {
   return button.kind === 'Right' ? 2 : button.kind === 'Middle' ? 1 : 0;
 }
 
+export {
+  Input,
+  HostKeyboardEvent,
+  HostTextEvent,
+  HostCompositionEvent,
+  HostFocusEvent,
+  WHEEL_LINE,
+  type KeyModifiers,
+  type HostKeyboardEventInit,
+  type InteractionState,
+  type InteractionChange,
+} from './input.js';
 export {
   EventPhase,
   HostEvent,

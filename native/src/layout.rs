@@ -298,6 +298,18 @@ impl NativeLayoutNode {
         }
         tree.detach(child.node).map_err(error)
     }
+    /// How far laid-out content reaches, right and down from the node's top-left.
+    #[napi]
+    pub fn content_size(&self) -> Result<Vec<f64>> {
+        self.owner.check()?;
+        let [w, h] = self
+            .owner
+            .tree
+            .borrow()
+            .content_size(self.node)
+            .map_err(error)?;
+        Ok(vec![f64::from(w), f64::from(h)])
+    }
     #[napi]
     pub fn detach(&self) -> Result<()> {
         self.owner.check()?;
