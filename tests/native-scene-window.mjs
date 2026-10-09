@@ -89,10 +89,11 @@ try {
   host.window.setVisible(true);
   const atResize = host.frames;
   host.window.setSize(760, 520);
-  await waitFor(
-    () => host.frames > atResize && host.window.width() / host.window.scaleFactor() === 760,
-    'Resize frame',
-  );
+  await waitFor(() => {
+    // The OS can update its size before the corresponding scene frame is presented.
+    demo.layout.readBounds([demo.root], bounds);
+    return host.frames > atResize && bounds[2] === 760 && bounds[3] === 520;
+  }, 'Resize frame');
   demo.layout.readBounds([demo.root], bounds);
   assert.equal(bounds[2], 760);
   assert.equal(bounds[3], 520);
