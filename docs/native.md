@@ -560,4 +560,11 @@ computation. An untracked computed read evaluates its pure callback without
 changing its tracked cache. Dependencies cannot cross contexts. Callback errors
 preserve the original thrown value; other scheduled effects still run.
 
+Signals, computeds and effects are plain JavaScript objects holding a numeric
+key into the native graph; no native object is wrapped per item, and disposing
+an item frees its native memory at once rather than at a later finalizer. The
+callbacks of computeds and effects stay in a JavaScript table per context, and
+the native graph calls one dispatcher function with a callback's id.
+`benchmarks/reactive-memory.mjs` measures process memory per item (macOS).
+
 `tests/native-reactive.mjs` exercises these contracts against the compiled addon.

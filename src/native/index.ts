@@ -65,7 +65,7 @@ interface Addon {
   decodeImage(bytes: Uint8Array): NativeImage;
   rasterizeSvg(markup: string, width: number, height: number): NativeImage;
   NativeLayout: new () => NativeLayout;
-  NativeGraph: new () => NativeGraph;
+  NativeGraph: new (dispatch: (callback: number) => void) => NativeGraph;
   buildProfile(): string;
   gpuCall: NativeBinding['call'];
   windowCall: NativeBinding['call'];
@@ -130,7 +130,8 @@ export function loadNative(
     rasterizeSvg: (markup, width, height, scope) =>
       new ImageResource(addon.rasterizeSvg(markup, width, height), scope),
     createLayout: (scope?: Scope) => new Layout(new addon.NativeLayout(), scope),
-    createReactive: (scope?: Scope) => new ReactiveContext(new addon.NativeGraph(), scope),
+    createReactive: (scope?: Scope) =>
+      new ReactiveContext((dispatch) => new addon.NativeGraph(dispatch), scope),
     gpu: bindGpu({ call: addon.gpuCall }),
     window: bindWindow({ call: addon.windowCall }),
   };

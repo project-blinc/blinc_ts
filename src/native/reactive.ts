@@ -8,26 +8,28 @@ export interface GraphStats {
   computeds: number;
   effects: number;
 }
-/** @internal */
-export interface NativeSignal extends Disposable {
-  track(): void;
-  peek(): void;
-  notify(): void;
-}
-/** @internal */
-export interface NativeComputed extends Disposable {
-  track(): void;
-}
-/** @internal */
-export interface NativeGraph extends Disposable {
+/**
+ * @internal Native graph items are named by generation-checked numeric keys;
+ * computeds and effects name their callback by an id in the context's table,
+ * which the native graph passes to the dispatcher given at construction.
+ */
+export interface NativeGraph {
   readonly disposed: boolean;
-  signal(): NativeSignal;
-  computed(callback: () => void): NativeComputed;
-  effect(callback: () => void): Disposable;
+  signal(): number;
+  computed(callback: number): number;
+  effect(callback: number): number;
+  track(signal: number): void;
+  peek(signal: number): void;
+  notify(signal: number): void;
+  trackComputed(computed: number): void;
+  release(key: number): void;
   beginBatch(): void;
   endBatch(): void;
   stats(): GraphStats;
+  dispose(): void;
 }
+/** @internal */
+export type NativeGraphFactory = (dispatch: (callback: number) => void) => NativeGraph;
 interface Evaluation {
   context: ReactiveContext;
   computed: boolean;
@@ -40,11 +42,31 @@ let active: Evaluation | undefined;
 export class ReactiveContext implements Disposable {
   readonly #native: NativeGraph;
   readonly #owned = new Set<Disposable>();
+  /** Computed and effect callbacks by id; native code holds only the ids. */
+  readonly #callbacks: ((() => void) | undefined)[] = [];
+  readonly #freeIds: number[] = [];
   #disposed = false;
   /** @internal Use loadNative().createReactive(scope). */
-  constructor(native: NativeGraph, scope?: Scope) {
-    this.#native = native;
+  constructor(create: NativeGraphFactory, scope?: Scope) {
+    this.#native = create((id) => this.#callbacks[id]?.());
     scope?.onCleanup(() => this.dispose());
+  }
+  /** @internal */
+  get native(): NativeGraph {
+    return this.#native;
+  }
+  /** @internal Keep `callback` in the table; native code calls it by the returned id. */
+  register(callback: () => void): number {
+    const id = this.#freeIds.pop() ?? this.#callbacks.length;
+    this.#callbacks[id] = callback;
+    return id;
+  }
+  /** @internal */
+  unregister(id: number): void {
+    if (this.#callbacks[id] !== undefined) {
+      this.#callbacks[id] = undefined;
+      this.#freeIds.push(id);
+    }
   }
   get disposed(): boolean {
     return this.#disposed;
@@ -98,7 +120,7 @@ export class ReactiveContext implements Disposable {
   }
   computed<T>(compute: () => T, scope?: Scope): Computed<T> {
     this.check(true);
-    const value = new Computed(this, compute, (callback) => this.#native.computed(callback));
+    const value = new Computed(this, compute);
     this.own(value, scope);
     return value;
   }
@@ -125,21 +147,23 @@ export class ReactiveContext implements Disposable {
     this.check(true);
     let current: Scope | undefined;
     let disposed = false;
-    let native: Disposable;
+    let key = -1;
+    const id = this.register(() => {
+      if (disposed || this.#disposed) {
+        return;
+      }
+      this.#cleanup(current);
+      current = new Scope();
+      try {
+        this.evaluate(false, () => run(current!), current);
+      } catch (error) {
+        this.#cleanupAfterError(current, error);
+      }
+    });
     try {
-      native = this.#native.effect(() => {
-        if (disposed || this.#disposed) {
-          return;
-        }
-        this.#cleanup(current);
-        current = new Scope();
-        try {
-          this.evaluate(false, () => run(current!), current);
-        } catch (error) {
-          this.#cleanupAfterError(current, error);
-        }
-      });
+      key = this.#native.effect(id);
     } catch (error) {
+      this.unregister(id);
       this.#cleanupAfterError(current, error);
     }
     const effect: Disposable = {
@@ -153,8 +177,9 @@ export class ReactiveContext implements Disposable {
         disposed = true;
         this.forget(effect);
         try {
-          native.dispose();
+          this.#native.release(key);
         } finally {
+          this.unregister(id);
           // Cleanup remains valid while the context itself is being disposed.
           this.#cleanup(current);
         }
@@ -234,13 +259,13 @@ export class ReactiveContext implements Disposable {
 
 export class Signal<T> implements Disposable {
   readonly #context: ReactiveContext;
-  readonly #native: NativeSignal;
+  readonly #key: number;
   #value: T | undefined;
   #disposed = false;
   /** @internal */
-  constructor(context: ReactiveContext, native: NativeSignal, value: T) {
+  constructor(context: ReactiveContext, key: number, value: T) {
     this.#context = context;
-    this.#native = native;
+    this.#key = key;
     this.#value = value;
   }
   #check(mutable = false): void {
@@ -252,15 +277,15 @@ export class Signal<T> implements Disposable {
   get(): T {
     this.#check();
     if (active?.tracking === false) {
-      this.#native.peek();
+      this.#context.native.peek(this.#key);
     } else {
-      this.#native.track();
+      this.#context.native.track(this.#key);
     }
     return this.#value as T;
   }
   peek(): T {
     this.#check();
-    this.#native.peek();
+    this.#context.native.peek(this.#key);
     return this.#value as T;
   }
   set(value: T): void {
@@ -269,7 +294,7 @@ export class Signal<T> implements Disposable {
       return;
     }
     this.#value = value;
-    this.#native.notify();
+    this.#context.native.notify(this.#key);
   }
   update(update: (value: T) => T): void {
     this.set(update(this.peek()));
@@ -284,33 +309,36 @@ export class Signal<T> implements Disposable {
     this.#disposed = true;
     this.#value = undefined;
     this.#context.forget(this);
-    this.#native.dispose();
+    this.#context.native.release(this.#key);
   }
 }
 
 type Outcome<T> = { ok: true; value: T } | { ok: false; error: unknown };
 export class Computed<T> implements Disposable {
   readonly #context: ReactiveContext;
-  readonly #native: NativeComputed;
+  readonly #key: number;
+  readonly #id: number;
   #compute: (() => T) | undefined;
   #outcome: Outcome<T> | undefined;
   #running = false;
   #disposed = false;
   /** @internal */
-  constructor(
-    context: ReactiveContext,
-    compute: () => T,
-    create: (run: () => void) => NativeComputed,
-  ) {
+  constructor(context: ReactiveContext, compute: () => T) {
     this.#context = context;
     this.#compute = compute;
-    this.#native = create(() => {
+    this.#id = context.register(() => {
       try {
         this.#outcome = { ok: true, value: this.#evaluate() };
       } catch (error) {
         this.#outcome = { ok: false, error };
       }
     });
+    try {
+      this.#key = context.native.computed(this.#id);
+    } catch (error) {
+      context.unregister(this.#id);
+      throw error;
+    }
   }
   #evaluate(): T {
     if (this.#running) {
@@ -336,7 +364,7 @@ export class Computed<T> implements Disposable {
     if (active?.tracking === false) {
       return this.#evaluate();
     }
-    this.#native.track();
+    this.#context.native.trackComputed(this.#key);
     const outcome = this.#outcome;
     if (!outcome) {
       throw new Error('Computed callback did not produce a result');
@@ -357,6 +385,10 @@ export class Computed<T> implements Disposable {
     this.#outcome = undefined;
     this.#compute = undefined;
     this.#context.forget(this);
-    this.#native.dispose();
+    try {
+      this.#context.native.release(this.#key);
+    } finally {
+      this.#context.unregister(this.#id);
+    }
   }
 }

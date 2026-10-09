@@ -127,60 +127,82 @@ assert.throws(() => graph.signal(1), /disposed/);
 
 // Raw adapter callbacks must preserve exception identity and finish other effects.
 const addon = createRequire(import.meta.url)('../native/blinc_ts.node');
-const native = new addon.NativeGraph();
+// The raw graph takes keys and calls one dispatcher with callback ids.
+function rawGraph() {
+  const callbacks = [];
+  const graph = new addon.NativeGraph((id) => callbacks[id]());
+  const id = (callback) => callbacks.push(callback) - 1;
+  return {
+    graph,
+    effect: (callback) => graph.effect(id(callback)),
+    computed: (callback) => graph.computed(id(callback)),
+  };
+}
+const raw = rawGraph();
+const native = raw.graph;
 try {
   const s = native.signal();
   let armed = false;
   let survived = 0;
   const failure = new Error('callback failed');
-  const first = native.effect(() => {
-    s.track();
+  const first = raw.effect(() => {
+    native.track(s);
     if (armed) {
       throw failure;
     }
   });
-  const second = native.effect(() => {
-    s.track();
+  const second = raw.effect(() => {
+    native.track(s);
     survived++;
   });
   armed = true;
   assert.throws(
-    () => s.notify(),
+    () => native.notify(s),
     (e) => e === failure,
   );
   assert.equal(survived, 2);
   armed = false;
-  s.notify();
+  native.notify(s);
   assert.equal(survived, 3);
   const count = native.stats().effects;
   assert.throws(
     () =>
-      native.effect(() => {
+      raw.effect(() => {
         throw failure;
       }),
     (e) => e === failure,
   );
   assert.equal(native.stats().effects, count);
-  first.dispose();
-  second.dispose();
-  s.dispose();
+  native.release(first);
+  native.release(second);
+  native.release(s);
   assert.deepEqual(native.stats(), { signals: 0, computeds: 0, effects: 0 });
+  // A reused slot gets a new generation, so a stale key cannot reach its successor.
+  const reused = native.signal();
+  assert.notEqual(reused, s);
+  assert.throws(() => native.track(s), /disposed/);
+  assert.throws(() => native.track(first), /disposed/);
+  assert.throws(() => native.track(-1), /disposed/);
+  assert.throws(() => native.track(0.5), /disposed/);
+  native.track(reused);
+  native.release(reused);
 } finally {
   native.dispose();
 }
-const disposing = new addon.NativeGraph();
+const disposingRaw = rawGraph();
+const disposing = disposingRaw.graph;
 const trigger = disposing.signal();
 let armed = false;
-disposing.effect(() => {
-  trigger.track();
+disposingRaw.effect(() => {
+  disposing.track(trigger);
   if (armed) {
     disposing.dispose();
   }
 });
 armed = true;
-trigger.notify();
+disposing.notify(trigger);
 assert.equal(disposing.disposed, true);
-trigger.dispose();
+disposing.release(trigger);
 // The initial callback runs before effect() can register its returned handle.
 for (const fail of [false, true]) {
   const context = api.createReactive();
@@ -265,20 +287,22 @@ for (const thrown of [
   effect.dispose();
   context.dispose();
 }
-const rawLifecycle = new addon.NativeGraph();
+const lifecycleRaw = rawGraph();
+const rawLifecycle = lifecycleRaw.graph;
 try {
-  const compute = rawLifecycle.computed(() => rawLifecycle.dispose());
-  assert.throws(() => compute.track(), /computed callback/);
+  const compute = lifecycleRaw.computed(() => rawLifecycle.dispose());
+  assert.throws(() => rawLifecycle.trackComputed(compute), /computed callback/);
   assert.equal(rawLifecycle.disposed, false);
-  compute.dispose();
-  compute.dispose();
-  assert.throws(() => compute.track(), /disposed/);
+  rawLifecycle.release(compute);
+  rawLifecycle.release(compute);
+  assert.throws(() => rawLifecycle.trackComputed(compute), /disposed/);
   const signal = rawLifecycle.signal();
-  const effect = rawLifecycle.effect(() => signal.track());
-  effect.dispose();
-  effect.dispose();
-  signal.dispose();
-  signal.dispose();
+  assert.throws(() => rawLifecycle.trackComputed(signal), /disposed/);
+  const effect = lifecycleRaw.effect(() => rawLifecycle.track(signal));
+  rawLifecycle.release(effect);
+  rawLifecycle.release(effect);
+  rawLifecycle.release(signal);
+  rawLifecycle.release(signal);
   assert.deepEqual(rawLifecycle.stats(), { signals: 0, computeds: 0, effects: 0 });
 } finally {
   rawLifecycle.dispose();
