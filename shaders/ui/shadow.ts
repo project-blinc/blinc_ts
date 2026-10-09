@@ -20,7 +20,8 @@ const vertex = tgpu
     out: inputs,
   })((input) => {
     const s = field(input.instanceIndex, fields.shadow);
-    const grow = s.z * 3 + std.abs(s.x) + std.abs(s.y);
+    // Room for the blur, the offset and a positive spread, plus a pixel of antialiasing.
+    const grow = s.z * 3 + std.abs(s.x) + std.abs(s.y) + std.max(s.w, 0) + 1;
     const b = field(input.instanceIndex, fields.bounds);
     const local = std.sub(
       std.mul(quadCorner(d.i32(input.vertexIndex)), std.add(b.zw, std.mul(d.vec2f(grow, grow), 2))),
@@ -57,6 +58,7 @@ const fragment = tgpu
     const origin = d.vec2f(0, 0);
     const size = field(input.record, fields.bounds).zw;
     const s = field(input.record, fields.shadow);
+    // eslint-disable-next-line no-useless-assignment -- The initializer establishes the WGSL storage type.
     let result = d.vec4f(0, 0, 0, 0);
     let where = std.smoothstep(
       -0.75,
@@ -101,17 +103,17 @@ const fragment = tgpu
           field(input.record, fields.cornerShape),
         );
       }
+      // eslint-disable-next-line no-useless-assignment -- The initializer establishes the WGSL storage type.
       let shade = d.f32(0);
+      // No blur: a hard edge, antialiased over a pixel.
       if (s.z < 0.001) {
-        if (inner > 0) {
-          shade = 1;
-        }
+        shade = std.clamp(0.5 + inner, 0, 1);
       } else {
         shade = 0.5 * (1 + erf(inner / (0.5 * std.sqrt(2) * s.z)));
       }
       result = std.mul(field(input.record, fields.shadowColor), shade);
       where = 1 - where;
-    } else if (s.z > 0 || s.w !== 0) {
+    } else {
       const spread = d.vec2f(s.w, s.w);
       // eslint-disable-next-line no-useless-assignment -- The initializer establishes the WGSL storage type.
       let distance = d.f32(0);
@@ -125,19 +127,26 @@ const fragment = tgpu
             field(input.record, fields.notchBottom),
           ) - s.w;
       } else {
+        // CSS's spread radius: a corner grows by the spread as far as it is
+        // already round, so a square corner stays square.
+        const r = field(input.record, fields.cornerRadius);
+        let grown = std.max(std.add(r, d.vec4f(s.w, s.w, s.w, s.w)), d.vec4f(0, 0, 0, 0));
+        if (s.w > 0) {
+          const u = std.sub(std.min(std.div(r, s.w), d.vec4f(1, 1, 1, 1)), d.vec4f(1, 1, 1, 1));
+          grown = std.add(r, std.mul(std.add(d.vec4f(1, 1, 1, 1), std.mul(std.mul(u, u), u)), s.w));
+        }
         distance = sdShapedRect(
           p,
           std.sub(std.add(origin, s.xy), spread),
           std.add(size, std.mul(spread, 2)),
-          std.add(field(input.record, fields.cornerRadius), d.vec4f(s.w, s.w, s.w, s.w)),
+          grown,
           field(input.record, fields.cornerShape),
         );
       }
+      // eslint-disable-next-line no-useless-assignment -- The initializer establishes the WGSL storage type.
       let alpha = d.f32(0);
       if (s.z < 0.001) {
-        if (distance < 0) {
-          alpha = 1;
-        }
+        alpha = std.clamp(0.5 - distance, 0, 1);
       } else {
         alpha = 0.5 * (1 + erf(-distance / (0.5 * std.sqrt(2) * s.z)));
       }

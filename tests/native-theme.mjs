@@ -215,7 +215,7 @@ try {
       'left: 130px; top: 10px; width: 100px; height: 80px; border-radius: 28px; border-width: 4px; border-color: #c02050',
     );
     const shadow = box(
-      'left: 250px; top: 20px; width: 90px; height: 70px; border-radius: 28px; background: #ffffff; box-shadow: 0 0 6px 6px #20a050',
+      'left: 250px; top: 20px; width: 90px; height: 70px; border-radius: 28px; background: #ffffff; box-shadow: 0 0 0 8px #20a050',
     );
     const small = box(
       'left: 10px; top: 120px; width: 60px; height: 60px; border-radius: 8px; background: #2050c0',
@@ -319,7 +319,7 @@ try {
     const mixed = box(180, 20);
     const token = box(20, 150, 'shadow-inner');
     inset.setProperty('box-shadow', 'inset 0 0 12px 4px #000000');
-    mixed.setProperty('box-shadow', '12px 0 2px #20a050, inset 0 0 12px 4px #000000');
+    mixed.setProperty('box-shadow', '12px 0 0 #20a050, inset 0 0 12px 4px #000000');
     const shadowed = await capture(host, 'inset');
     const layout = geometry(host.root);
     assert.deepEqual(errors, []);
@@ -354,10 +354,43 @@ try {
     state.dispose();
     host.dispose();
   }
+  // Shadows with no blur: a spread ring keeps a square box's corners square
+  // and grows a rounded box's radius; an offset copy draws; a negative
+  // spread narrows the band under the box.
+  {
+    const host = Host.create(native);
+    const box = (style) => {
+      const element = host.createElement('div');
+      element.setAttribute('style', `position: absolute; background: #ffffff; ${style}`);
+      host.root.appendChild(element);
+      return element;
+    };
+    box('left: 20px; top: 20px; width: 80px; height: 60px; box-shadow: 0 0 0 8px #20a050');
+    box(
+      'left: 160px; top: 20px; width: 80px; height: 60px; border-radius: 20px; box-shadow: 0 0 0 8px #20a050',
+    );
+    box('left: 20px; top: 130px; width: 80px; height: 60px; box-shadow: 10px 10px 0 #20a050');
+    box('left: 160px; top: 130px; width: 80px; height: 40px; box-shadow: 0 14px 0 -4px #20a050');
+    const frame = await capture(host, 'hard-shadows');
+    const green = [0x20, 0xa0, 0x50, 255];
+    const clear = [0, 0, 0, 0];
+    assert.ok(near(pixel(frame, 16, 50), green), 'a spread ring draws');
+    assert.ok(near(pixel(frame, 13, 13), green), 'its corners stay square on a square box');
+    assert.ok(near(pixel(frame, 156, 50), green), 'a ring around a rounded box');
+    assert.ok(near(pixel(frame, 154, 14), clear), 'its corners are rounded');
+    assert.ok(near(pixel(frame, 105, 185), green), 'an offset copy draws');
+    assert.ok(near(pixel(frame, 105, 135), clear), 'only where it is offset to');
+    assert.ok(near(pixel(frame, 60, 160), [255, 255, 255, 255]), 'the box covers its shadow');
+    assert.ok(near(pixel(frame, 200, 176), green), 'a narrower band under the box');
+    assert.ok(near(pixel(frame, 161, 176), clear), 'narrower on the left');
+    assert.ok(near(pixel(frame, 238, 176), clear), 'narrower on the right');
+    assert.ok(near(pixel(frame, 200, 182), clear), 'and ending at its offset');
+    host.dispose();
+  }
 } finally {
   context.dispose();
   target.dispose();
 }
 console.log(
-  'Native theme: scheme switches, overrides, system scheme, bundle css, corner smoothing and inset shadows passed',
+  'Native theme: scheme switches, overrides, system scheme, bundle css, corner smoothing, inset and unblurred shadows passed',
 );
