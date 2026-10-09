@@ -6,10 +6,14 @@
 // time the window could present. A wait that fails reports the window state.
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
-import { window as win } from '../dist/native/index.js';
 
-/** Window attributes for test windows: above other applications' windows, so they are not covered. */
-export const testWindow = { windowLevel: win.WindowLevel.AlwaysOnTop };
+/**
+ * Window attributes for test windows. They stay at the normal level: on
+ * macOS a floating (always-on-top) window of a background process was at
+ * times never put on screen while normal windows opened at the same moment
+ * were, and covered time is not counted against a wait anyway.
+ */
+export const testWindow = {};
 
 export async function waitForWindow(
   host,
