@@ -177,22 +177,16 @@ console.log('Native host: tree edits, properties, text inheritance, events and b
 // Mounting presents the root in a window; the scope unmounts it, and edits redraw.
 const { Scope } = await import('../dist/hmr.js');
 const { NativeWindowHost } = await import('../dist/native/window.js');
-const { setTimeout: delay } = await import('node:timers/promises');
+const { testWindow, waitForWindow } = await import('./window-wait.mjs');
 const window = new NativeWindowHost(native, {
+  ...testWindow,
   title: 'Host mount verification',
   width: 320,
   height: 200,
 });
 const scope = new Scope();
 const mounted = Host.create(native, scope);
-const waitFor = async (condition, message) => {
-  const until = performance.now() + 5000;
-  while (!condition()) {
-    assert.equal(window.error, undefined);
-    assert(performance.now() < until, message);
-    await delay(16);
-  }
-};
+const waitFor = (condition, message) => waitForWindow(window, condition, message);
 try {
   await window.ready;
   const box = mounted.root.appendChild(mounted.createElement('div'));

@@ -10,6 +10,7 @@ import { NativeWindowHost } from '../dist/native/window.js';
 import { SceneRenderer } from '../dist/native/renderer.js';
 import { OffscreenRenderer } from '../dist/native/offscreen.js';
 import { probeShader } from '../dist/renderer/shaders.js';
+import { testWindow, waitForWindow } from './window-wait.mjs';
 
 const native = loadNative();
 const output = new URL('../.blinc/window/', import.meta.url);
@@ -28,6 +29,7 @@ await build({
 });
 const { createScene } = await import(pathToFileURL(directory + '/scene.mjs').href);
 const host = new NativeWindowHost(native, {
+  ...testWindow,
   title: 'Native scene verification',
   width: 720,
   height: 480,
@@ -40,14 +42,7 @@ demo.layout.compute = (...args) => {
   computes++;
   return compute(...args);
 };
-const waitFor = async (condition, message) => {
-  const until = performance.now() + 5000;
-  while (!condition()) {
-    assert.equal(host.error, undefined);
-    assert(performance.now() < until, message);
-    await delay(16);
-  }
-};
+const waitFor = (condition, message) => waitForWindow(host, condition, message);
 try {
   await host.ready;
   assert([gpu.TextureFormat.Rgba8unorm, gpu.TextureFormat.Bgra8unorm].includes(host.format));

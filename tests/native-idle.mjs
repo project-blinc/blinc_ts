@@ -5,6 +5,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { Worker } from 'node:worker_threads';
 import { Brush, loadNative, window } from '../dist/native/index.js';
 import { NativeWindowHost } from '../dist/native/window.js';
+import { testWindow, waitForWindow } from './window-wait.mjs';
 
 const native = loadNative();
 if (!native.subscribeWindowEvents) {
@@ -16,6 +17,7 @@ const hosts = [],
   layouts = [];
 function open(bindings = native) {
   const host = new NativeWindowHost(bindings, {
+    ...testWindow,
     title: 'Event wake verification',
     width: 320,
     height: 200,
@@ -32,13 +34,7 @@ async function mount(host) {
   host.attachScene(layout, root);
   return root;
 }
-async function until(test) {
-  const start = performance.now();
-  while (!test()) {
-    assert(performance.now() - start < 3000, 'Native event delivery timed out');
-    await delay(10);
-  }
-}
+const until = (host, test, message) => waitForWindow(host, test, message, { budgetMs: 3000 });
 const watchdog = setTimeout(() => {
   console.error('Native event wait stalled Node');
   process.exit(1);
@@ -47,18 +43,35 @@ watchdog.unref();
 try {
   const first = open();
   const root = await mount(first);
-  await until(() => first.frames > 0);
+  await until(first, () => first.frames > 0, 'First frame');
   await delay(700);
-  let polls = 0;
+  // A periodic poll finds nothing. A pump woken by a real event, such as the
+  // system changing the window's focus or occlusion, finds that event first.
+  let emptyWakes = 0;
+  let inPump = false;
+  const events = [];
   const poll = first.window.poll.bind(first.window);
   first.window.poll = () => {
-    polls++;
-    return poll();
+    const event = poll();
+    if (!inPump) {
+      inPump = true;
+      queueMicrotask(() => (inPump = false));
+      if (event.kind === 'None') {
+        emptyWakes++;
+      }
+    }
+    if (event.kind !== 'None') {
+      events.push(event.kind);
+    }
+    return event;
   };
   const frames = first.frames;
   await delay(400);
-  assert.equal(polls, 0, 'A quiet window must not periodically poll');
-  assert.equal(first.frames, frames, 'A quiet window must not redraw');
+  assert.equal(emptyWakes, 0, `A quiet window must not periodically poll (events: ${events})`);
+  const redrawEvents = ['Occluded', 'Resized', 'ScaleFactorChanged', 'RedrawRequested'];
+  if (!events.some((kind) => redrawEvents.includes(kind))) {
+    assert.equal(first.frames, frames, 'A quiet window must not redraw');
+  }
 
   // No main-thread timer runs until the watchdog. A worker's I/O completion
   // must interrupt the platform wait immediately, not wait for that deadline.
@@ -96,26 +109,26 @@ try {
     await once(server, 'close');
   }
   root.setPaint({ background: Brush.solid(0x287651) });
-  await until(() => first.frames > frames);
+  await until(first, () => first.frames > frames, 'Paint edit frame');
   const beforeRedraw = first.frames;
   first.window.requestRedraw();
-  await until(() => first.frames > beforeRedraw);
+  await until(first, () => first.frames > beforeRedraw, 'Requested redraw');
 
   // Separate loadNative calls must share the one native pump. Closing one
   // window must not stop another; the pump can be recreated after all close.
   const second = open(loadNative());
   await mount(second);
-  await until(() => second.frames > 0);
+  await until(second, () => second.frames > 0, 'Second window frame');
   first.dispose();
   await first.closed;
   const beforeResize = second.frames;
   second.window.setSize(360, 240);
-  await until(() => second.frames > beforeResize);
+  await until(second, () => second.frames > beforeResize, 'Resize frame');
   second.dispose();
   await second.closed;
   const third = open();
   await mount(third);
-  await until(() => third.frames > 0);
+  await until(third, () => third.frames > 0, 'Recreated pump frame');
   third.dispose();
   await third.closed;
   console.log(

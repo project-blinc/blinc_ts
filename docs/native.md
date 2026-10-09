@@ -384,6 +384,13 @@ paint/layout invalidation and replacement, and captures the same demo offscreen.
 the window and device survive. The lower-level `NativeProbeHost` uses the same
 surface lifecycle for the GPU smoke test.
 
+`host.presentable` says whether a frame can be presented now: the window is
+visible, not minimized, not suspended, and not occluded. On macOS a window
+covered by another window is reported occluded, and requested frames wait
+until it is uncovered; `host.framePending` says a frame is waiting. The native
+tests open their windows above other applications' windows, and their waits
+count only time the window could present (`tests/window-wait.mjs`).
+
 ## Host interface for frameworks
 
 `blinc_ts/native/host` is the layer a framework renders through: a JSX

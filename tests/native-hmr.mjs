@@ -22,7 +22,7 @@ import {createHmrSession} from 'blinc_ts/hmr';
 import {loadNative,Brush} from 'blinc_ts/native';
 import {NativeWindowHost} from 'blinc_ts/native/window';
 const state=globalThis[${JSON.stringify(key)}];
-export const session=createHmrSession(import.meta.hot,()=>{state.created++;return new NativeWindowHost(loadNative(),{title:'Native HMR test',width:320,height:240});});
+export const session=createHmrSession(import.meta.hot,()=>{state.created++;return new NativeWindowHost(loadNative(),{title:'Native HMR test',width:320,height:240,windowLevel:2});});
 state.session=session;state.history.push({stage:"evaluate",label:${JSON.stringify(label)},at:performance.now()});
 await session.host.ready;
 session.mount((host,scope)=>{state.history.push({stage:"mount",label:${JSON.stringify(label)},at:performance.now()});state.label=${JSON.stringify(label)};scope.onCleanup(host.onEvent(()=>{}));scope.onCleanup(()=>{state.cleaned++;});

@@ -108,6 +108,24 @@ export class NativeWindowHost {
   get frames(): number {
     return this.#frames;
   }
+  /**
+   * Whether a frame can be presented now: the window is visible, not
+   * minimized, not suspended, and not occluded by other windows. While it is
+   * not, requested frames wait, and the host draws once it is again.
+   */
+  get presentable(): boolean {
+    return (
+      !this.#disposed &&
+      !this.#occluded &&
+      !this.#suspended &&
+      this.window.isVisible() &&
+      !this.window.isMinimized()
+    );
+  }
+  /** Whether a frame has been requested and not yet presented. */
+  get framePending(): boolean {
+    return this.#dirty;
+  }
   get error(): unknown {
     return this.#error;
   }
