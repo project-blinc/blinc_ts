@@ -22,3 +22,68 @@ jobs:
       - run: npm run format:check
       - run: npm test
       - run: npm run build:example
+
+  native:
+    name: Native Linux (${{ matrix.display }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        display: [x11, wayland]
+    defaults:
+      run:
+        working-directory: deps/blinc_ts
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: deps/blinc_ts
+      - uses: actions/checkout@v4
+        with:
+          repository: project-blinc/blinc_abi
+          ref: d5c8f1720adde5ea7cd3aa4d399b189cf67e86e0
+          path: deps/blinc_abi
+      - uses: actions/checkout@v4
+        with:
+          repository: rayzor-blade/x-idl
+          ref: ef7b2453997177e98e14e828a9bdd5b3ded07cf4
+          path: deps/x-idl
+      - uses: actions/checkout@v4
+        with:
+          repository: rayzor-blade/xgpu
+          ref: 71c25d19b99ef9557e56b2ac13cfce2715e582dd
+          path: deps/xgpu
+      - uses: actions/checkout@v4
+        with:
+          repository: rayzor-blade/xwindow
+          ref: f039beb9679c62df42d4331607d388bfd0821eb7
+          path: deps/xwindow
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: deps/blinc_ts/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: deps/blinc_ts/native -> target
+          shared-key: native-linux
+      - name: Native window and software GPU dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev libxcursor-dev mesa-vulkan-drivers xvfb xauth openbox sway
+      - run: npm ci
+      - run: npm run build
+      - run: npm run build:native
+      - name: Generated bindings match the committed interfaces
+        run: git diff --exit-code -- src/native/generated
+      - name: GPU snapshots, ownership, idle wake and HMR
+        env:
+          NATIVE_TEST_DISPLAY: ${{ matrix.display }}
+        run: bash scripts/test-linux-native.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-${{ matrix.display }}-diagnostics
+          path: deps/blinc_ts/.blinc/
+          if-no-files-found: ignore

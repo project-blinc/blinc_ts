@@ -10,7 +10,7 @@ export class TextureAtlas {
   readonly #device: gpu.GpuDevice;
   readonly #shelves: { x: number; y: number; height: number }[] = [];
   #nextY = 0;
-  #size = 256;
+  #size = 1;
   #texture: gpu.GpuTexture;
   view: gpu.GpuTextureView;
   revision = 0;
@@ -60,7 +60,14 @@ export class TextureAtlas {
       }
       const old = this.#texture;
       const oldSize = this.#size;
-      this.#size *= 2;
+      // Grow directly to the required shelf size; unused image slots need only a pixel.
+      this.#size = Math.max(256, this.#size * 2);
+      while (
+        this.#size < 4096 &&
+        (width + 1 > this.#size || this.#nextY + height + 1 > this.#size)
+      ) {
+        this.#size *= 2;
+      }
       this.#texture = this.#allocate();
       const encoder = this.#device.encoder();
       try {

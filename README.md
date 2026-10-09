@@ -36,7 +36,7 @@ The package is private. Native scenes render in windows and offscreen;
 [Full-scene renderer benchmarks](docs/performance.md#full-scene-renderer-benchmark)
 cover text lists, image cards and layered glass. CSS, themes, components and
 comparative framework measurements remain in progress.
-Native execution is currently validated on macOS with Metal.
+Native rendering is tested on macOS with Metal and in CI on Linux with software Vulkan, under X11 and Wayland.
 
 ## Architecture
 

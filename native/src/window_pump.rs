@@ -208,7 +208,7 @@ unsafe extern "C" fn idle(_: Handle) {}
 unsafe extern "C" fn prepare(handle: Handle) {
     let state = state(handle);
     // Flush libuv's queued descriptor registrations in its normal I/O phase
-    // without sleeping there; AppKit will do the waiting in the check phase.
+    // without sleeping there; the platform loop waits in the check phase.
     uv_idle_start(state.idle.get(), idle);
 }
 unsafe extern "C" fn check(handle: Handle) {

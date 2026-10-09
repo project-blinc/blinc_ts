@@ -140,6 +140,11 @@ pub struct NativeHit {
     pub y: f64,
 }
 #[napi(object)]
+pub struct NativeHitRegion {
+    pub hits: Vec<NativeHit>,
+    pub bounds: Vec<f64>,
+}
+#[napi(object)]
 pub struct TextStyle {
     pub font_size: Option<f64>,
     pub line_height: Option<f64>,
@@ -428,6 +433,32 @@ impl NativeLayout {
                     .map(Into::into))
             })
         }
+    }
+    #[napi]
+    pub fn hit_test_region(
+        &self,
+        root: &NativeLayoutNode,
+        x: f64,
+        y: f64,
+    ) -> Result<NativeHitRegion> {
+        self.owner.check()?;
+        let (hits, region) = self
+            .owner
+            .tree
+            .borrow()
+            .hit_test_region(root.node, number(x)?, number(y)?)
+            .map_err(error)?;
+        Ok(NativeHitRegion {
+            hits: hits
+                .into_iter()
+                .map(|h| NativeHit {
+                    node_id: h.node.raw().into(),
+                    x: h.x as f64,
+                    y: h.y as f64,
+                })
+                .collect(),
+            bounds: region.bounds.map(f64::from).to_vec(),
+        })
     }
     #[napi]
     pub fn hit_test(&self, root: &NativeLayoutNode, x: f64, y: f64) -> Result<Vec<NativeHit>> {

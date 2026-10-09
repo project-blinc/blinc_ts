@@ -291,8 +291,8 @@ The macOS host now waits through xwindow and wakes for native events, Node I/O,
 or a real timer deadline. It does not run `uv_run` recursively. Quiet samples
 should contain zero window polls as well as zero presented frames. The native
 wake test verifies timer/worker/socket progress, explicit redraws, multiple
-windows and disposal; Vite HMR is verified separately. Other platforms currently
-retain the timer pump until their native integration is validated.
+windows and disposal; Vite HMR is verified separately. Linux uses the same
+backend-descriptor integration; Windows retains the bounded timer pump.
 
 The helper watches libuv's backend descriptor using the documented
 [embedding facilities](https://docs.libuv.org/en/v1.x/loop.html#c.uv_backend_fd).
@@ -359,3 +359,52 @@ copy with a borrowed view.
 Offscreen captures force readback synchronization. Use them to verify pixels,
 geometry and motion traces. Measure interactive rendering separately, with
 capture and debug overlays disabled.
+
+## Resource and input audit, 2026-10-09
+
+| Area                    | Current SDK behavior                                                                                                                                                                       |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Shader compilation      | Generated WGSL is a module constant. Scene pipelines compile once on first use: zero at construction, two for a solid-box scene.                                                           |
+| GPU allocation policy   | Both window and offscreen devices request `MemoryHints.MemoryUsage`.                                                                                                                       |
+| Image and glyph atlases | Unused GPU slots are 1×1 pixels. Image storage grows directly to the required power of two, starting at 256 pixels on first use.                                                           |
+| Effect targets          | Blur rows and shadow scratch are allocated only when required and shared across nested groups. Only simultaneously active group contents need separate textures.                           |
+| Temporary GPU handles   | Shader modules and pipeline builders are released after construction, including canvas and snapshot pipelines. Encoders and acquired surface views are released after every frame.         |
+| Text and glyph caching  | Shaping and raster caches use the shared native encoder's bounded LRU caches. Uploads use atlas revisions and dirty rectangles; unchanged atlases upload zero bytes.                       |
+| Image ownership         | Image resampling is cached per image/size/fit. The packed GPU atlas retains its peak size until renderer disposal; removing a node does not shrink it.                                     |
+| Layout and scene work   | Owned edits coalesce presentation; paint-only changes skip layout. Display-list and GPU buffers retain capacity; clipping culls invisible scene work.                                      |
+| Hit queries             | `Layout.createHitCache(root)` reuses native conservative hit regions and invalidates on edits and layout computation. 100,000 queries inside one region make zero additional native walks. |
+| Pointer input           | GUI hosts disable raw device events by default; `deviceEvents` opts back in. Generated xwindow bindings expose native quiet-movement coalescing.                                           |
+| Idle windows            | macOS and Linux use the native/libuv pump with input, I/O and timer deadlines. Windows currently uses the bounded timer fallback.                                                          |
+| Runtime caches and GC   | JavaScript uses V8. AIR/JIT tier thresholds and the application preset are runtime-specific and have no equivalent SDK setting.                                                            |
+
+`tests/renderer-resources.test.mjs` enforces zero unused shader compilation,
+small placeholder textures, zero new GPU resources over 1,000 unchanged frames,
+and deterministic release after failed compilation and disposal. Native GPU
+tests compare saved geometry, clipping, layers and custom canvas references;
+zero-blur glass retains refraction and chromatic separation.
+
+### Quiet pointer regions
+
+`HitCache.pathAt(x, y)` returns the geometric path's node IDs. Its `bounds` use
+logical layout pixels; repeated queries return the same array. Curved clipping
+and rotated boundaries conservatively fall back to exact native hit testing.
+Use `layout.hitTest(root, x, y)` for fresh local coordinates when dispatching an
+actual event. Geometric hit eligibility alone does not identify event handlers.
+
+Framework adapters may pass safe bounds, multiplied by the window's scale,
+to `host.window.coalesceCursorMoves(left, top, right, bottom)`. Only enable this
+when movement within the region has no observable effect. Disable it for drag
+operations, continuous move handlers and global pointer hooks. On scene or
+handler changes, consume `host.window.takeCursorMove()` before processing new
+work and recompute eligibility. Native button and wheel delivery flushes the
+retained position first. X11's duplicate X/Y valuators stay quiet when raw
+input is disabled; other axes and raw-input subscribers keep normal delivery.
+
+The SDK exposes these primitives; framework-specific event routing must supply
+its own handler policy. A debug hit map should visualize the same native hit
+paths and quiet bounds, including ancestor routing, rather than infer eligibility
+from component names.
+
+CI runs the native suite on software Vulkan under both X11 and Wayland, with
+pinned binding dependencies. These jobs include snapshots, resource ownership,
+idle wake/deadline delivery, multiple windows, snapshot watch recovery and HMR.

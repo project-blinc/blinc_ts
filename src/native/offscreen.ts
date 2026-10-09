@@ -31,8 +31,6 @@ export class OffscreenRenderer {
   readonly texture: gpu.GpuTexture;
   readonly view: gpu.GpuTextureView;
   readonly #readback: gpu.GpuBuffer;
-  readonly #shader: gpu.GpuShader;
-  readonly #builder: gpu.GpuPipelineBuilder;
   readonly #padded: Uint8Array;
   #disposed = false;
   #capturing = false;
@@ -44,8 +42,6 @@ export class OffscreenRenderer {
       instance: gpu.GpuInstance;
       adapter: gpu.GpuAdapter;
       device: gpu.GpuDevice;
-      shader: gpu.GpuShader;
-      builder: gpu.GpuPipelineBuilder;
       pipeline: gpu.GpuPipeline;
       texture: gpu.GpuTexture;
       view: gpu.GpuTextureView;
@@ -62,8 +58,6 @@ export class OffscreenRenderer {
     this.pipeline = resources.pipeline;
     this.texture = resources.texture;
     this.view = resources.view;
-    this.#shader = resources.shader;
-    this.#builder = resources.builder;
     this.#readback = resources.readback;
     this.#padded = new Uint8Array(this.rowStride * height);
   }
@@ -96,26 +90,33 @@ export class OffscreenRenderer {
         throw new Error('No native GPU adapter');
       }
       retain(adapter);
-      const device = await adapter.requestDevice();
+      const device = await adapter.requestDeviceWith({ memoryHints: gpu.MemoryHints.MemoryUsage });
       if (!device?.valid()) {
         throw new Error('No native GPU device');
       }
       retain(device);
-      const module = retain(device.createShader(shader.code));
-      const builder = retain(device.pipeline());
-      builder.shader(module, shader.vertexEntryPoint, shader.fragmentEntryPoint);
-      builder.target(gpu.TextureFormat.Rgba8unorm, gpu.ColorWrite.ALL);
-      if (shader.alphaBlend) {
-        builder.blend(
-          gpu.BlendFactor.SrcAlpha,
-          gpu.BlendFactor.OneMinusSrcAlpha,
-          gpu.BlendOperation.Add,
-          gpu.BlendFactor.One,
-          gpu.BlendFactor.OneMinusSrcAlpha,
-          gpu.BlendOperation.Add,
-        );
+      const module = device.createShader(shader.code);
+      let builder: gpu.GpuPipelineBuilder | undefined;
+      let pipeline: gpu.GpuPipeline;
+      try {
+        builder = device.pipeline();
+        builder.shader(module, shader.vertexEntryPoint, shader.fragmentEntryPoint);
+        builder.target(gpu.TextureFormat.Rgba8unorm, gpu.ColorWrite.ALL);
+        if (shader.alphaBlend) {
+          builder.blend(
+            gpu.BlendFactor.SrcAlpha,
+            gpu.BlendFactor.OneMinusSrcAlpha,
+            gpu.BlendOperation.Add,
+            gpu.BlendFactor.One,
+            gpu.BlendFactor.OneMinusSrcAlpha,
+            gpu.BlendOperation.Add,
+          );
+        }
+        pipeline = retain(builder.build());
+      } finally {
+        builder?.destroy();
+        module.destroy();
       }
-      const pipeline = retain(builder.build());
       const texture = retain(
         device.texture({
           size: { width, height, depthOrArrayLayers: 1 },
@@ -138,8 +139,6 @@ export class OffscreenRenderer {
         instance,
         adapter,
         device,
-        shader: module,
-        builder,
         pipeline,
         texture,
         view,
@@ -259,8 +258,6 @@ export class OffscreenRenderer {
       this.view,
       this.texture,
       this.pipeline,
-      this.#builder,
-      this.#shader,
       this.device,
       this.adapter,
       this.instance,

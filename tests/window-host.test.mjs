@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { NativeWindowHost } from '../dist/native/window.js';
-import { gpu } from '../dist/native/index.js';
+import { gpu, window as WindowApi } from '../dist/native/index.js';
 
 // Injectable bindings model only surface/lifetime events that are hard to force on a real compositor.
 function fixture(options = {}) {
@@ -64,7 +64,14 @@ function fixture(options = {}) {
     prePresentNotify() {},
   };
   const bindings = {
-    window: { Window: { open: () => window } },
+    window: {
+      Window: {
+        open: () => window,
+        listenDeviceEvents: (policy) => {
+          state.deviceEvents = policy;
+        },
+      },
+    },
     gpu: { GpuInstance: { new: () => instance } },
   };
   return { bindings, state, destroyed, configured, adapter, device, events };
@@ -80,6 +87,11 @@ test('window host defers unavailable/hidden frames, coalesces requests and retai
   const host = new Host(f.bindings, { transparent: true });
   try {
     await host.ready;
+    assert.equal(
+      f.state.deviceEvents,
+      WindowApi.DeviceEvents.Never,
+      'GUI hosts disable unused raw-device events',
+    );
     assert.equal(host.format, gpu.TextureFormat.Bgra8unorm);
     let draws = 0;
     host.paint((_encoder, _target, width, height, scale) => {

@@ -56,6 +56,19 @@ interface GlyphTexture extends Texture {
 const R = sceneSchema.recordFloats;
 const KIND = fields.typeInfo * 4;
 const GRADIENT = fields.gradient * 4;
+// Generated WGSL is a module constant, shared by every renderer. Compile only used primitives.
+const SHADERS = new Map<number, Shader>([
+  [0, boxShader],
+  [3, shadowShader],
+  [7, textShader],
+  [32, imageShader],
+  [42, backdropShader],
+  [41, layerShader],
+  [-3, layerRowsShader],
+  [-4, layerShadowShader],
+  [-1, backdropRowsShader],
+  [-2, blitShader],
+]);
 
 /** Native display-list renderer. Owns GPU caches; the host owns the device and layout. */
 export class SceneRenderer {
@@ -63,6 +76,8 @@ export class SceneRenderer {
   readonly #layout: Layout;
   readonly #queue: gpu.GpuQueue;
   readonly #owned: { destroy(): void }[] = [];
+  readonly #format: gpu.TextureFormat;
+  readonly #pipelineLayout: gpu.GpuPipelineLayout;
   readonly #pipelines = new Map<number, gpu.GpuPipeline>();
   readonly #frameLayout: gpu.GpuBindGroupLayout;
   readonly #textureLayout: gpu.GpuBindGroupLayout;
@@ -109,6 +124,7 @@ export class SceneRenderer {
     format: gpu.TextureFormat = gpu.TextureFormat.Rgba8unorm,
   ) {
     this.#device = device;
+    this.#format = format;
     this.#canvasFrame = new CanvasFrame({
       device,
       state: this.#canvasState,
@@ -164,7 +180,7 @@ export class SceneRenderer {
         ],
       }),
     );
-    const pipelineLayout = keep(
+    this.#pipelineLayout = keep(
       device.createPipelineLayout({ bindGroupLayouts: [this.#frameLayout, this.#textureLayout] }),
     );
     this.#viewport = keep(
@@ -184,41 +200,6 @@ export class SceneRenderer {
     ];
     this.#images = new TextureAtlas(device);
     try {
-      for (const [kind, shader] of new Map<number, Shader>([
-        [0, boxShader],
-        [3, shadowShader],
-        [7, textShader],
-        [32, imageShader],
-        [42, backdropShader],
-        [41, layerShader],
-        [-3, layerRowsShader],
-        [-4, layerShadowShader],
-        [-1, backdropRowsShader],
-        [-2, blitShader],
-      ])) {
-        const module = device.createShader(shader.code);
-        const builder = device.pipeline();
-        try {
-          builder.shader(module, shader.vertexEntryPoint, shader.fragmentEntryPoint);
-          builder.layout(pipelineLayout);
-          builder.target(kind === -2 ? format : gpu.TextureFormat.Rgba8unorm, gpu.ColorWrite.ALL);
-          if (shader.alphaBlend) {
-            builder.blend(
-              gpu.BlendFactor.SrcAlpha,
-              gpu.BlendFactor.OneMinusSrcAlpha,
-              gpu.BlendOperation.Add,
-              gpu.BlendFactor.One,
-              gpu.BlendFactor.OneMinusSrcAlpha,
-              gpu.BlendOperation.Add,
-            );
-          }
-          this.#pipelines.set(kind, keep(builder.build()));
-        } finally {
-          // Release construction handles; pipelines retain what they need.
-          builder.destroy();
-          module.destroy();
-        }
-      }
       this.#check();
     } catch (error) {
       this.dispose();
@@ -273,21 +254,28 @@ export class SceneRenderer {
           bindGroupLayouts: [this.#frameLayout, this.#textureLayout, ...extraLayouts],
         }),
       );
-      const module = keep(this.#device.createShader(shader.code));
-      const builder = keep(this.#device.pipeline());
-      builder.shader(module, shader.vertexEntryPoint, shader.fragmentEntryPoint);
-      builder.layout(layout);
-      builder.target(gpu.TextureFormat.Rgba8unorm, gpu.ColorWrite.ALL);
-      builder.blend(
-        gpu.BlendFactor.SrcAlpha,
-        gpu.BlendFactor.OneMinusSrcAlpha,
-        gpu.BlendOperation.Add,
-        gpu.BlendFactor.One,
-        gpu.BlendFactor.OneMinusSrcAlpha,
-        gpu.BlendOperation.Add,
-      );
-      const pipeline = keep(builder.build());
-      this.#check();
+      const module = this.#device.createShader(shader.code);
+      let builder: gpu.GpuPipelineBuilder | undefined;
+      let pipeline: gpu.GpuPipeline;
+      try {
+        builder = this.#device.pipeline();
+        builder.shader(module, shader.vertexEntryPoint, shader.fragmentEntryPoint);
+        builder.layout(layout);
+        builder.target(gpu.TextureFormat.Rgba8unorm, gpu.ColorWrite.ALL);
+        builder.blend(
+          gpu.BlendFactor.SrcAlpha,
+          gpu.BlendFactor.OneMinusSrcAlpha,
+          gpu.BlendOperation.Add,
+          gpu.BlendFactor.One,
+          gpu.BlendFactor.OneMinusSrcAlpha,
+          gpu.BlendOperation.Add,
+        );
+        pipeline = keep(builder.build());
+        this.#check();
+      } finally {
+        builder?.destroy();
+        module.destroy();
+      }
       result = new CanvasPipeline(this, pipeline, shader.vertexCount, resources, () => {
         this.#assertIdle();
         this.#canvasPipelines.delete(result);
@@ -735,6 +723,46 @@ export class SceneRenderer {
       ],
     });
   }
+  #pipeline(kind: number): gpu.GpuPipeline {
+    const cached = this.#pipelines.get(kind);
+    if (cached) {
+      return cached;
+    }
+    const shader = SHADERS.get(kind);
+    if (!shader) {
+      throw new Error(`Unsupported pipeline ${kind}`);
+    }
+    const module = this.#device.createShader(shader.code);
+    let builder: gpu.GpuPipelineBuilder | undefined;
+    let pipeline: gpu.GpuPipeline | undefined;
+    try {
+      builder = this.#device.pipeline();
+      builder.shader(module, shader.vertexEntryPoint, shader.fragmentEntryPoint);
+      builder.layout(this.#pipelineLayout);
+      builder.target(kind === -2 ? this.#format : gpu.TextureFormat.Rgba8unorm, gpu.ColorWrite.ALL);
+      if (shader.alphaBlend) {
+        builder.blend(
+          gpu.BlendFactor.SrcAlpha,
+          gpu.BlendFactor.OneMinusSrcAlpha,
+          gpu.BlendOperation.Add,
+          gpu.BlendFactor.One,
+          gpu.BlendFactor.OneMinusSrcAlpha,
+          gpu.BlendOperation.Add,
+        );
+      }
+      pipeline = builder.build();
+      this.#check();
+      this.#pipelines.set(kind, pipeline);
+      this.#owned.push(pipeline);
+      return pipeline;
+    } catch (error) {
+      pipeline?.destroy();
+      throw error;
+    } finally {
+      builder?.destroy();
+      module.destroy();
+    }
+  }
   #draw(
     encoder: gpu.GpuEncoder,
     kind: number,
@@ -743,7 +771,7 @@ export class SceneRenderer {
     layer: gpu.GpuTextureView,
     shadow: gpu.GpuTextureView = this.#dummy.view,
   ): void {
-    encoder.renderSetPipeline(this.#pipelines.get(kind)!);
+    encoder.renderSetPipeline(this.#pipeline(kind));
     this.#bindGroups(encoder, layer, shadow);
     encoder.renderDrawRange(kind === -2 ? 3 : 6, count, 0, first);
   }

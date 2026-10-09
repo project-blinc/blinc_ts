@@ -1,6 +1,11 @@
 import type { Scope } from '../hmr.js';
-import { gpu, LayoutNode, type Layout, type NativeBindings, type window } from './index.js';
+import { gpu, window, LayoutNode, type Layout, type NativeBindings } from './index.js';
 import { SceneRenderer, type RenderOptions, type SceneRenderStats } from './renderer.js';
+
+export interface NativeWindowOptions extends window.WindowAttributes {
+  /** Global native-loop raw-device policy; GUI hosts default to Never. */
+  deviceEvents?: window.DeviceEvents;
+}
 
 /** Scene presentation options; the window supplies dimensions and display scale. */
 export type WindowSceneOptions = Omit<RenderOptions, 'width' | 'height' | 'scale'>;
@@ -51,18 +56,20 @@ export class NativeWindowHost {
   #error: unknown;
   #stats: SceneRenderStats | undefined;
 
-  constructor(bindings: NativeBindings, options: window.WindowAttributes = {}) {
+  constructor(bindings: NativeBindings, options: NativeWindowOptions = {}) {
     this.closed = new Promise<void>((resolve) => {
       this.#resolveClosed = resolve;
     });
+    const { deviceEvents = window.DeviceEvents.Never, ...attributes } = options;
     this.#transparent = options.transparent ?? false;
     this.window = bindings.window.Window.open({
       title: 'Blinc',
       width: 720,
       height: 480,
-      ...options,
+      ...attributes,
     });
     try {
+      bindings.window.Window.listenDeviceEvents(deviceEvents);
       this.#unsubscribeEvents = bindings.subscribeWindowEvents?.(() => {
         this.#tick();
       });

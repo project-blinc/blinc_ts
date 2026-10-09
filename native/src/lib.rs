@@ -14,5 +14,5 @@ mod window;
 #[napi_derive::napi]
 pub fn build_profile() -> String { env!("BLINC_BUILD_PROFILE").to_owned() }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 mod window_pump;

@@ -68,6 +68,11 @@ export interface NativeLayout extends BrushFactory {
   atlasInfo(color: boolean, seen: number): AtlasInfo | null;
   readAtlas(color: boolean, seen: number, target: Uint8Array): AtlasInfo | null;
   hitTest(root: NativeLayoutNode, x: number, y: number): SceneHit[];
+  hitTestRegion(
+    root: NativeLayoutNode,
+    x: number,
+    y: number,
+  ): { hits: SceneHit[]; bounds: number[] };
   readonly size: number;
   readonly disposed: boolean;
   createNode(style: LayoutStyle): NativeLayoutNode;
@@ -79,6 +84,7 @@ export interface NativeLayout extends BrushFactory {
 /** An owned native tree. A mounted root's Scope can release it during HMR. */
 export class Layout {
   readonly #native: NativeLayout;
+  #hitRevision = 0;
   readonly #listeners = new Set<(change: LayoutChange) => void>();
 
   /** @internal Use loadNative().createLayout(scope). */
@@ -102,6 +108,7 @@ export class Layout {
   }
   /** @internal Nodes notify only after a native edit succeeds. */
   changed(change: LayoutChange): void {
+    this.#hitRevision++;
     let errors: unknown[] | undefined;
     for (const listener of this.#listeners) {
       try {
@@ -113,6 +120,22 @@ export class Layout {
     if (errors) {
       throw new AggregateError(errors, 'Layout change listener failed');
     }
+  }
+
+  /** Changes on edits and computed geometry, including visual transforms and clipping. */
+  get hitRevision(): number {
+    return this.#hitRevision;
+  }
+
+  /** Cache geometric paths; continuous move handlers and dragging must still receive events. */
+  createHitCache(root: LayoutNode): HitCache {
+    LayoutNode.unwrap(root, this);
+    return new HitCache(this, root);
+  }
+  /** Exact local coordinates and bounds for a hit path, from one native walk. */
+  hitTestRegion(root: LayoutNode, x: number, y: number): HitRegion {
+    const result = this.#native.hitTestRegion(LayoutNode.unwrap(root, this), x, y);
+    return { hits: result.hits, bounds: result.bounds as [number, number, number, number] };
   }
 
   get size(): number {
@@ -167,6 +190,7 @@ export class Layout {
   }
 
   compute(root: LayoutNode, width: number, height: number): void {
+    this.#hitRevision++;
     this.#native.compute(LayoutNode.unwrap(root, this), width, height);
   }
 
@@ -276,4 +300,44 @@ export class LayoutNode {
     this.#native.remove();
     this.#layout.changed('layout');
   }
+}
+
+/** A geometric path cache. Repeated points allocate nothing and cross no native boundary. */
+export class HitCache {
+  readonly #layout: Layout;
+  readonly #root: LayoutNode;
+  #revision = -1;
+  #region: HitRegion | undefined;
+  #path: readonly bigint[] = [];
+  constructor(layout: Layout, root: LayoutNode) {
+    this.#layout = layout;
+    this.#root = root;
+  }
+  /** Valid only for the current geometry. Bounds use layout pixels, not device pixels. */
+  get bounds(): readonly [number, number, number, number] | undefined {
+    return this.#revision === this.#layout.hitRevision && !this.#layout.disposed
+      ? this.#region?.bounds
+      : undefined;
+  }
+  pathAt(x: number, y: number): readonly bigint[] {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      throw new RangeError('Invalid hit coordinates');
+    }
+    if (this.#layout.disposed) {
+      throw new Error('Layout disposed');
+    }
+    const bounds = this.bounds;
+    if (bounds && x >= bounds[0] && y >= bounds[1] && x < bounds[2] && y < bounds[3]) {
+      return this.#path;
+    }
+    this.#region = this.#layout.hitTestRegion(this.#root, x, y);
+    this.#revision = this.#layout.hitRevision;
+    this.#path = this.#region.hits.map((hit) => hit.nodeId);
+    return this.#path;
+  }
+}
+export interface HitRegion {
+  /** Fresh local coordinates at the queried point. */
+  readonly hits: readonly SceneHit[];
+  readonly bounds: readonly [number, number, number, number];
 }
