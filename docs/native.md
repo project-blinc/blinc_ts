@@ -87,17 +87,35 @@ try {
 }
 ```
 
-Styles currently cover flex direction, alignment, justification, grow/shrink,
-gaps, uniform padding, overflow and pixel/percentage/auto sizes with min/max constraints.
-Use `LayoutDirection`, `LayoutAlign`, `LayoutJustify` and `LayoutOverflow` for
+The typed style covers the CSS box model: sizes with min/max constraints,
+margin, padding and border per side, position and inset, display (flex, grid,
+block or none), flex direction, wrap, grow, shrink and basis, every alignment
+(`align`, `alignSelf`, `alignContent`, `justify`, `justifyItems`,
+`justifySelf`), gaps per axis, `order`, `aspectRatio`, overflow per axis, and
+grid templates and placement written as CSS text. Lengths are pixels,
+percentages such as `'50%'`, or `'auto'`. Border widths take layout space, as
+in CSS. Use `LayoutDirection`, `LayoutAlign`, `LayoutJustify` and `LayoutOverflow` for
 categorical styles, for example `align: LayoutAlign.Center`. These constants are
 numbers generated for TypeScript and Rust from `native/api/layout.rs` through
 x-idl. Native calls validate numeric enum values without allocating or comparing
 strings; loading checks the schema fingerprint. Unknown codes, fractions and
 non-finite values are rejected before edits are applied. Size values still accept
 numbers, percentages such as `'100%'`, and `'auto'`.
-`setStyle` merges fields. `setChildren` reorders or reparents existing nodes;
-removing a node removes its descendants. Handles are checked for context and
+`setStyle` merges fields, and null on a box-model field restores a new node's
+value. Beyond the original flex fields, a style is written through blinc_abi's
+property router, the same native path a CSS cascade writes through. Code that
+works with CSS names can call `node.setLayoutProperty('margin', '8px auto')`, or
+`node.setProperty(LayoutProperty.Width, 120)` with a router id. These writes are
+queued: writes in one tick coalesce, the last write to a field wins, and the
+queue is submitted as one native edit at the end of the tick, or earlier when
+the layout is computed, read or otherwise edited. `layout.flush()` submits it
+at once.
+
+`setChildren` replaces a node's children, reordering or reparenting existing
+nodes. For keyed list updates, `insertBefore(child, before)`, `append(child)`,
+`removeChild(child)` and `detach()` each make one native edit without
+resubmitting the siblings. A removed or detached child stays valid and can be
+placed again. `remove()` deletes a node and its descendants. Handles are checked for context and
 generation, and cyclic or duplicate-child edits are rejected atomically.
 
 Compute again after edits before reading bounds. `readBounds` accepts a reusable
@@ -107,7 +125,8 @@ pointer escapes to JavaScript. Layout contexts use `blinc_abi` without its
 HashLink feature; the Node addon does not link the HashLink runtime.
 
 `tests/native-layout.mjs` covers geometry, edits, invalid handles/buffers and HMR
-scope disposal against the compiled addon.
+scope disposal against the compiled addon. `tests/native-box-model.mjs` covers
+the box model, the property router and the child operations.
 
 ## Owned scenes and images
 

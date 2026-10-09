@@ -16,11 +16,32 @@ import type {
   LayoutOverflow,
 } from './generated/layout.js';
 import type { Scope } from '../hmr.js';
+import { layoutDeclaration, propertyWrite, type PropertyWrite } from './properties.js';
 
 export type LayoutChange = 'layout' | 'paint' | 'disposed';
 
 export type LayoutLength = number | `${number}%` | 'auto';
-/** Initial native flex layout surface. Values use logical pixels. */
+/** One value for every side, or top, right, bottom and left. */
+export type LayoutSides<T> = T | readonly [top: T, right: T, bottom: T, left: T];
+export type LayoutAlignKeyword =
+  'auto' | 'start' | 'end' | 'flex-start' | 'flex-end' | 'center' | 'baseline' | 'stretch';
+export type LayoutContentKeyword =
+  | 'normal'
+  | 'start'
+  | 'end'
+  | 'flex-start'
+  | 'flex-end'
+  | 'center'
+  | 'stretch'
+  | 'space-between'
+  | 'space-around'
+  | 'space-evenly';
+export type LayoutOverflowKeyword = 'visible' | 'clip' | 'hidden' | 'scroll';
+/**
+ * A typed layout style. Values use logical pixels. The box-model fields are
+ * written through the same property router as `setProperty`; null on one of
+ * them restores a new node's value.
+ */
 export interface LayoutStyle {
   width?: LayoutLength;
   height?: LayoutLength;
@@ -35,7 +56,98 @@ export interface LayoutStyle {
   grow?: number;
   shrink?: number;
   gap?: number;
-  padding?: number;
+  padding?: LayoutSides<LayoutLength> | null;
+  margin?: LayoutSides<LayoutLength> | null;
+  /** Border widths take layout space and paint with the node's border color. */
+  border?: LayoutSides<number> | null;
+  rowGap?: LayoutLength | null;
+  columnGap?: LayoutLength | null;
+  display?: 'flex' | 'grid' | 'block' | 'none' | null;
+  position?: 'relative' | 'absolute' | null;
+  inset?: LayoutSides<LayoutLength> | null;
+  wrap?: 'nowrap' | 'wrap' | 'wrap-reverse' | null;
+  alignSelf?: LayoutAlignKeyword | null;
+  alignContent?: LayoutContentKeyword | null;
+  justifyItems?: LayoutAlignKeyword | null;
+  justifySelf?: LayoutAlignKeyword | null;
+  basis?: LayoutLength | null;
+  /** CSS `order`: children lay out and paint stably sorted by it. */
+  order?: number | null;
+  /** Width over height. */
+  aspectRatio?: number | null;
+  overflowX?: LayoutOverflowKeyword | null;
+  overflowY?: LayoutOverflowKeyword | null;
+  /** CSS grid text, such as `repeat(3, 1fr) 120px`, `span 2` or `1 / -1`. */
+  gridTemplateColumns?: string | null;
+  gridTemplateRows?: string | null;
+  gridColumn?: string | null;
+  gridRow?: string | null;
+}
+type NativeLayoutStyle = Pick<
+  LayoutStyle,
+  | 'width'
+  | 'height'
+  | 'minWidth'
+  | 'minHeight'
+  | 'maxWidth'
+  | 'maxHeight'
+  | 'direction'
+  | 'align'
+  | 'justify'
+  | 'overflow'
+  | 'grow'
+  | 'shrink'
+  | 'gap'
+> & { padding?: number };
+/** Typed fields routed through the property router, by the CSS property each writes. */
+const routed: Readonly<Record<string, string>> = {
+  margin: 'margin',
+  border: 'border-width',
+  rowGap: 'row-gap',
+  columnGap: 'column-gap',
+  display: 'display',
+  position: 'position',
+  inset: 'inset',
+  wrap: 'flex-wrap',
+  alignSelf: 'align-self',
+  alignContent: 'align-content',
+  justifyItems: 'justify-items',
+  justifySelf: 'justify-self',
+  basis: 'flex-basis',
+  order: 'order',
+  aspectRatio: 'aspect-ratio',
+  overflowX: 'overflow-x',
+  overflowY: 'overflow-y',
+  gridTemplateColumns: 'grid-template-columns',
+  gridTemplateRows: 'grid-template-rows',
+  gridColumn: 'grid-column',
+  gridRow: 'grid-row',
+  padding: 'padding',
+};
+function cssText(value: unknown): string | number {
+  return Array.isArray(value) ? value.join(' ') : (value as string | number);
+}
+/** Split a typed style into the native fields and router writes, validating both. */
+function splitStyle(style: LayoutStyle): { native: NativeLayoutStyle; writes: PropertyWrite[] } {
+  const native: Record<string, unknown> = {};
+  const writes: PropertyWrite[] = [];
+  for (const [key, value] of Object.entries(style)) {
+    if (value === undefined) {
+      continue;
+    }
+    const css = routed[key];
+    if (css === undefined || (key === 'padding' && typeof value === 'number')) {
+      native[key] = value;
+      continue;
+    }
+    const v = value === null ? null : cssText(value);
+    writes.push(
+      ...(key === 'aspectRatio' && typeof v === 'number'
+        ? [propertyWrite(90, v)]
+        : layoutDeclaration(css, v)!),
+    );
+  }
+  return { native: native, writes };
 }
 
 /** @internal Native adapter contract; applications use Layout and LayoutNode. */
@@ -55,14 +167,23 @@ export interface NativeLayoutNode {
   setPointerEvents(enabled: boolean): void;
   setResource(slot: number | null, canvas: boolean): void;
   setScroll(x: number, y: number): void;
-  setStyle(style: LayoutStyle): void;
+  setStyle(style: NativeLayoutStyle): void;
   setChildren(children: readonly NativeLayoutNode[]): void;
+  insertBefore(child: NativeLayoutNode, before: NativeLayoutNode | null | undefined): void;
+  removeChild(child: NativeLayoutNode): void;
+  detach(): void;
   remove(): void;
 }
 /** @internal */
 export interface NativeLayout extends BrushFactory {
   setImageSource(source: string, fit: ImageFit, slot: number | null): void;
-  createText(content: string, text: TextStyle, style: LayoutStyle): NativeLayoutNode;
+  createText(content: string, text: TextStyle, style: NativeLayoutStyle): NativeLayoutNode;
+  applyProperties(
+    nodes: readonly NativeLayoutNode[],
+    ops: Int32Array,
+    numbers: Float64Array,
+    strings: readonly string[],
+  ): void;
   prepareDisplayList(root: NativeLayoutNode, options: PaintOptions): PaintInfo;
   readDisplayList(target: Float32Array): void;
   atlasInfo(color: boolean, seen: number): AtlasInfo | null;
@@ -75,7 +196,7 @@ export interface NativeLayout extends BrushFactory {
   ): { hits: SceneHit[]; bounds: number[] };
   readonly size: number;
   readonly disposed: boolean;
-  createNode(style: LayoutStyle): NativeLayoutNode;
+  createNode(style: NativeLayoutStyle): NativeLayoutNode;
   compute(root: NativeLayoutNode, width: number, height: number): void;
   readBounds(nodes: readonly NativeLayoutNode[], target: Float32Array): void;
   dispose(): void;
@@ -86,6 +207,12 @@ export class Layout {
   readonly #native: NativeLayout;
   #hitRevision = 0;
   readonly #listeners = new Set<(change: LayoutChange) => void>();
+  // Queued property writes: the latest write per node and property, in write order.
+  #nodes: NativeLayoutNode[] = [];
+  readonly #nodeIndex = new Map<NativeLayoutNode, number>();
+  #writes: ([node: number, write: PropertyWrite] | undefined)[] = [];
+  readonly #slots = new Map<string, number>();
+  #scheduled = false;
 
   /** @internal Use loadNative().createLayout(scope). */
   constructor(native: NativeLayout, scope?: Scope) {
@@ -122,6 +249,79 @@ export class Layout {
     }
   }
 
+  /** @internal Queue a write; a later write to the same property replaces it. */
+  queueProperty(node: NativeLayoutNode, write: PropertyWrite): void {
+    if (this.disposed) {
+      throw new Error('Layout disposed');
+    }
+    let index = this.#nodeIndex.get(node);
+    if (index === undefined) {
+      index = this.#nodes.push(node) - 1;
+      this.#nodeIndex.set(node, index);
+    }
+    // Percentage and pixel ids share a field, so a replaced write moves to the end.
+    const key = `${index}:${write[0]}`;
+    const slot = this.#slots.get(key);
+    if (slot !== undefined) {
+      this.#writes[slot] = undefined;
+    }
+    this.#slots.set(key, this.#writes.push([index, write]) - 1);
+    if (!this.#scheduled) {
+      this.#scheduled = true;
+      queueMicrotask(() => {
+        this.#scheduled = false;
+        if (!this.disposed) {
+          this.flush();
+        }
+      });
+    }
+  }
+
+  /**
+   * Submit queued property writes as one native edit. Writes flush on their
+   * own at the end of the tick, and before any read or other edit.
+   */
+  flush(): void {
+    if (this.#writes.length === 0) {
+      return;
+    }
+    const nodes = this.#nodes;
+    const writes = this.#writes.filter((write) => write !== undefined);
+    this.#nodes = [];
+    this.#writes = [];
+    this.#nodeIndex.clear();
+    this.#slots.clear();
+    this.#submit(nodes, writes);
+  }
+
+  /** @internal Apply writes now, after any queued ones. */
+  applyNow(node: NativeLayoutNode, writes: readonly PropertyWrite[]): void {
+    this.flush();
+    if (writes.length > 0) {
+      this.#submit(
+        [node],
+        writes.map((write) => [0, write]),
+      );
+    }
+  }
+
+  #submit(
+    nodes: readonly NativeLayoutNode[],
+    writes: readonly (readonly [number, PropertyWrite])[],
+  ): void {
+    const ops = new Int32Array(writes.length * 3);
+    const numbers = new Float64Array(writes.length);
+    const strings: string[] = [];
+    writes.forEach(([node, [id, kind, value]], i) => {
+      ops[i * 3] = node;
+      ops[i * 3 + 1] = id;
+      ops[i * 3 + 2] = kind;
+      numbers[i] = typeof value === 'string' ? strings.push(value) - 1 : value;
+    });
+    this.#native.applyProperties(nodes, ops, numbers, strings);
+    this.changed('layout');
+  }
+
   /** Changes on edits and computed geometry, including visual transforms and clipping. */
   get hitRevision(): number {
     return this.#hitRevision;
@@ -129,11 +329,13 @@ export class Layout {
 
   /** Cache geometric paths; continuous move handlers and dragging must still receive events. */
   createHitCache(root: LayoutNode): HitCache {
+    this.flush();
     LayoutNode.unwrap(root, this);
     return new HitCache(this, root);
   }
   /** Exact local coordinates and bounds for a hit path, from one native walk. */
   hitTestRegion(root: LayoutNode, x: number, y: number): HitRegion {
+    this.flush();
     const result = this.#native.hitTestRegion(LayoutNode.unwrap(root, this), x, y);
     return { hits: result.hits, bounds: result.bounds as [number, number, number, number] };
   }
@@ -146,7 +348,10 @@ export class Layout {
   }
 
   createNode(style: LayoutStyle = {}): LayoutNode {
-    return new LayoutNode(this, this.#native.createNode(style));
+    const { native, writes } = splitStyle(style);
+    const node = this.#native.createNode(native);
+    this.applyNow(node, writes);
+    return new LayoutNode(this, node);
   }
 
   /** Bind a source/fit to the renderer's prepared image slot; null removes it. */
@@ -161,11 +366,15 @@ export class Layout {
   }
 
   createText(content: string, text: TextStyle = {}, style: LayoutStyle = {}): LayoutNode {
-    return new LayoutNode(this, this.#native.createText(content, text, style));
+    const { native, writes } = splitStyle(style);
+    const node = this.#native.createText(content, text, native);
+    this.applyNow(node, writes);
+    return new LayoutNode(this, node);
   }
 
   /** Encode the computed scene once; native vectors retain capacity across frames. */
   prepareDisplayList(root: LayoutNode, options: PaintOptions = {}): PaintInfo {
+    this.flush();
     return this.#native.prepareDisplayList(LayoutNode.unwrap(root, this), options);
   }
 
@@ -186,16 +395,19 @@ export class Layout {
 
   /** Topmost hit followed by its ancestors; uses the same visual offsets as paint. */
   hitTest(root: LayoutNode, x: number, y: number): SceneHit[] {
+    this.flush();
     return this.#native.hitTest(LayoutNode.unwrap(root, this), x, y);
   }
 
   compute(root: LayoutNode, width: number, height: number): void {
+    this.flush();
     this.#hitRevision++;
     this.#native.compute(LayoutNode.unwrap(root, this), width, height);
   }
 
   /** Write absolute [x, y, width, height] per node into reusable caller-owned storage. */
   readBounds(nodes: readonly LayoutNode[], target: Float32Array): void {
+    this.flush();
     this.#native.readBounds(
       nodes.map((node) => LayoutNode.unwrap(node, this)),
       target,
@@ -207,6 +419,10 @@ export class Layout {
     if (this.disposed) {
       return;
     }
+    this.#writes = [];
+    this.#nodes = [];
+    this.#nodeIndex.clear();
+    this.#slots.clear();
     this.#native.dispose();
     try {
       this.changed('disposed');
@@ -285,18 +501,81 @@ export class LayoutNode {
 
   /** Merge the supplied style fields; omitted fields retain their values. */
   setStyle(style: LayoutStyle): void {
-    this.#native.setStyle(style);
+    const { native, writes } = splitStyle(style);
+    this.#layout.flush();
+    if (Object.keys(native).length > 0) {
+      this.#native.setStyle(native);
+    }
+    this.#layout.applyNow(this.#native, writes);
     this.#layout.changed('layout');
+  }
+
+  /**
+   * Queue a write of router property `id` (see `LayoutProperty`): a number,
+   * an enum code, grid text, or null to restore a new node's value. Writes
+   * in one tick coalesce and are submitted together.
+   */
+  setProperty(id: number, value: number | string | null): void {
+    this.#layout.queueProperty(this.#native, propertyWrite(id, value));
+  }
+
+  /**
+   * Queue a CSS layout declaration, such as `('margin', '8px auto')` or
+   * `('grid-column', '1 / -1')`. Returns false for a property that is not a
+   * layout property; throws for a value that does not parse.
+   */
+  setLayoutProperty(name: string, value: number | string | null): boolean {
+    const writes = layoutDeclaration(name, value);
+    if (!writes) {
+      return false;
+    }
+    for (const write of writes) {
+      this.#layout.queueProperty(this.#native, write);
+    }
+    return true;
   }
 
   /** Replace or reorder children, detaching moved nodes from previous parents. */
   setChildren(children: readonly LayoutNode[]): void {
+    this.#layout.flush();
     this.#native.setChildren(children.map((child) => LayoutNode.unwrap(child, this.#layout)));
+    this.#layout.changed('layout');
+  }
+
+  /**
+   * Place `child` before `before`, or last when it is null, moving it from
+   * wherever it is. One native edit; siblings are not resubmitted.
+   */
+  insertBefore(child: LayoutNode, before: LayoutNode | null = null): void {
+    this.#layout.flush();
+    this.#native.insertBefore(
+      LayoutNode.unwrap(child, this.#layout),
+      before && LayoutNode.unwrap(before, this.#layout),
+    );
+    this.#layout.changed('layout');
+  }
+
+  append(child: LayoutNode): void {
+    this.insertBefore(child, null);
+  }
+
+  /** Detach `child`, which must be this node's; it stays valid and can be placed again. */
+  removeChild(child: LayoutNode): void {
+    this.#layout.flush();
+    this.#native.removeChild(LayoutNode.unwrap(child, this.#layout));
+    this.#layout.changed('layout');
+  }
+
+  /** Take this node out of its parent, keeping it valid. */
+  detach(): void {
+    this.#layout.flush();
+    this.#native.detach();
     this.#layout.changed('layout');
   }
 
   /** Remove this node and its descendants. Removed handles remain invalid. */
   remove(): void {
+    this.#layout.flush();
     this.#native.remove();
     this.#layout.changed('layout');
   }

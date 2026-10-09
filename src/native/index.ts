@@ -26,7 +26,24 @@ export type { GraphStats, Disposable } from './reactive.js';
 import type { Scope } from '../hmr.js';
 import { Layout, type NativeLayout } from './layout.js';
 export { Layout, LayoutNode, HitCache } from './layout.js';
-export type { LayoutStyle, LayoutLength, LayoutChange, HitRegion } from './layout.js';
+export type {
+  LayoutStyle,
+  LayoutLength,
+  LayoutSides,
+  LayoutAlignKeyword,
+  LayoutContentKeyword,
+  LayoutOverflowKeyword,
+  LayoutChange,
+  HitRegion,
+} from './layout.js';
+export {
+  LayoutProperty,
+  WriteKind,
+  layoutDeclaration,
+  layoutPropertyNames,
+  propertyWrite,
+} from './properties.js';
+export type { PropertyWrite } from './properties.js';
 export { LayoutDirection, LayoutAlign, LayoutJustify, LayoutOverflow } from './generated/layout.js';
 import { bind as bindLayout } from './generated/layout.js';
 import { createRequire } from 'node:module';
