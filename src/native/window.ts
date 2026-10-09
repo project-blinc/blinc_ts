@@ -49,6 +49,11 @@ export class NativeWindowHost {
   #holdingFrame = false;
   #dirty = true;
   #occluded = false;
+  #occlusionReported = false;
+  #surfaceMisses = 0;
+  /** Surface acquisitions that failed since the last frame presented. */
+  #missStreak = 0;
+  #lastTick = 0;
   #suspended = false;
   #width = 0;
   #height = 0;
@@ -110,17 +115,34 @@ export class NativeWindowHost {
   }
   /**
    * Whether a frame can be presented now: the window is visible, not
-   * minimized, not suspended, and not occluded by other windows. While it is
-   * not, requested frames wait, and the host draws once it is again.
+   * minimized, not suspended, not occluded by other windows, and its surface
+   * is handing out frames. A window the system has not put on screen yet, or
+   * shows on another desktop, can be visible and unoccluded by its own
+   * account while its surface refuses every frame. While it is not
+   * presentable, requested frames wait, and the host draws once it is.
    */
   get presentable(): boolean {
     return (
       !this.#disposed &&
       !this.#occluded &&
+      this.#missStreak < 3 &&
       !this.#suspended &&
       this.window.isVisible() &&
       !this.window.isMinimized()
     );
+  }
+  /** @internal State for diagnosing a frame that does not arrive. */
+  get diagnostics(): Record<string, unknown> {
+    return {
+      occlusionReported: this.#occlusionReported,
+      surfaceMisses: this.#surfaceMisses,
+      missStreak: this.#missStreak,
+      holdingFrame: this.#holdingFrame,
+      painter: this.#painter !== undefined,
+      timerPending: this.#timer !== undefined,
+      msSinceTick: Math.round(performance.now() - this.#lastTick),
+      gpu: this.#gpu !== undefined,
+    };
   }
   /** Whether a frame has been requested and not yet presented. */
   get framePending(): boolean {
@@ -208,7 +230,9 @@ export class NativeWindowHost {
         this.#urgent = false;
         this.#tick();
       },
-      urgent ? 0 : 16,
+      // A surface that keeps refusing frames belongs to a window the system
+      // is not showing; retry less often until an event says it is shown.
+      urgent ? 0 : Math.min(16 << Math.min(this.#missStreak, 5), 500),
     );
   }
 
@@ -394,6 +418,7 @@ export class NativeWindowHost {
     if (this.#disposed) {
       return;
     }
+    this.#lastTick = performance.now();
     let presented = false;
     this.#pumping = true;
     try {
@@ -414,6 +439,7 @@ export class NativeWindowHost {
           this.requestFrame();
         } else if (event.kind === 'Occluded') {
           this.#occluded = event.occluded;
+          this.#occlusionReported = true;
           this.requestFrame();
         } else if (event.kind === 'Suspended') {
           this.#suspended = true;
@@ -479,6 +505,8 @@ export class NativeWindowHost {
     }
     const view = state.surface.acquire();
     if (!view.valid()) {
+      this.#surfaceMisses++;
+      this.#missStreak++;
       view.destroy();
       this.#width = 0; // Retry configuration on the next pump, without spinning.
       this.#check(state.device);
@@ -501,6 +529,7 @@ export class NativeWindowHost {
       state.queue.presentSurface(state.surface);
       this.#check(state.device);
       this.#frames++;
+      this.#missStreak = 0;
       return true;
     } catch (error) {
       failed = true;

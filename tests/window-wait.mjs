@@ -38,6 +38,7 @@ export async function waitForWindow(
           focused: host.disposed ? null : host.window.hasFocus(),
           presentableMs: Math.round(presentableMs),
           waitedMs: Math.round(now - started),
+          ...(host.disposed ? {} : host.diagnostics),
         })}`,
       );
     }
