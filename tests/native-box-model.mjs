@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { LayoutProperty, layoutDeclaration, loadNative } from '../dist/native/index.js';
+import { LayoutProperty, loadNative } from '../dist/native/index.js';
 
 const native = loadNative();
 const layout = native.createLayout();
@@ -107,18 +107,22 @@ try {
   root.setChildren([grid]);
   assert.deepEqual(read([cell]), [40, 0, 80, 40]);
 
-  // Writes that do not parse are rejected before anything is queued.
-  assert.throws(() => cell.setLayoutProperty('width', 'wide'), /Invalid value/);
-  assert.throws(() => cell.setLayoutProperty('display', 'table'), /Invalid value/);
+  // CSS values are read natively, as a stylesheet's are: one that does not
+  // parse makes the flush throw, and earlier writes stay.
+  cell.setLayoutProperty('width', 'wide');
+  assert.throws(() => layout.flush(), /invalid value for width: wide/);
+  cell.setLayoutProperty('display', 'table');
+  assert.throws(() => layout.flush(), /display/);
+  cell.setLayoutProperty('margin', '1px 2px');
+  cell.setLayoutProperty('width', '2em');
+  assert.deepEqual(read([cell]).slice(0, 3), [42, 1, 32], 'Shorthand sides and em from 16px');
+  cell.setLayoutProperty('margin', null);
+  cell.setLayoutProperty('width', null);
+  assert.equal(cell.setLayoutProperty('color', 'red'), false);
+  // Router ids are checked as they are written.
   assert.throws(() => cell.setProperty(LayoutProperty.Display, 0.5), /integer/);
   assert.throws(() => cell.setProperty(LayoutProperty.Width, 'x'), /text/);
   assert.throws(() => cell.setProperty(4, 1), /does not take/);
-  assert.deepEqual(layoutDeclaration('margin', '1px 2px'), [
-    [47, 0, 1],
-    [48, 0, 2],
-    [49, 0, 1],
-    [50, 0, 2],
-  ]);
 
   // Removing a node with queued writes flushes them first.
   cell.setProperty(LayoutProperty.Width, 10);

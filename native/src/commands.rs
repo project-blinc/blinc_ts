@@ -25,6 +25,13 @@ const REMOVE: u32 = 4;
 const TEXT: u32 = 5;
 const PAINT: u32 = 6;
 const SCROLL: u32 = 7;
+/// A node's element for the cascade: types, id, classes, attributes and
+/// inline declarations, as atoms (see `css::element`).
+const ELEMENT: u32 = 8;
+/// A node's state pseudo-classes, a bit each.
+const STATES: u32 = 9;
+/// A CSS layout declaration by name and value text; no value unsets it.
+const CSS_PROPERTY: u32 = 10;
 
 // Text fields present in a TEXT command's mask, each a number unless noted.
 const TEXT_SIZE: u32 = 1;
@@ -149,15 +156,24 @@ impl NativeLayout {
                         r.word()?;
                         None
                     };
-                    tree.insert_before(parent, child, before).map_err(error)?;
+                    crate::css::insert(
+                        &mut tree,
+                        &mut self.owner.styles.borrow_mut(),
+                        parent,
+                        child,
+                        before,
+                    )
+                    .map_err(error)?;
                 }
                 DETACH => {
                     let node = r.node(&tree)?;
-                    tree.detach(node).map_err(error)?;
+                    crate::css::detach(&mut tree, &mut self.owner.styles.borrow_mut(), node)
+                        .map_err(error)?;
                 }
                 REMOVE => {
                     let node = r.node(&tree)?;
-                    tree.remove(node).map_err(error)?;
+                    crate::css::remove(&mut tree, &mut self.owner.styles.borrow_mut(), node)
+                        .map_err(error)?;
                 }
                 TEXT => {
                     let node = r.node(&tree)?;
@@ -259,6 +275,33 @@ impl NativeLayout {
                             y: y as f32,
                             thumb: [0.0; 4],
                         }),
+                    )
+                    .map_err(error)?;
+                }
+                ELEMENT => {
+                    let node = r.node(&tree)?;
+                    let element = crate::css::element(&mut || r.word())?;
+                    self.owner.check_atoms(&element)?;
+                    self.owner.styles.borrow_mut().set_element(node, element);
+                }
+                STATES => {
+                    let node = r.node(&tree)?;
+                    let bits = r.word()?;
+                    self.owner.styles.borrow_mut().set_states(node, bits);
+                }
+                CSS_PROPERTY => {
+                    let node = r.node(&tree)?;
+                    let name = string(&strings, r.word()?)?;
+                    let value = match r.word()? {
+                        u32::MAX => None,
+                        index => Some(string(&strings, index)?),
+                    };
+                    crate::css::write_layout(
+                        &mut tree,
+                        &self.owner.styles.borrow(),
+                        node,
+                        name,
+                        value,
                     )
                     .map_err(error)?;
                 }

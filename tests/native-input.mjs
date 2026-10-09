@@ -263,9 +263,12 @@ try {
     input2.onCursor((cursor) => cursors.push(cursor));
     input2.pointerMove(5, 5);
     assert.equal(input2.cursor, 'pointer', 'An ancestor sets the cursor');
+    // A cursor set as a property applies with the restyle the next layout runs.
     inner.setProperty('cursor', 'text');
+    host2.compute(200, 100);
     assert.equal(input2.cursor, 'text');
     inner.setProperty('cursor', null);
+    host2.compute(200, 100);
     input2.pointerMove(150, 50);
     assert.deepEqual(cursors, ['pointer', 'text', 'pointer', 'default']);
 

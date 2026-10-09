@@ -230,6 +230,30 @@ updates and deterministic captures at both 1× and 2×. `tests/native-layers.mjs
 checks nested opacity, filters, drop shadows, transformed gradient masks and
 backdrops within layers, including clearing effects and resizing targets.
 
+## CSS
+
+Stylesheets are run by blinc_abi's native CSS engine, one cascade per layout
+context. `layout.addStyleSheet(source)` adds a sheet from CSS text or from
+compiled bytes, last or at a position, and returns its diagnostics with line
+and column; `removeStyleSheet` takes it out. `setTheme({ '--accent': '#38f' })`
+sets variables `var()` falls back to after the sheets', `setColorScheme('dark')`
+answers `prefers-color-scheme`, and `setRootFontSize` sets what `rem` means.
+The viewport for media queries and viewport units is the size the layout is
+computed at.
+
+The host describes each element to the cascade: its tag, id, classes,
+attributes, states (hover, active, focus, focus-visible, focus-within,
+disabled, enabled) and its properties, which are its inline declarations.
+Names cross to native code as atoms of the context's table. Text nodes are
+elements too, so they inherit color and font properties. Each layout restyles
+what changed, parents first: layout declarations apply through the property
+router, and paint, text, cursor and overflow come back to the host, which
+draws with them. Declarations that cannot be applied are reported to
+`host.onStyleErrors` listeners, or logged as warnings when there are none.
+
+`LayoutNode.setLayoutProperty(name, value)` reads a CSS layout declaration with
+the same native parser a sheet's go through.
+
 ## Measuring text and inline runs
 
 `measureText(text, style, wrapWidth?)` lays text out as the renderer draws

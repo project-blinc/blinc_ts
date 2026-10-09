@@ -88,7 +88,17 @@ try {
   c.setProperty('border-radius', '4px 2px');
   c.setProperty('opacity', 0.5);
   assert.throws(() => c.setProperty('colour', 'red'), /Unknown property/);
-  assert.throws(() => c.setProperty('width', 'wide'), /Invalid value/);
+  // A value that does not parse is reported by the restyle; the rest still applies.
+  const styleErrors = [];
+  const offErrors = host.onStyleErrors((errors) => styleErrors.push(...errors));
+  c.setProperty('width', 'wide');
+  host.compute(400, 200);
+  assert(
+    styleErrors.some((e) => e.startsWith('width: wide')),
+    String(styleErrors),
+  );
+  c.setProperty('width', null);
+  offErrors();
   assert.deepEqual(parseColor('#f008'), [1, 0, 0, 0x88 / 255]);
   assert.deepEqual(parseColor('rgb(255 0 0 / 50%)'), [1, 0, 0, 0.5]);
   assert.throws(() => parseColor('hsl(0, 1, 1)'), /Unsupported/);

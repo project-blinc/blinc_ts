@@ -5,6 +5,12 @@
  * does not need the SDK's reactive graph; binding a signal to a property is
  * an optional fast path. Writes in one tick coalesce and are submitted
  * together.
+ *
+ * Styling is CSS, run by the native engine: each element's tag, id,
+ * classes, attributes, states and properties (its inline declarations) go
+ * to the layout context's cascade, with stylesheets added to the layout.
+ * Layout declarations apply natively; paint and text declarations come back
+ * from each restyle, and the host draws with them.
  */
 import type { Scope } from '../hmr.js';
 import { Brush } from './brush.js';
@@ -16,9 +22,8 @@ import {
 } from './events.js';
 import { window as win } from './index.js';
 import { Input, WHEEL_LINE } from './input.js';
-import type { HitCache, Layout, LayoutNode } from './layout.js';
+import type { HitCache, Layout, LayoutNode, Restyled } from './layout.js';
 import { MemoryClipboard, SystemClipboard, type Clipboard } from './clipboard.js';
-import { layoutPropertyNames } from './properties.js';
 import type { Computed, Disposable, ReactiveContext, Signal } from './reactive.js';
 import type { Color, CornerRadii, PaintStyle, TextStyle } from './scene.js';
 import type { NativeBindings } from './index.js';
@@ -75,7 +80,7 @@ export const builtinTags: ReadonlySet<string> = new Set([
 
 export type PropertyValue = string | number | Brush | Color | null | undefined;
 
-/** Text properties: kept on any element, inherited by the text nodes inside it. */
+/** Text properties, read from a text node's declarations, which inherit them. */
 const textProperties: Readonly<Record<string, (style: TextStyle, value: string | number) => void>> =
   {
     'font-size': (s, v) => (s.fontSize = px(v)),
@@ -86,15 +91,6 @@ const textProperties: Readonly<Record<string, (style: TextStyle, value: string |
     'font-style': (s, v) => (s.italic = v === 'italic' || v === 'oblique'),
     'white-space': (s, v) => (s.wrap = v !== 'nowrap' && v !== 'pre'),
   };
-const textKeys: Readonly<Record<string, keyof TextStyle>> = {
-  'font-size': 'fontSize',
-  'line-height': 'lineHeight',
-  'letter-spacing': 'letterSpacing',
-  'font-family': 'fontFamily',
-  'font-weight': 'fontWeight',
-  'font-style': 'italic',
-  'white-space': 'wrap',
-};
 function px(value: string | number): number {
   const n = typeof value === 'number' ? value : Number(value.trim().replace(/px$/, ''));
   if (!Number.isFinite(n)) {
@@ -165,6 +161,22 @@ function radii(value: PropertyValue): CornerRadii {
   const [a, b = a, c = a, d = b] = parts as [number, number?, number?, number?];
   return [a, b, c, d];
 }
+
+/** Properties whose numbers are plain numbers; a number for any other is pixels. */
+const unitless: ReadonlySet<string> = new Set([
+  'opacity',
+  'flex',
+  'flex-grow',
+  'flex-shrink',
+  'order',
+  'z-index',
+  'line-height',
+  'font-weight',
+  'aspect-ratio',
+]);
+
+/** Properties the host reads itself beyond paint, text and layout. */
+const otherProperties: ReadonlySet<string> = new Set(['cursor']);
 
 /** Paint properties by CSS name. A null value clears the field. */
 const paintProperties: Readonly<Record<string, (value: PropertyValue) => PaintStyle>> = {
@@ -356,8 +368,8 @@ export class HostElement extends HostNode {
   #first: HostNode | null = null;
   #last: HostNode | null = null;
   readonly #attributes = new Map<string, string>();
-  /** Text properties set here, which text nodes inside inherit. */
-  readonly textStyle: TextStyle = {};
+  /** Its own declarations, as `setProperty` and the `style` attribute give them. */
+  readonly #inline = new Map<string, string>();
   /** Properties named by the last `style` attribute string, cleared when it changes. */
   #styleNames: string[] = [];
   #bindings: Map<string, Disposable> | undefined;
@@ -368,6 +380,7 @@ export class HostElement extends HostNode {
     this.tag = tag;
     this.classList = new ClassList(() => {
       this.#attributes.set('class', this.classList.value);
+      host.styleChanged(this);
     });
   }
   get firstChild(): HostNode | null {
@@ -388,6 +401,7 @@ export class HostElement extends HostNode {
   }
   set id(value: string) {
     this.#attributes.set('id', value);
+    this.host.styleChanged(this);
   }
   get className(): string {
     return this.classList.value;
@@ -418,6 +432,7 @@ export class HostElement extends HostNode {
     if (name === 'style') {
       this.#applyStyleText(value);
     }
+    this.host.styleChanged(this);
     this.host.input.attributeChanged(this, name);
   }
   removeAttribute(name: string): void {
@@ -427,6 +442,7 @@ export class HostElement extends HostNode {
       this.#applyStyleText('');
     }
     this.#attributes.delete(name);
+    this.host.styleChanged(this);
     this.host.input.attributeChanged(this, name);
   }
   #applyStyleText(text: string): void {
@@ -452,13 +468,31 @@ export class HostElement extends HostNode {
   }
 
   /**
-   * Set a property by CSS name: a layout property through the property
-   * router, a paint property, or a text property its text nodes inherit.
-   * Numbers are pixels; null or undefined restores the default. Throws for
-   * an unknown property or a value that does not parse.
+   * Set a property by CSS name, as an inline declaration the cascade puts
+   * over the stylesheets'. Numbers are pixels where a length is meant; null
+   * or undefined removes it. A `Brush`, or a color as channels, sets paint
+   * directly, over the cascade. Throws for an unknown property; a value that
+   * does not parse is reported by the restyle (see `Host.onStyleErrors`).
    */
   setProperty(name: string, value: PropertyValue): void {
     this.host.setProperty(this, name, value);
+  }
+  /** Its inline declarations. */
+  get style(): ReadonlyMap<string, string> {
+    return this.#inline;
+  }
+  /** @internal */
+  setInline(name: string, value: string | null): void {
+    if (value === null) {
+      this.#inline.delete(name);
+    } else {
+      this.#inline.set(name, value);
+    }
+    this.host.styleChanged(this);
+  }
+  /** @internal Its attributes, for the cascade's attribute selectors. */
+  get attributeEntries(): IterableIterator<[string, string]> {
+    return this.#attributes.entries();
   }
 
   /**
@@ -516,7 +550,6 @@ export class HostElement extends HostNode {
     } else {
       this.#last = child;
     }
-    this.host.inserted(child);
     return child;
   }
   appendChild<T extends HostNode>(child: T): T {
@@ -601,6 +634,16 @@ export class Host {
   readonly #nodes = new Map<bigint, HostNode>();
   readonly #text = new Set<HostText>();
   readonly #sentText = new WeakMap<HostText, { data: string; style: TextStyle }>();
+  /** Each text node's style, from its last restyle. */
+  readonly #textStyles = new WeakMap<HostText, TextStyle>();
+  /** Nodes whose element (names, attributes, inline declarations) changed. */
+  readonly #styleDirty = new Set<HostElement | HostText>();
+  /** Each element's paint and text declarations from its last restyle. */
+  readonly #declared = new WeakMap<HostNode, ReadonlyMap<string, string>>();
+  /** Paint set with a `Brush` or channels, over the cascade's. */
+  readonly #paintOverrides = new Map<HostElement, PaintStyle>();
+  readonly #styleErrorListeners = new Set<(errors: readonly string[]) => void>();
+  readonly #stateBits: ReadonlyMap<string, number>;
   #width = 0;
   #height = 0;
   #computed = false;
@@ -613,10 +656,21 @@ export class Host {
 
   constructor(layout: Layout, scope?: Scope) {
     this.layout = layout;
+    this.#stateBits = new Map(layout.stateNames.map((name, i) => [name, 1 << i]));
     this.root = this.#register(new HostElement(this, layout.createNode(), 'root'));
-    this.root.setProperty('width', '100%');
-    this.root.setProperty('height', '100%');
-    layout.beforeFlush(() => this.#queueText());
+    this.styleChanged(this.root);
+    this.root.layoutNode.setLayoutProperty('width', '100%');
+    this.root.layoutNode.setLayoutProperty('height', '100%');
+    layout.beforeFlush(() => {
+      this.#queueElements();
+      this.#queueText();
+    });
+    layout.onRestyle((restyled) => this.#restyled(restyled), scope);
+    this.input.onInteraction((element, state) => {
+      if (!element.destroyed) {
+        element.layoutNode.queueStates(this.#bits(element, state));
+      }
+    });
     layout.onChange((change) => {
       if (change === 'layout') {
         this.#computed = false;
@@ -641,7 +695,7 @@ export class Host {
     const node = this.#register(new HostText(this, layoutNode, data));
     this.#sentText.set(node, { data, style: { ...defaultText } });
     this.#text.add(node);
-    this.#schedule();
+    this.styleChanged(node);
     return node;
   }
   createComment(data = ''): HostComment {
@@ -665,61 +719,218 @@ export class Host {
   /** @internal */
   setProperty(element: HostElement, name: string, value: PropertyValue): void {
     this.assertOwn(element);
-    const unset = value === null || value === undefined;
-    if (layoutPropertyNames.has(name)) {
-      if (!unset && typeof value !== 'string' && typeof value !== 'number') {
-        throw new TypeError(`${name} takes a string or a number`);
+    if (value instanceof Brush || Array.isArray(value)) {
+      const paint = paintProperties[name];
+      if (!paint) {
+        throw new TypeError(`${name} does not take a brush or a color`);
       }
-      element.layoutNode.setLayoutProperty(name, unset ? null : value);
-      if (name === 'overflow' || name === 'overflow-x' || name === 'overflow-y') {
-        this.#overflow(element, name, value);
-      }
+      this.#paintOverrides.set(element, { ...this.#paintOverrides.get(element), ...paint(value) });
+      element.layoutNode.queuePaint(paint(value));
       return;
     }
-    if (name === 'cursor') {
-      if (unset) {
-        this.#cursors.delete(element);
-      } else if (typeof value === 'string') {
-        this.#cursors.set(element, value.trim());
-      } else {
-        throw new TypeError('cursor takes a CSS cursor name');
-      }
-      this.input.updateCursor();
-      return;
-    }
-    const text = textProperties[name];
-    if (text) {
-      if (unset) {
-        delete element.textStyle[textKeys[name]!];
-      } else {
-        text(element.textStyle, value as string | number);
-      }
-      this.#markText(element);
-      return;
-    }
-    const paint = paintProperties[name];
-    if (!paint) {
+    if (
+      !name.startsWith('--') &&
+      !paintProperties[name] &&
+      !textProperties[name] &&
+      !otherProperties.has(name) &&
+      !this.layout.isLayoutProperty(name)
+    ) {
       throw new Error(`Unknown property: ${name}`);
     }
-    element.layoutNode.queuePaint(paint(unset ? null : value));
+    if (value === null || value === undefined) {
+      if (this.#paintOverrides.get(element)) {
+        const overrides = this.#paintOverrides.get(element)!;
+        const reset = paintProperties[name]?.(null);
+        if (reset) {
+          for (const key of Object.keys(reset)) {
+            delete overrides[key as keyof PaintStyle];
+          }
+        }
+      }
+      element.setInline(name, null);
+      return;
+    }
+    if (typeof value === 'number' && !Number.isFinite(value)) {
+      throw new RangeError(`Invalid value for ${name}: ${value}`);
+    }
+    element.setInline(
+      name,
+      typeof value === 'number' && !unitless.has(name) ? `${value}px` : String(value),
+    );
+  }
+  /** Called with the declarations a restyle could not apply; with none, they are warnings. */
+  onStyleErrors(listener: (errors: readonly string[]) => void): () => void {
+    const callback = (errors: readonly string[]) => listener(errors);
+    this.#styleErrorListeners.add(callback);
+    return () => {
+      this.#styleErrorListeners.delete(callback);
+    };
+  }
+  /** @internal A node's names, attributes or inline declarations changed. */
+  styleChanged(node: HostElement | HostText): void {
+    this.#styleDirty.add(node);
+    this.layout.queue();
+  }
+  /** Describe changed nodes to the cascade, their names as atoms. */
+  #queueElements(): void {
+    for (const node of this.#styleDirty) {
+      if (node.destroyed) {
+        continue;
+      }
+      if (node instanceof HostText) {
+        // Text is an element the cascade inherits text properties into, not
+        // counted among its siblings by structural selectors.
+        const [text] = this.layout.intern(['text']);
+        node.layoutNode.queueElement({
+          types: [text!],
+          id: -1,
+          classes: [],
+          attributes: [],
+          inline: [],
+          anonymous: true,
+        });
+        continue;
+      }
+      const attributes = [...node.attributeEntries].filter(([name]) => name !== 'style');
+      const inline = [...node.style];
+      const names = [
+        node.tag,
+        ...node.classList,
+        ...attributes.flat(),
+        ...inline.flat(),
+        ...(node.id ? [node.id] : []),
+      ];
+      const atoms = this.layout.intern(names);
+      let at = 0;
+      const next = () => atoms[at++]!;
+      const types = [next()];
+      const classes = [...node.classList].map(next);
+      const attributePairs = attributes.map(() => [next(), next()] as const);
+      const inlinePairs = inline.map(() => [next(), next()] as const);
+      const id = node.id ? next() : -1;
+      node.layoutNode.queueElement({
+        types,
+        id,
+        classes,
+        attributes: attributePairs,
+        inline: inlinePairs,
+        anonymous: false,
+      });
+    }
+    this.#styleDirty.clear();
+  }
+  #bits(element: HostElement, state: Readonly<InteractionState>): number {
+    const bit = (name: string) => this.#stateBits.get(name) ?? 0;
+    let bits = 0;
+    const states: [boolean, string][] = [
+      [state.hover, 'hover'],
+      [state.active, 'active'],
+      [state.focus, 'focus'],
+      [state.focusVisible, 'focus-visible'],
+      [state.focusWithin, 'focus-within'],
+      [state.disabled, 'disabled'],
+      [!state.disabled && this.input.isFocusable(element, false), 'enabled'],
+    ];
+    for (const [on, name] of states) {
+      if (on) {
+        bits |= bit(name);
+      }
+    }
+    return bits;
+  }
+  /** Apply what a restyle hands back: paint and text, by node. */
+  #restyled(restyled: Restyled): void {
+    if (restyled.errors.length > 0) {
+      if (this.#styleErrorListeners.size === 0) {
+        for (const error of restyled.errors) {
+          console.warn(`CSS: ${error}`);
+        }
+      }
+      for (const listener of this.#styleErrorListeners) {
+        listener(restyled.errors);
+      }
+    }
+    for (const [id, declarations] of restyled.nodes) {
+      const node = this.#nodes.get(id);
+      if (!node || node.destroyed) {
+        continue;
+      }
+      const now = new Map(declarations);
+      const before = this.#declared.get(node) ?? new Map<string, string>();
+      this.#declared.set(node, now);
+      if (node instanceof HostText) {
+        const style: TextStyle = {};
+        for (const [name, value] of now) {
+          try {
+            textProperties[name]?.(style, value);
+          } catch {
+            // A value the renderer cannot take is left at its default.
+          }
+        }
+        this.#textStyles.set(node, style);
+        this.#text.add(node);
+        const color = now.get('color');
+        if (color !== undefined) {
+          try {
+            node.layoutNode.queuePaint({ textColor: parseColor(color) });
+          } catch {
+            node.layoutNode.queuePaint({}, true);
+          }
+        } else if (before.has('color')) {
+          node.layoutNode.queuePaint({}, true);
+        }
+        continue;
+      }
+      if (!(node instanceof HostElement)) {
+        continue;
+      }
+      let paint: PaintStyle = {};
+      for (const name of before.keys()) {
+        if (!now.has(name) && paintProperties[name]) {
+          paint = { ...paint, ...paintProperties[name](null) };
+        }
+      }
+      for (const [name, value] of now) {
+        const apply = paintProperties[name];
+        if (apply) {
+          try {
+            paint = { ...paint, ...apply(value) };
+          } catch (error) {
+            this.#reportOne(`${name}: ${value}: ${(error as Error).message}`);
+          }
+        }
+      }
+      paint = { ...paint, ...this.#paintOverrides.get(node) };
+      if (Object.keys(paint).length > 0) {
+        node.layoutNode.queuePaint(paint);
+      }
+      const cursor = now.get('cursor');
+      if (cursor !== before.get('cursor')) {
+        if (cursor === undefined) {
+          this.#cursors.delete(node);
+        } else {
+          this.#cursors.set(node, cursor.trim());
+        }
+        this.input.updateCursor();
+      }
+      for (const name of ['overflow', 'overflow-x', 'overflow-y']) {
+        if (now.get(name) !== before.get(name)) {
+          this.#overflow(node, name, now.get(name) ?? null);
+        }
+      }
+    }
+  }
+  #reportOne(error: string): void {
+    if (this.#styleErrorListeners.size === 0) {
+      console.warn(`CSS: ${error}`);
+    }
+    for (const listener of this.#styleErrorListeners) {
+      listener([error]);
+    }
   }
   /** @internal */
   textChanged(node: HostText): void {
     this.#text.add(node);
-    this.#schedule();
-  }
-  /** @internal A node was placed: its text inherits from its new ancestors. */
-  inserted(node: HostNode): void {
-    this.#markText(node);
-  }
-  #markText(node: HostNode): void {
-    if (node instanceof HostText) {
-      this.#text.add(node);
-    } else if (node instanceof HostElement) {
-      for (let child = node.firstChild; child; child = child.nextSibling) {
-        this.#markText(child);
-      }
-    }
     this.#schedule();
   }
   #schedule(): void {
@@ -737,7 +948,7 @@ export class Host {
       if (node.destroyed) {
         continue;
       }
-      const style = inheritedText(node);
+      const style = { ...defaultText, ...this.#textStyles.get(node) };
       const sent = this.#sentText.get(node);
       if (sent?.data === node.data && sameText(sent.style, style)) {
         continue;
@@ -974,6 +1185,7 @@ export class Host {
           forget(child);
         }
         current.disposeBindings();
+        this.#paintOverrides.delete(current);
         this.#cursors.delete(current);
         this.#scrolls.delete(current);
         this.input.forget(current);
@@ -1004,22 +1216,6 @@ const defaultText: TextStyle = {
   fontWeight: 400,
   italic: false,
 };
-/** Text nodes given a font family, which revert to the system face when it is unset. */
-const families = new WeakSet<HostText>();
-/** The text style of `node`: the defaults, then its ancestors' text properties, nearest last. */
-function inheritedText(node: HostText): TextStyle {
-  const chain: TextStyle[] = [];
-  for (let element = node.parentNode; element; element = element.parentNode) {
-    chain.push(element.textStyle);
-  }
-  const style = Object.assign({}, defaultText, ...chain.reverse()) as TextStyle;
-  if (style.fontFamily !== undefined) {
-    families.add(node);
-  } else if (families.delete(node)) {
-    style.fontFamily = 'system-ui';
-  }
-  return style;
-}
 const cursorNames: Readonly<Record<string, number>> = Object.fromEntries(
   Object.entries(win.CursorIcon).map(([name, icon]) => [
     name.replace(/[A-Z]/g, (c, i: number) => (i ? '-' : '') + c.toLowerCase()),

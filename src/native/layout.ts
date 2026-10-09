@@ -16,8 +16,8 @@ import type {
   LayoutOverflow,
 } from './generated/layout.js';
 import type { Scope } from '../hmr.js';
-import { layoutDeclaration, propertyWrite, type PropertyWrite } from './properties.js';
-import { CommandQueue, type QueuedNode, type QueuedPaint } from './commands.js';
+import { propertyWrite } from './properties.js';
+import { CommandQueue, type QueuedElement, type QueuedNode, type QueuedPaint } from './commands.js';
 
 export type LayoutChange = 'layout' | 'paint' | 'disposed';
 
@@ -140,13 +140,16 @@ const routed: Readonly<Record<string, string>> = {
   gridRow: 'grid-row',
   padding: 'padding',
 };
-function cssText(value: unknown): string | number {
-  return Array.isArray(value) ? value.join(' ') : (value as string | number);
+function cssText(value: unknown): string {
+  return Array.isArray(value) ? value.join(' ') : String(value);
 }
-/** Split a typed style into the native fields and router writes, validating both. */
-function splitStyle(style: LayoutStyle): { native: NativeLayoutStyle; writes: PropertyWrite[] } {
+/** Split a typed style into the native fields and CSS layout declarations. */
+function splitStyle(style: LayoutStyle): {
+  native: NativeLayoutStyle;
+  declarations: [name: string, value: string | null][];
+} {
   const native: Record<string, unknown> = {};
-  const writes: PropertyWrite[] = [];
+  const declarations: [string, string | null][] = [];
   for (const [key, value] of Object.entries(style)) {
     if (value === undefined) {
       continue;
@@ -156,14 +159,9 @@ function splitStyle(style: LayoutStyle): { native: NativeLayoutStyle; writes: Pr
       native[key] = value;
       continue;
     }
-    const v = value === null ? null : cssText(value);
-    writes.push(
-      ...(key === 'aspectRatio' && typeof v === 'number'
-        ? [propertyWrite(90, v)]
-        : layoutDeclaration(css, v)!),
-    );
+    declarations.push([css, value === null ? null : cssText(value)]);
   }
-  return { native: native, writes };
+  return { native: native, declarations };
 }
 
 /** @internal Native adapter contract; applications use Layout and LayoutNode. */
@@ -216,7 +214,50 @@ export interface NativeLayout extends BrushFactory {
   createNode(style: NativeLayoutStyle): NativeLayoutNode;
   compute(root: NativeLayoutNode, width: number, height: number): void;
   readBounds(nodes: readonly NativeLayoutNode[], target: Float32Array): void;
+  cssAddSheet(
+    source: Uint8Array | string,
+    file: string | undefined,
+    at: number | undefined,
+  ): { id: number; diagnostics: CssDiagnostic[] };
+  cssRemoveSheet(id: number): boolean;
+  cssSetTheme(names: string[], values: string[]): void;
+  cssSetEnvironment(width: number, height: number, dark: boolean): void;
+  cssSetRootFontSize(px: number): void;
+  cssIntern(names: string[]): Uint32Array;
+  cssRestyle(root: NativeLayoutNode): {
+    errors: string[];
+    nodes: Uint32Array;
+    counts: Uint32Array;
+    names: string[];
+    values: string[];
+  };
   dispose(): void;
+}
+
+/** A stylesheet added to a layout, and what reading it reported. */
+export interface StyleSheet {
+  readonly id: number;
+  readonly diagnostics: readonly CssDiagnostic[];
+}
+export interface CssDiagnostic {
+  readonly severity: 'error' | 'warning';
+  readonly message: string;
+  readonly line: number;
+  readonly column: number;
+  /** The file it is in, when it is not the sheet's own: one it imports. */
+  readonly file?: string | null;
+}
+/** What a restyle changed beyond layout. */
+export interface Restyled {
+  /** Declarations that could not be applied, as `property: value: reason`. */
+  readonly errors: readonly string[];
+  /** By node id: the paint and text declarations that apply to it now, `var()`s resolved. */
+  readonly nodes: ReadonlyMap<bigint, readonly (readonly [property: string, value: string])[]>;
+}
+/** @internal Addon functions that need no layout context. */
+export interface NativeCss {
+  cssIsLayoutProperty(name: string): boolean;
+  cssStates(): string[];
 }
 
 /** An owned native tree. A mounted root's Scope can release it during HMR. */
@@ -225,12 +266,20 @@ export class Layout {
   #hitRevision = 0;
   readonly #listeners = new Set<(change: LayoutChange) => void>();
   readonly #queue = new CommandQueue();
+  readonly #css: NativeCss;
+  readonly #atoms = new Map<string, number>();
+  readonly #layoutNames = new Map<string, boolean>();
+  readonly #restyleListeners = new Set<(restyled: Restyled) => void>();
+  #styled = false;
+  #dark = false;
+  #environment = '';
   readonly #beforeFlush: (() => void)[] = [];
   #scheduled = false;
 
   /** @internal Use loadNative().createLayout(scope). */
-  constructor(native: NativeLayout, scope?: Scope) {
+  constructor(native: NativeLayout, css: NativeCss, scope?: Scope) {
     this.#native = native;
+    this.#css = css;
     scope?.onCleanup(() => this.dispose());
   }
 
@@ -305,11 +354,11 @@ export class Layout {
     this.#beforeFlush.push(hook);
   }
 
-  /** @internal Apply writes now, after any queued ones. */
-  applyNow(node: LayoutNode, writes: readonly PropertyWrite[]): void {
-    if (writes.length > 0) {
-      for (const write of writes) {
-        this.#queue.property(node, write);
+  /** @internal Apply CSS layout declarations now, after any queued edits. */
+  applyNow(node: LayoutNode, declarations: readonly (readonly [string, string | null])[]): void {
+    if (declarations.length > 0) {
+      for (const [name, value] of declarations) {
+        this.#queue.cssProperty(node, name, value);
       }
       this.flush();
     }
@@ -342,9 +391,9 @@ export class Layout {
   }
 
   createNode(style: LayoutStyle = {}): LayoutNode {
-    const { native, writes } = splitStyle(style);
+    const { native, declarations } = splitStyle(style);
     const node = new LayoutNode(this, this.#native.createNode(native));
-    this.applyNow(node, writes);
+    this.applyNow(node, declarations);
     return node;
   }
 
@@ -360,9 +409,9 @@ export class Layout {
   }
 
   createText(content: string, text: TextStyle = {}, style: LayoutStyle = {}): LayoutNode {
-    const { native, writes } = splitStyle(style);
+    const { native, declarations } = splitStyle(style);
     const node = new LayoutNode(this, this.#native.createText(content, text, native));
-    this.applyNow(node, writes);
+    this.applyNow(node, declarations);
     return node;
   }
 
@@ -395,8 +444,139 @@ export class Layout {
 
   compute(root: LayoutNode, width: number, height: number): void {
     this.flush();
+    if (this.#styled) {
+      this.#setEnvironment(width, height);
+      this.restyle(root);
+      this.flush();
+    }
     this.#hitRevision++;
     this.#native.compute(LayoutNode.unwrap(root, this), width, height);
+  }
+
+  // --- CSS, run by the native engine ---
+
+  /** The state pseudo-classes, in the order of their bits (see `LayoutNode.queueStates`). */
+  get stateNames(): readonly string[] {
+    return (this.#stateNames ??= this.#css.cssStates());
+  }
+  #stateNames: string[] | undefined;
+  /** Whether `name` is a property the layout router writes. */
+  isLayoutProperty(name: string): boolean {
+    let known = this.#layoutNames.get(name);
+    if (known === undefined) {
+      known = this.#css.cssIsLayoutProperty(name);
+      this.#layoutNames.set(name, known);
+    }
+    return known;
+  }
+  /**
+   * Atoms of this context's name table for `names`: class, attribute, type
+   * and property names cross to native code as these numbers.
+   */
+  intern(names: readonly string[]): number[] {
+    const missing = names.filter((name) => !this.#atoms.has(name));
+    if (missing.length > 0) {
+      const unique = [...new Set(missing)];
+      const atoms = this.#native.cssIntern(unique);
+      unique.forEach((name, i) => this.#atoms.set(name, atoms[i]!));
+    }
+    return names.map((name) => this.#atoms.get(name)!);
+  }
+  /**
+   * Add a stylesheet, from compiled bytes (as the build step makes them) or
+   * CSS text, last or at position `at` among the sheets. Diagnostics are
+   * returned, not thrown: the rest of the sheet applies.
+   */
+  addStyleSheet(
+    source: Uint8Array | string,
+    options: { at?: number; file?: string } = {},
+  ): StyleSheet {
+    const sheet = this.#native.cssAddSheet(source, options.file, options.at);
+    this.#markStyled();
+    return { id: sheet.id, diagnostics: sheet.diagnostics };
+  }
+  /** Remove a sheet; false if it was removed already. */
+  removeStyleSheet(sheet: StyleSheet): boolean {
+    const removed = this.#native.cssRemoveSheet(sheet.id);
+    if (removed) {
+      this.changed('layout');
+    }
+    return removed;
+  }
+  /** The theme's variables, by name with or without `--`, which `var()` reads after the sheets'. */
+  setTheme(variables: Readonly<Record<string, string>>): void {
+    const names = Object.keys(variables);
+    this.#native.cssSetTheme(
+      names.map((name) => name.replace(/^--/, '')),
+      names.map((name) => variables[name]!),
+    );
+    this.#markStyled();
+  }
+  /** Whether `prefers-color-scheme: dark` holds. */
+  setColorScheme(scheme: 'light' | 'dark'): void {
+    this.#dark = scheme === 'dark';
+    this.#environment = '';
+    this.#markStyled();
+  }
+  /** What `rem` is relative to. */
+  setRootFontSize(px: number): void {
+    this.#native.cssSetRootFontSize(px);
+    this.#markStyled();
+  }
+  /** Listen for restyles: the paint and text declarations of each node whose changed. */
+  onRestyle(listener: (restyled: Restyled) => void, scope?: Scope): () => void {
+    const callback = (restyled: Restyled) => listener(restyled);
+    this.#restyleListeners.add(callback);
+    const remove = () => {
+      this.#restyleListeners.delete(callback);
+    };
+    scope?.onCleanup(remove);
+    return remove;
+  }
+  /**
+   * Match what changed under `root` and apply its layout declarations.
+   * Compute does this; call it to restyle without laying out. Declarations
+   * that could not be applied are reported to `onRestyle` listeners, or as
+   * warnings when there are none.
+   */
+  restyle(root: LayoutNode): Restyled {
+    this.flush();
+    const r = this.#native.cssRestyle(LayoutNode.unwrap(root, this));
+    const nodes = new Map<bigint, [string, string][]>();
+    let at = 0;
+    for (let i = 0; i < r.counts.length; i++) {
+      const id = BigInt(r.nodes[i * 2]!) | (BigInt(r.nodes[i * 2 + 1]!) << 32n);
+      const declarations: [string, string][] = [];
+      for (let k = 0; k < r.counts[i]!; k++, at++) {
+        declarations.push([r.names[at]!, r.values[at]!]);
+      }
+      nodes.set(id, declarations);
+    }
+    const restyled: Restyled = { errors: r.errors, nodes };
+    if (this.#restyleListeners.size === 0) {
+      for (const error of r.errors) {
+        console.warn(`CSS: ${error}`);
+      }
+    }
+    for (const listener of this.#restyleListeners) {
+      listener(restyled);
+    }
+    return restyled;
+  }
+  /** @internal Something the cascade reads changed. */
+  markStyled(): void {
+    this.#markStyled();
+  }
+  #markStyled(): void {
+    this.#styled = true;
+    this.changed('layout');
+  }
+  #setEnvironment(width: number, height: number): void {
+    const key = `${width}x${height}:${this.#dark}`;
+    if (key !== this.#environment) {
+      this.#environment = key;
+      this.#native.cssSetEnvironment(width, height, this.#dark);
+    }
   }
 
   /** Write absolute [x, y, width, height] per node into reusable caller-owned storage. */
@@ -549,6 +729,15 @@ export class LayoutNode implements QueuedNode {
     }
     this.#layout.queue().insert(this, child, before);
   }
+  /** @internal Describe this node to the cascade; names are atoms (see `Layout.intern`). */
+  queueElement(element: QueuedElement): void {
+    this.#layout.markStyled();
+    this.#layout.queue().element(this, element);
+  }
+  /** @internal This node's state pseudo-classes, a bit each in the engine's order. */
+  queueStates(bits: number): void {
+    this.#layout.queue().states(this, bits);
+  }
   /** @internal Queue taking this node out of its parent. */
   queueDetach(): void {
     this.#layout.queue().detach(this);
@@ -560,12 +749,12 @@ export class LayoutNode implements QueuedNode {
 
   /** Merge the supplied style fields; omitted fields retain their values. */
   setStyle(style: LayoutStyle): void {
-    const { native, writes } = splitStyle(style);
+    const { native, declarations } = splitStyle(style);
     this.#layout.flush();
     if (Object.keys(native).length > 0) {
       this.#native.setStyle(native);
     }
-    this.#layout.applyNow(this, writes);
+    this.#layout.applyNow(this, declarations);
     this.#layout.changed('layout');
   }
 
@@ -580,17 +769,18 @@ export class LayoutNode implements QueuedNode {
 
   /**
    * Queue a CSS layout declaration, such as `('margin', '8px auto')` or
-   * `('grid-column', '1 / -1')`. Returns false for a property that is not a
-   * layout property; throws for a value that does not parse.
+   * `('grid-column', '1 / -1')`, read by the same native parser as a
+   * stylesheet's. Numbers are pixels. Returns false for a property that is
+   * not a layout property; a value that does not parse makes the flush throw.
    */
   setLayoutProperty(name: string, value: number | string | null): boolean {
-    const writes = layoutDeclaration(name, value);
-    if (!writes) {
+    if (!this.#layout.isLayoutProperty(name)) {
       return false;
     }
-    for (const write of writes) {
-      this.#layout.queue().property(this, write);
+    if (typeof value === 'number' && !Number.isFinite(value)) {
+      throw new RangeError(`Invalid value for ${name}: ${value}`);
     }
+    this.#layout.queue().cssProperty(this, name, value === null ? null : String(value));
     return true;
   }
 

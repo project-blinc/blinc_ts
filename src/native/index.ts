@@ -25,6 +25,7 @@ export { ReactiveContext, Signal, Computed } from './reactive.js';
 export type { GraphStats, Disposable } from './reactive.js';
 import type { Scope } from '../hmr.js';
 import { Layout, type NativeLayout } from './layout.js';
+import type { CompileCss } from './css.js';
 import {
   TextMeasurement,
   toInlineLayout,
@@ -47,6 +48,9 @@ export type {
   InlineLayout,
 } from './text.js';
 export { Layout, LayoutNode, HitCache } from './layout.js';
+export type { StyleSheet, CssDiagnostic, Restyled } from './layout.js';
+export { compileCss } from './css.js';
+export type { CompiledCss } from './css.js';
 export type {
   LayoutStyle,
   LayoutLength,
@@ -57,13 +61,7 @@ export type {
   LayoutChange,
   HitRegion,
 } from './layout.js';
-export {
-  LayoutProperty,
-  WriteKind,
-  layoutDeclaration,
-  layoutPropertyNames,
-  propertyWrite,
-} from './properties.js';
+export { LayoutProperty, WriteKind, propertyWrite } from './properties.js';
 export type { PropertyWrite } from './properties.js';
 export { LayoutDirection, LayoutAlign, LayoutJustify, LayoutOverflow } from './generated/layout.js';
 import { bind as bindLayout } from './generated/layout.js';
@@ -87,6 +85,9 @@ interface Addon {
   rasterizeSvg(markup: string, width: number, height: number): NativeImage;
   NativeLayout: new () => NativeLayout;
   measureText: NativeText['measureText'];
+  cssIsLayoutProperty(name: string): boolean;
+  cssStates(): string[];
+  compileCss: CompileCss;
   layoutInline: NativeText['layoutInline'];
   NativeGraph: new (dispatch: (callback: number) => void) => NativeGraph;
   buildProfile(): string;
@@ -160,7 +161,7 @@ export function loadNative(
     decodeImage: (bytes, scope) => new ImageResource(addon.decodeImage(bytes), scope),
     rasterizeSvg: (markup, width, height, scope) =>
       new ImageResource(addon.rasterizeSvg(markup, width, height), scope),
-    createLayout: (scope?: Scope) => new Layout(new addon.NativeLayout(), scope),
+    createLayout: (scope?: Scope) => new Layout(new addon.NativeLayout(), addon, scope),
     measureText: (text, style = {}, wrapWidth) =>
       new TextMeasurement(text, addon.measureText(text, style, wrapWidth)),
     layoutInline: (items, width, options = {}) =>

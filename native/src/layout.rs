@@ -110,6 +110,7 @@ impl LayoutStyle {
 
 pub(crate) struct OwnedLayout {
     pub(crate) tree: RefCell<LayoutContext>,
+    pub(crate) styles: RefCell<crate::css::StyleState>,
     pub(crate) encoder: RefCell<Option<blinc_abi::scene::SceneEncoder>>,
     thread: std::thread::ThreadId,
 }
@@ -139,6 +140,7 @@ impl NativeLayout {
         Self {
             owner: Rc::new(OwnedLayout {
                 tree: RefCell::new(LayoutContext::new()),
+                styles: RefCell::new(Default::default()),
                 encoder: RefCell::new(None),
                 thread: std::thread::current().id(),
             }),
@@ -220,11 +222,13 @@ impl NativeLayoutNode {
     pub fn set_children(&self, children: Vec<ClassInstance<NativeLayoutNode>>) -> Result<()> {
         self.owner.check()?;
         let children: Vec<_> = children.iter().map(|child| child.node).collect();
-        self.owner
-            .tree
-            .borrow_mut()
-            .set_children(self.node, &children)
-            .map_err(error)
+        crate::css::set_children(
+            &mut self.owner.tree.borrow_mut(),
+            &mut self.owner.styles.borrow_mut(),
+            self.node,
+            &children,
+        )
+        .map_err(error)
     }
     /// Place `child` before `before`, or last; the child is first detached from its parent.
     #[napi]
@@ -234,11 +238,14 @@ impl NativeLayoutNode {
         before: Option<&NativeLayoutNode>,
     ) -> Result<()> {
         self.owner.check()?;
-        self.owner
-            .tree
-            .borrow_mut()
-            .insert_before(self.node, child.node, before.map(|node| node.node))
-            .map_err(error)
+        crate::css::insert(
+            &mut self.owner.tree.borrow_mut(),
+            &mut self.owner.styles.borrow_mut(),
+            self.node,
+            child.node,
+            before.map(|node| node.node),
+        )
+        .map_err(error)
     }
     /// Detach `child`, which must be this node's, keeping it for reuse.
     #[napi]
@@ -248,7 +255,8 @@ impl NativeLayoutNode {
         if tree.parent(child.node).map_err(error)? != Some(self.node) {
             return Err(error("Node is not a child of this node"));
         }
-        tree.detach(child.node).map_err(error)
+        crate::css::detach(&mut tree, &mut self.owner.styles.borrow_mut(), child.node)
+            .map_err(error)
     }
     /// How far laid-out content reaches, right and down from the node's top-left.
     #[napi]
@@ -265,19 +273,21 @@ impl NativeLayoutNode {
     #[napi]
     pub fn detach(&self) -> Result<()> {
         self.owner.check()?;
-        self.owner
-            .tree
-            .borrow_mut()
-            .detach(self.node)
-            .map_err(error)
+        crate::css::detach(
+            &mut self.owner.tree.borrow_mut(),
+            &mut self.owner.styles.borrow_mut(),
+            self.node,
+        )
+        .map_err(error)
     }
     #[napi]
     pub fn remove(&self) -> Result<()> {
         self.owner.check()?;
-        self.owner
-            .tree
-            .borrow_mut()
-            .remove(self.node)
-            .map_err(error)
+        crate::css::remove(
+            &mut self.owner.tree.borrow_mut(),
+            &mut self.owner.styles.borrow_mut(),
+            self.node,
+        )
+        .map_err(error)
     }
 }

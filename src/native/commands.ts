@@ -15,6 +15,20 @@ const REMOVE = 4;
 const TEXT = 5;
 const PAINT = 6;
 const SCROLL = 7;
+const ELEMENT = 8;
+const STATES = 9;
+const CSS_PROPERTY = 10;
+
+/** A node as the cascade sees it, its names as atoms of the context's table. */
+export interface QueuedElement {
+  types: readonly number[];
+  /** -1 for none. */
+  id: number;
+  classes: readonly number[];
+  attributes: readonly (readonly [name: number, value: number])[];
+  inline: readonly (readonly [name: number, value: number])[];
+  anonymous: boolean;
+}
 
 /** A queued paint patch: the fields the buffer carries. */
 export interface QueuedPaint {
@@ -42,7 +56,10 @@ type Command =
   | { op: typeof DETACH | typeof REMOVE; node: QueuedNode }
   | { op: typeof TEXT; node: QueuedNode; content: string; style: TextStyle }
   | { op: typeof PAINT; node: QueuedNode; paint: QueuedPaint }
-  | { op: typeof SCROLL; node: QueuedNode; x: number; y: number };
+  | { op: typeof SCROLL; node: QueuedNode; x: number; y: number }
+  | { op: typeof ELEMENT; node: QueuedNode; element: QueuedElement }
+  | { op: typeof STATES; node: QueuedNode; bits: number }
+  | { op: typeof CSS_PROPERTY; node: QueuedNode; name: string; value: string | null };
 
 export interface Encoded {
   words: Uint32Array;
@@ -61,6 +78,9 @@ export class CommandQueue {
   readonly #text = new Map<QueuedNode, number>();
   readonly #paint = new Map<QueuedNode, number>();
   readonly #scroll = new Map<QueuedNode, number>();
+  readonly #elements = new Map<QueuedNode, number>();
+  readonly #states = new Map<QueuedNode, number>();
+  readonly #css = new Map<QueuedNode, Map<string, number>>();
 
   get empty(): boolean {
     return this.#commands.length === 0;
@@ -125,12 +145,42 @@ export class CommandQueue {
     }
     this.#scroll.set(node, this.#commands.push({ op: SCROLL, node, x, y }) - 1);
   }
+  /** The node's element for the cascade; a later one replaces it. */
+  element(node: QueuedNode, element: QueuedElement): void {
+    this.#replace(this.#elements, node, { op: ELEMENT, node, element });
+  }
+  states(node: QueuedNode, bits: number): void {
+    this.#replace(this.#states, node, { op: STATES, node, bits });
+  }
+  /** A CSS layout declaration; a later one of the same name replaces it. */
+  cssProperty(node: QueuedNode, name: string, value: string | null): void {
+    let byName = this.#css.get(node);
+    if (!byName) {
+      byName = new Map();
+      this.#css.set(node, byName);
+    }
+    const previous = byName.get(name);
+    if (previous !== undefined) {
+      this.#commands[previous] = undefined;
+    }
+    byName.set(name, this.#commands.push({ op: CSS_PROPERTY, node, name, value }) - 1);
+  }
+  #replace(index: Map<QueuedNode, number>, node: QueuedNode, command: Command): void {
+    const previous = index.get(node);
+    if (previous !== undefined) {
+      this.#commands[previous] = undefined;
+    }
+    index.set(node, this.#commands.push(command) - 1);
+  }
   clear(): void {
     this.#commands = [];
     this.#properties.clear();
     this.#text.clear();
     this.#paint.clear();
     this.#scroll.clear();
+    this.#elements.clear();
+    this.#states.clear();
+    this.#css.clear();
   }
 
   /** Encode and empty the queue. Commands for a node removed earlier in the batch are dropped. */
@@ -240,6 +290,32 @@ export class CommandQueue {
           words.push(SCROLL);
           node(command.node);
           numbers.push(command.x, command.y);
+          break;
+        case ELEMENT: {
+          const e = command.element;
+          words.push(ELEMENT);
+          node(command.node);
+          words.push(e.types.length, ...e.types, e.id < 0 ? 0xffffffff : e.id);
+          words.push(e.classes.length, ...e.classes);
+          words.push(e.attributes.length, ...e.attributes.flat());
+          words.push(e.inline.length, ...e.inline.flat(), e.anonymous ? 1 : 0);
+          layout = true;
+          break;
+        }
+        case STATES:
+          words.push(STATES);
+          node(command.node);
+          words.push(command.bits);
+          layout = true;
+          break;
+        case CSS_PROPERTY:
+          words.push(CSS_PROPERTY);
+          node(command.node);
+          words.push(
+            strings.push(command.name) - 1,
+            command.value === null ? 0xffffffff : strings.push(command.value) - 1,
+          );
+          layout = true;
           break;
       }
     }

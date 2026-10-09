@@ -10,6 +10,9 @@ import { SceneRenderer } from 'blinc_ts/native/renderer';
 import { probeShader } from 'blinc_ts/shaders';
 import { jsxScene } from '../dist/scene/jsx-scene.js';
 import { vueScene } from '../dist/scene/vue-scene.js';
+import { jsxClasses } from '../dist/scene/jsx-classes.js';
+import { vueClasses } from '../dist/scene/vue-classes.js';
+import { classesSheet } from '../dist/scene/classes.js';
 
 const WIDTH = 480;
 const HEIGHT = 320;
@@ -163,6 +166,35 @@ assert.deepEqual(
   [169, 323, 16],
 );
 assert.deepEqual(cards.children[1].children[1].bounds, [444, 84, 12, 12]);
+// Both adapters style by class through a stylesheet, and a class change restyles.
+const classed = {};
+for (const [name, build, settle] of [
+  ['jsx', jsxClasses, async () => {}],
+  ['vue', vueClasses, () => nextTick()],
+]) {
+  const host = Host.create(native);
+  try {
+    host.layout.addStyleSheet(classesSheet);
+    const switchOn = build(host);
+    await settle();
+    const off = Buffer.from(await capture(host));
+    switchOn();
+    await settle();
+    const on = Buffer.from(await capture(host));
+    assert(!on.equals(off), `${name}: switching a class on restyles`);
+    // The middle tile is blue once its class is on.
+    const at = (pixels, x, y) => [...pixels.subarray((y * WIDTH + x) * 4, (y * WIDTH + x) * 4 + 3)];
+    assert.deepEqual(at(on, 12 + 70 + 30, 40), at(on, 12 + 140 + 30, 40));
+    classed[name] = { off, on };
+  } finally {
+    host.dispose();
+  }
+}
+assert(Buffer.from(classed.vue.off).equals(Buffer.from(classed.jsx.off)), 'Classes: same pixels');
+assert(
+  Buffer.from(classed.vue.on).equals(Buffer.from(classed.jsx.on)),
+  'Class change: same pixels',
+);
 console.log(
   JSON.stringify({
     test: 'Reference adapters',
