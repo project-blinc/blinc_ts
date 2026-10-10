@@ -111,7 +111,7 @@ const sheet = `
 .thick { text-decoration: underline 6px #ff0000; }
 .offset { text-decoration-line: underline; text-decoration-color: #ff0000; text-underline-offset: 12px; }
 .current { text-decoration: underline; }
-.narrow { width: 110px; }
+.narrow { width: 130px; }
 .parent { text-decoration: underline #ff0000; }
 .child { text-decoration: line-through #0000ff; }
 .plain { text-decoration: none; }
@@ -179,10 +179,11 @@ try {
   host.flush();
 
   let frame = await capture(host, 'decoration');
-  // A decoration can hang below the node's box, so each is looked for a little past it.
+  // A decoration can hang outside the node's box, above it for an overline in a font with a tall
+  // ascender and below it for an underline, so each is looked for a little beyond it.
   const box = (name) => {
     const [x, y, w, h] = cells[name].bounds();
-    return [x, y, w, h + 14];
+    return [x, y - 10, w, h + 24];
   };
   const glyphs = (name) => find(frame, WHITE, box(name), 90);
   const red = (name) => find(frame, RED, box(name));
