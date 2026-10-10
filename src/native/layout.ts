@@ -561,7 +561,10 @@ export class Layout {
    * Run `listener` after each layout pass, with bounds readable. One that
    * moves or resizes something returns true, and layout runs again for it,
    * a few passes at most: what is placed from the size of its content, as a
-   * popover against its anchor, settles before the frame is drawn.
+   * popover against its anchor, settles before the frame is drawn. The
+   * listeners after one that returned true do not run in that pass, since
+   * what it wrote makes bounds unreadable; they run in the next, so each
+   * must find its work again from the layout, and not remember it was asked.
    */
   onLaidOut(listener: () => boolean | void, scope?: Scope): () => void {
     this.#laidOutListeners.add(listener);
@@ -587,7 +590,12 @@ export class Layout {
       let again = false;
       if (this.#laidOutListeners.size > 0 && pass < LAYOUT_PASSES) {
         for (const listener of [...this.#laidOutListeners]) {
-          again = listener() === true || again;
+          // One that wrote leaves the bounds unreadable until layout runs again, so the rest wait
+          // for the next pass, in which every listener runs again.
+          if (listener() === true) {
+            again = true;
+            break;
+          }
         }
       }
       if (!again) {

@@ -182,6 +182,38 @@ const { bind, bindingSchema } = await import('../dist/native/generated/layout.js
 assert.equal(addon.layoutCall(0xffffffff, []), bindingSchema);
 assert.throws(() => bind({ call: () => 'incompatible-layout-schema' }), /schema mismatch/);
 
+// Listeners after layout: one that writes keeps the rest from reading bounds it has made unreadable.
+{
+  const l = native.createLayout();
+  try {
+    const top = l.createNode({ width: '100%', height: '100%' });
+    const box = l.createNode({ width: 40, height: 30, shrink: 0 });
+    top.setChildren([box]);
+    const log = [];
+    const out = new Float32Array(4);
+    let widened = false;
+    l.onLaidOut(() => {
+      log.push('writer');
+      if (widened) {
+        return false;
+      }
+      widened = true;
+      box.setStyle({ width: 90 });
+      return true;
+    });
+    l.onLaidOut(() => {
+      // Reads bounds, which would throw if the writer's change were pending.
+      l.readBounds([box], out);
+      log.push(`reader:${out[2]}`);
+      return false;
+    });
+    l.compute(top, 200, 100);
+    assert.deepEqual(log, ['writer', 'writer', 'reader:90'], 'the reader waited for the next pass');
+  } finally {
+    l.dispose();
+  }
+}
+
 let hostDisposed = false;
 const session = new AppSession({
   dispose() {
