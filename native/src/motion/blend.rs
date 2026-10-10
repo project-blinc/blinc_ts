@@ -341,6 +341,40 @@ pub(crate) fn blend(a: &PaintWrite, b: &PaintWrite, t: f64) -> PaintWrite {
     }
 }
 
+/// A write as numbers that blend in a straight line, to measure how fast a
+/// field moves; none for one that does not, such as a gradient or a mask.
+pub(crate) fn vector(write: &PaintWrite) -> Option<Vec<f32>> {
+    use PaintWrite as W;
+    let rgba = |c: Color| [c.r * c.a, c.g * c.a, c.b * c.a, c.a];
+    let shadow = |s: &Shadow| {
+        let [r, g, b, a] = rgba(s.color);
+        [s.offset_x, s.offset_y, s.blur, s.spread, r, g, b, a]
+    };
+    Some(match write {
+        W::Opacity(v) | W::OutlineWidth(v) | W::OutlineOffset(v) => vec![*v],
+        W::BorderRadius(r) => r.to_vec(),
+        W::Background(Background::None) => vec![0.0; 4],
+        W::Background(Background::Solid(c)) => rgba(*c).to_vec(),
+        W::TextColor(Some(c))
+        | W::BorderColor(Some(c))
+        | W::OutlineColor(Some(c))
+        | W::BorderSideColor { color: Some(c), .. } => rgba(*c).to_vec(),
+        W::Transform(t) => t.elements.to_vec(),
+        W::Filter(f) => vec![
+            f.brightness,
+            f.contrast,
+            f.grayscale,
+            f.hue_rotate,
+            f.invert,
+            f.saturate,
+            f.sepia,
+            f.blur,
+        ],
+        W::Shadows { outer, inner } => outer.iter().chain(inner).flat_map(shadow).collect(),
+        _ => return None,
+    })
+}
+
 /// Whether two writes set a slot to the same value.
 pub(crate) fn same(a: &PaintWrite, b: &PaintWrite) -> bool {
     use PaintWrite as W;

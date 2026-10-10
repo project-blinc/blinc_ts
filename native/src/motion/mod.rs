@@ -13,7 +13,7 @@ mod keyframes;
 mod spec;
 mod timing;
 
-use blend::{blend, same};
+use blend::{blend, same, vector};
 use blinc_abi::css::Atom;
 use blinc_abi::css::cascade::Cascade;
 use blinc_abi::css::paint::PaintWrite;
@@ -41,6 +41,30 @@ struct Run {
     delay: f64,
     timing: Timing,
     start: Option<f64>,
+    /// A spring's progress a second at its start.
+    velocity: f64,
+    /// Progress a second at the last frame.
+    rate: f64,
+}
+
+/// The progress a second a run going from `from` to `to` starts at, keeping
+/// `previous`'s velocity along the new direction; none when the field has no
+/// straight line to measure along.
+fn carried(previous: &Run, from: &PaintWrite, to: &PaintWrite) -> Option<f64> {
+    let (a, b) = (vector(&previous.from)?, vector(&previous.to)?);
+    let (f, t) = (vector(from)?, vector(to)?);
+    if a.len() != b.len() || f.len() != t.len() || a.len() != f.len() {
+        return None;
+    }
+    let mut along = 0.0f64;
+    let mut length = 0.0f64;
+    for i in 0..a.len() {
+        let moving = f64::from(b[i] - a[i]) * previous.rate;
+        let direction = f64::from(t[i] - f[i]);
+        along += moving * direction;
+        length += direction * direction;
+    }
+    (length > 0.0).then(|| along / length)
 }
 
 /// One field's values through a `@keyframes` block, by offset.
@@ -128,7 +152,7 @@ impl Anim {
 }
 
 impl Track {
-    fn sample(&self, p: f64, timing: Timing) -> PaintWrite {
+    fn sample(&self, p: f64, timing: &Timing) -> PaintWrite {
         let last = self.stops.len() - 1;
         let i = self.stops.iter().rposition(|s| s.0 <= p).unwrap_or(0);
         if i >= last {
@@ -137,7 +161,7 @@ impl Track {
         let (from, to) = (&self.stops[i], &self.stops[i + 1]);
         let span = to.0 - from.0;
         let x = if span > 0.0 { (p - from.0) / span } else { 1.0 };
-        blend(&from.1, &to.1, from.2.unwrap_or(timing).at(x))
+        blend(&from.1, &to.1, from.2.as_ref().unwrap_or(timing).at(x))
     }
 }
 
@@ -159,8 +183,8 @@ fn tracks(stops: &[keyframes::Stop], base: &HashMap<Field, PaintWrite>) -> Vec<T
                 for write in stop.writes.iter().filter(|w| Field::of(w) == field) {
                     // A later declaration at one offset replaces the earlier.
                     match points.iter_mut().find(|p| p.0 == stop.offset) {
-                        Some(p) => (p.1, p.2) = (write.clone(), stop.timing),
-                        None => points.push((stop.offset, write.clone(), stop.timing)),
+                        Some(p) => (p.1, p.2) = (write.clone(), stop.timing.clone()),
+                        None => points.push((stop.offset, write.clone(), stop.timing.clone())),
                     }
                 }
             }
@@ -221,7 +245,7 @@ impl NodeMotion {
             let transition = self
                 .spec
                 .transition_for(field)
-                .filter(|t| field.blends() && t.duration + t.delay > 0.0)
+                .filter(|t| field.blends() && t.runs())
                 .cloned();
             // A node's first style is not a change.
             let from = (!fresh).then(|| {
@@ -230,17 +254,36 @@ impl NodeMotion {
                     .cloned()
                     .unwrap_or_else(|| field.default_write())
             });
-            self.runs.retain(|r| r.field != field);
+            let previous = self
+                .runs
+                .iter()
+                .position(|r| r.field == field)
+                .map(|i| self.runs.remove(i));
             match (from, transition) {
-                (Some(from), Some(t)) if !same(&from, &write) => self.runs.push(Run {
-                    field,
-                    from,
-                    to: write,
-                    duration: t.duration,
-                    delay: t.delay,
-                    timing: t.timing,
-                    start: None,
-                }),
+                (Some(from), Some(t)) if !same(&from, &write) => {
+                    // A spring turned mid-flight keeps its momentum, and takes as long as it needs.
+                    let (velocity, duration) = match &t.timing {
+                        Timing::Spring(spring) => {
+                            let velocity = previous
+                                .as_ref()
+                                .and_then(|p| carried(p, &from, &write))
+                                .unwrap_or(spring.velocity);
+                            (velocity, spring.settles(velocity) * 1000.0)
+                        }
+                        _ => (0.0, t.duration),
+                    };
+                    self.runs.push(Run {
+                        field,
+                        from,
+                        to: write,
+                        duration,
+                        delay: t.delay,
+                        timing: t.timing,
+                        start: None,
+                        velocity,
+                        rate: velocity,
+                    });
+                }
                 _ => {
                     self.shown.insert(field, write.clone());
                     now.push(write);
@@ -269,9 +312,7 @@ impl NodeMotion {
         }
         let mut landed = Vec::new();
         self.runs.retain(|r| {
-            let kept = spec
-                .transition_for(r.field)
-                .is_some_and(|t| t.duration + t.delay > 0.0);
+            let kept = spec.transition_for(r.field).is_some_and(|t| t.runs());
             if !kept {
                 landed.push(r.to.clone());
             }
@@ -346,7 +387,22 @@ impl NodeMotion {
                 self.shown.insert(run.field, run.to.clone());
                 false
             } else {
-                let value = blend(&run.from, &run.to, run.timing.at(x));
+                let progress = match &run.timing {
+                    Timing::Spring(spring) => {
+                        let seconds = elapsed / 1000.0;
+                        run.rate = spring.rate(seconds, run.velocity);
+                        spring.at(seconds, run.velocity)
+                    }
+                    timing => {
+                        let h = 1e-3;
+                        let before = (x - h).max(0.0);
+                        run.rate = (timing.at(x + h) - timing.at(before)) / (x + h - before)
+                            * 1000.0
+                            / run.duration;
+                        timing.at(x)
+                    }
+                };
+                let value = blend(&run.from, &run.to, progress);
                 out.insert(run.field, value.clone());
                 self.shown.insert(run.field, value);
                 true
@@ -390,7 +446,7 @@ impl NodeMotion {
             };
             if let Some(p) = progress {
                 for track in &anim.tracks {
-                    let value = track.sample(p, anim.spec.timing);
+                    let value = track.sample(p, &anim.spec.timing);
                     out.insert(track.field, value.clone());
                     self.shown.insert(track.field, value);
                 }

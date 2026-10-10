@@ -20,6 +20,11 @@ pub(crate) struct Transition {
 }
 
 impl Transition {
+    /// Whether it runs at all: it takes time, or it is a spring, which takes its own.
+    pub(crate) fn runs(&self) -> bool {
+        self.duration + self.delay > 0.0 || matches!(self.timing, Timing::Spring(_))
+    }
+
     pub(crate) fn covers(&self, field: Field) -> bool {
         match &self.property {
             Property::All => field.blends(),
@@ -243,9 +248,9 @@ impl<'a> Found<'a> {
                         cycle(&delays, i, 0.0)
                     },
                     timing: if timings.is_empty() {
-                        base.as_ref().map_or(Timing::EASE, |b| b.timing)
+                        base.as_ref().map_or(Timing::EASE, |b| b.timing.clone())
                     } else {
-                        timings[i % timings.len()]
+                        timings[i % timings.len()].clone()
                     },
                 })
             })

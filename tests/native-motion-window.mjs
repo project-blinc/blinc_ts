@@ -32,6 +32,8 @@ const css = `
 @keyframes leave { from { opacity: 1; } to { opacity: 0; } }
 #slide { left: 260px; width: 40px; height: 40px; background: #00ff00; transition: transform ${DURATION}ms linear; }
 #slide.moved { transform: translateX(160px); }
+#bounce { left: 20px; top: 110px; width: 30px; height: 30px; background: #00ff00; transition: transform spring(1 170 10); }
+#bounce.moved { transform: translateX(200px); }
 `;
 
 const window = new NativeWindowHost(native, {
@@ -59,6 +61,7 @@ try {
   const fade = make('fade');
   const panel = make('panel');
   const slide = make('slide');
+  const bounce = make('bounce');
   host.mount(window, { scope });
   await waitFor(() => window.frames > 0, 'First frame');
   await delay(100);
@@ -75,9 +78,9 @@ try {
     const [x, y, w, h] = node.bounds();
     return (pixel(frame, x + w / 2, y + h / 2)[0] - 0x20) / (255 - 0x20);
   };
-  // Where the green box's left edge is along its row, in layout pixels.
-  const slideAt = (frame) => {
-    const [, y, , h] = slide.bounds();
+  // Where a green box's left edge is along its row, in layout pixels.
+  const edgeOf = (node) => (frame) => {
+    const [, y, , h] = node.bounds();
     for (let x = 0; x < W; x++) {
       const [r, g, b] = pixel(frame, x, y + h / 2);
       if (g > 200 && r < 60 && b < 60) {
@@ -86,6 +89,7 @@ try {
     }
     return Number.NaN;
   };
+  const slideAt = edgeOf(slide);
 
   /** Run `change`, wait for `node`'s motion to end and the window to go quiet; the frames it presented. */
   const play = async (name, node, change) => {
@@ -212,6 +216,49 @@ try {
   const sliding = await play('slide', slide, () => slide.classList.add('moved'));
   const xs = await trace('slide', sliding, slideAt, startX, startX + 160, 0.02);
   assert.ok(Math.abs(xs.at(-1) - (startX + 160)) <= 1, `the slide ends at ${xs.at(-1)}`);
+
+  // A spring: every frame where the spring's own equation puts it, past the target and back.
+  const springAt = (t, velocity = 0) => {
+    const w = Math.sqrt(170);
+    const zeta = 10 / (2 * Math.sqrt(170));
+    const wd = w * Math.sqrt(1 - zeta * zeta);
+    const b = (zeta * w - velocity) / wd;
+    return 1 - Math.exp(-zeta * w * t) * (Math.cos(wd * t) + b * Math.sin(wd * t));
+  };
+  const [home] = bounce.bounds();
+  const bouncing = await play('spring', bounce, () => bounce.classList.add('moved'));
+  const xs2 = bouncing.map(edgeOf(bounce));
+  await filmstrip('spring', bouncing);
+  const off = bouncing.map((f, i) =>
+    Math.abs(xs2[i] - (home + 200 * springAt((f.time - bouncing[0].time) / 1000))),
+  );
+  assert.ok(
+    Math.max(...off) <= 1.5,
+    `spring: off its equation by ${Math.max(...off).toFixed(2)}px`,
+  );
+  assert.ok(Math.max(...xs2) > home + 210, `it overshoots: ${Math.max(...xs2)}`);
+  assert.ok(Math.abs(xs2.at(-1) - (home + 200)) <= 1, `and lands: ${xs2.at(-1)}`);
+  const springTime = bouncing.at(-1).time - bouncing[0].time;
+  assert.ok(springTime > 300, `in its own time, not a duration: ${springTime.toFixed(0)}ms`);
+
+  // Turned back on its way out, it carries on out for a moment before it comes back.
+  captured.length = 0;
+  bounce.classList.remove('moved');
+  await waitFor(
+    () => captured.some((f) => edgeOf(bounce)(f) < home + 150),
+    'the spring heads home',
+  );
+  await waitFor(() => captured.length >= 1, 'a frame');
+  const turnedAt = window.frames;
+  const momentum = await play('momentum', bounce, () => bounce.classList.add('moved'));
+  const path = momentum.map(edgeOf(bounce));
+  report.push(`momentum: frames ${turnedAt + 1}.. edges ${path.slice(0, 8).join(' ')}`);
+  await filmstrip('momentum', momentum);
+  assert.ok(path[1] < path[0], `still moving home a frame after the turn: ${path.slice(0, 4)}`);
+  assert.ok(
+    Math.abs(path.at(-1) - (home + 200)) <= 1,
+    `then it goes out and lands: ${path.at(-1)}`,
+  );
 
   stop();
   assert.deepEqual(errors, []);

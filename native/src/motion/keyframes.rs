@@ -62,7 +62,7 @@ pub(crate) fn read(
             stops.push(Stop {
                 offset: offset.clamp(0.0, 1.0),
                 writes: writes.clone(),
-                timing,
+                timing: timing.clone(),
             });
         }
     }

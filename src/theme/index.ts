@@ -1,7 +1,7 @@
 export { hex, withAlpha, mixColor, cssColor } from './color.js';
 export type { Color } from './color.js';
-export { cubicBezier, controlPoints, cssEasing, ease } from './easing.js';
-export type { Easing } from './easing.js';
+export { cubicBezier, controlPoints, cssEasing, ease, spring } from './easing.js';
+export type { Easing, SpringEasing } from './easing.js';
 export {
   shapeOff,
   shapeTokens,

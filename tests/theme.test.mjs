@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  animationScale,
   colorTokens,
   cornerN,
   cssColor,
@@ -18,6 +19,7 @@ import {
   shapeOptions,
   shapeTokens,
   spacingScale,
+  spring,
   themeVariables,
 } from '../dist/theme/index.js';
 import { classes, utilityClasses, utilityCss } from '../dist/theme/utilities.js';
@@ -90,6 +92,31 @@ test('easings evaluate as CSS curves', () => {
   assert.ok(overshoot > 1, 'a spring curve overshoots');
   assert.equal(ease({ steps: 4 }, 0.3), 0.25);
   assert.equal(ease({ steps: 4, jumpStart: true }, 0.3), 0.5);
+  const points = {
+    points: [
+      [0, 0],
+      [0.5, 0.25],
+      [1, 1],
+    ],
+  };
+  assert.equal(cssEasing(points), 'linear(0 0%, 0.25 50%, 1 100%)');
+  assert.equal(ease(points, 0.75), 0.625);
+});
+
+test('a spring is written for the engine and evaluated as it does', () => {
+  const bouncy = spring(1, 170, 10);
+  assert.equal(cssEasing(bouncy), 'spring(1 170 10 0)');
+  assert.equal(ease(bouncy, 0), 0);
+  assert.equal(ease(bouncy, 1), 1);
+  const curve = Array.from({ length: 99 }, (_, i) => ease(bouncy, (i + 1) / 100));
+  assert.ok(Math.max(...curve) > 1.2, 'an under-damped spring overshoots');
+  const calm = spring(1, 170, 2 * Math.sqrt(170));
+  assert.ok(
+    Array.from({ length: 99 }, (_, i) => ease(calm, (i + 1) / 100)).every((v) => v <= 1 + 1e-9),
+    'a critically damped one does not',
+  );
+  assert.throws(() => spring(0, 100, 10), RangeError);
+  assert.equal(cssEasing(animationScale().easings.spring), 'spring(1 400 30 0)');
 });
 
 test('every token becomes a CSS variable', () => {

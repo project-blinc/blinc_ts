@@ -312,6 +312,14 @@ modes, delays, iteration counts, directions and `animation-play-state` work as
 CSS has them. A keyframe's `var()`s read the element's values and the theme,
 and a running animation follows a theme change.
 
+Timing functions are CSS's keywords, `cubic-bezier()`, `steps()` and
+`linear()`, and `spring(mass stiffness damping [velocity])`. A spring
+transition runs until the spring settles, whatever duration it is given, and
+one turned back mid-flight keeps its momentum: it carries on a little before
+it comes round. In a `@keyframes` block a spring is fitted to its segment. The
+theme's `--ease-spring` is a spring, `spring(1, 400, 30)` from
+`blinc_ts/theme`.
+
 Values are interpolated natively and written to the node, so JavaScript only
 supplies the time. A mounted host ticks every frame and asks for another
 while anything moves; with nothing moving, a frame makes no native call.

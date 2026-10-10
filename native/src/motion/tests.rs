@@ -419,3 +419,116 @@ fn a_keyframe_reads_variables_and_reads_them_again_when_the_theme_changes() {
     near(opacity_at(&mut motion, 50.0), 0.8);
     assert!(motion.take_rethemed().is_empty(), "taken once");
 }
+
+/// The outline offset `node` is given at `now`, which, unlike opacity, has no bounds to clamp an overshoot.
+fn offset_at(motion: &mut Motion, now: f64) -> Option<f32> {
+    let frame = motion.tick(now);
+    let writes = &frame.iter().find(|(raw, _)| *raw == NODE)?.1;
+    writes.iter().find_map(|w| match w {
+        PaintWrite::OutlineOffset(o) => Some(*o),
+        _ => None,
+    })
+}
+
+const BOUNCY: &[(&str, &str)] = &[("transition", "outline-offset spring(1 170 10)")];
+
+#[test]
+fn a_spring_needs_no_duration_overshoots_and_lands() {
+    let (mut motion, cascade) = (Motion::default(), cascade(""));
+    restyle(
+        &mut motion,
+        &cascade,
+        Some(spec(BOUNCY)),
+        vec![PaintWrite::OutlineOffset(0.0)],
+    );
+    let held = restyle(
+        &mut motion,
+        &cascade,
+        None,
+        vec![PaintWrite::OutlineOffset(10.0)],
+    );
+    assert!(held.is_empty(), "a spring runs with no duration given");
+    let mut most = 0.0f32;
+    let mut ms = 0.0;
+    while motion.active() && ms < 5000.0 {
+        if let Some(v) = offset_at(&mut motion, ms) {
+            most = most.max(v);
+        }
+        ms += 16.0;
+    }
+    assert!(most > 12.0, "it overshoots: {most}");
+    assert!(!motion.active(), "and settles, after {ms}ms");
+    assert!(ms > 300.0 && ms < 3000.0, "in its own time: {ms}ms");
+    assert_eq!(motion.take_finished(), [NODE]);
+}
+
+#[test]
+fn a_spring_turned_back_keeps_its_momentum() {
+    let (mut motion, cascade) = (Motion::default(), cascade(""));
+    restyle(
+        &mut motion,
+        &cascade,
+        Some(spec(BOUNCY)),
+        vec![PaintWrite::OutlineOffset(0.0)],
+    );
+    restyle(
+        &mut motion,
+        &cascade,
+        None,
+        vec![PaintWrite::OutlineOffset(10.0)],
+    );
+    offset_at(&mut motion, 0.0);
+    let turned = offset_at(&mut motion, 60.0).unwrap();
+    assert!(turned > 1.0 && turned < 10.0, "partway out: {turned}");
+    restyle(
+        &mut motion,
+        &cascade,
+        None,
+        vec![PaintWrite::OutlineOffset(0.0)],
+    );
+    let start = offset_at(&mut motion, 76.0).unwrap();
+    let next = offset_at(&mut motion, 92.0).unwrap();
+    assert!((start - turned).abs() < 1e-4, "it turns from where it is");
+    assert!(
+        next > start,
+        "still moving out a frame later: {start} then {next}"
+    );
+    let mut ms = 92.0;
+    let mut last = next;
+    while motion.active() && ms < 5000.0 {
+        ms += 16.0;
+        last = offset_at(&mut motion, ms).unwrap_or(last);
+    }
+    assert!(last.abs() < 0.05, "and lands back at the start: {last}");
+}
+
+#[test]
+fn an_eased_transition_turned_back_heads_back_at_once() {
+    let eased = &[("transition", "outline-offset 200ms linear")];
+    let (mut motion, cascade) = (Motion::default(), cascade(""));
+    restyle(
+        &mut motion,
+        &cascade,
+        Some(spec(eased)),
+        vec![PaintWrite::OutlineOffset(0.0)],
+    );
+    restyle(
+        &mut motion,
+        &cascade,
+        None,
+        vec![PaintWrite::OutlineOffset(10.0)],
+    );
+    offset_at(&mut motion, 0.0);
+    let turned = offset_at(&mut motion, 100.0).unwrap();
+    restyle(
+        &mut motion,
+        &cascade,
+        None,
+        vec![PaintWrite::OutlineOffset(0.0)],
+    );
+    offset_at(&mut motion, 116.0);
+    assert!(
+        offset_at(&mut motion, 132.0).unwrap() < turned,
+        "it heads back at once"
+    );
+}

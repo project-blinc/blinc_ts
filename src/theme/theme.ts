@@ -1,5 +1,5 @@
 import { cssColor, number, px, withAlpha, type Color } from './color.js';
-import { cssEasing } from './easing.js';
+import { cssEasing, spring } from './easing.js';
 import { cornerN, shapeOff, shapeTokens, type ShapeTokens } from './shape.js';
 import {
   colorTokens,
@@ -237,7 +237,8 @@ export function animationScale(patch: ThemePatch['animations'] = {}): AnimationT
     'in-out': 'ease-in-out',
     state: 'ease-out',
     nav: 'ease-in-out',
-    spring: 'ease-out',
+    // A little overshoot, settled to a thousandth in about half a second.
+    spring: spring(1, 400, 30),
     sheet: 'ease-out',
     ...patch.easings,
   };
