@@ -1,1 +1,1 @@
-{"author":{"id":"a51b5961cc6de343a64125d8eb6a0f965aa434020b9c46ed932a1bbf143eb532"},"ops":[{"type":3,"timestamp":1791628816,"nonce":"OFvi9OvqJbdoi/M1iKO92rvAh4w=","message":"Verified in a window (924bab1): each presented frame of a pushed box on the curve from where it was, max error 2% (a pixel of a 40px move). All motion gaps landed: 28cfa7d, cb7549f, bd3b33a, d4553ce, 2035179.","files":null}]}
+{"author":{"id":"a51b5961cc6de343a64125d8eb6a0f965aa434020b9c46ed932a1bbf143eb532"},"ops":[{"type":4,"timestamp":1791628816,"nonce":"jcEqAcvSk5Mk2u8MLTAY8pA7hGc=","status":2}]}
