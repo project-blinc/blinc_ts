@@ -49,6 +49,18 @@ export interface TextEditingOptions {
 
 const LINE_BREAKS = /\r\n|\r|\n/g;
 const SPACE = /\s/;
+/** How many edits can be undone. */
+const HISTORY = 200;
+
+/** What an edit began from, to come back to. */
+interface Snapshot {
+  readonly value: string;
+  readonly caret: number;
+  readonly anchor: number;
+}
+
+/** What an edit did: typing and deleting run together until the caret moves; anything else stands alone. */
+type Kind = 'insert' | 'delete' | 'other';
 
 export class TextEditing {
   readonly multiline: boolean;
@@ -82,6 +94,11 @@ export class TextEditing {
 
   readonly #options: TextEditingOptions;
   readonly #mac: boolean;
+  /** The states before each edit, newest last, and those undone since, which a new edit drops. */
+  readonly #undo: Snapshot[] = [];
+  readonly #redo: Snapshot[] = [];
+  /** The kind of the last edit while the caret has not moved since; the next of its kind joins it. */
+  #run: Kind | null = null;
   /** What a press selects as it is dragged: 1 characters, 2 words, 3 paragraphs, and what it first selected. */
   #granularity = 1;
   #pressRange = { from: 0, to: 0 };
@@ -289,6 +306,10 @@ export class TextEditing {
     this.caret = this.anchor = value.length;
     this.composing = '';
     this.#goalX = null;
+    // What the user did is not what this puts back.
+    this.#undo.length = 0;
+    this.#redo.length = 0;
+    this.#run = null;
     this.#changed();
   }
 
@@ -298,6 +319,7 @@ export class TextEditing {
     this.anchor = Math.min(Math.max(from, 0), length);
     this.caret = Math.min(Math.max(to, 0), length);
     this.#goalX = null;
+    this.#run = null;
     this.#changed();
   }
 
@@ -305,6 +327,7 @@ export class TextEditing {
     if (!keepGoal) {
       this.#goalX = null;
     }
+    this.#run = null;
     this.caret = to;
     if (!select) {
       this.anchor = to;
@@ -327,33 +350,78 @@ export class TextEditing {
     }
     this.composeCursor = cursor;
     this.composing = text;
+    this.#run = null;
     this.#changed();
   }
 
-  /** Replace the selection with `insert`, leaving the caret after it; what would pass `maxLength` is cut. */
-  replace(insert: string): void {
+  /**
+   * Replace the selection with `insert`, leaving the caret after it; what would pass `maxLength`
+   * is cut. It is one step to undo, with the edits of its `kind` just before it when it has one.
+   */
+  replace(insert: string, kind: Kind = 'other'): void {
     const { from, to } = this.selectionRange();
     let text = insert;
     if (this.maxLength !== null) {
       const room = Math.max(0, this.maxLength - (this.value.length - (to - from)));
       text = text.slice(0, room);
     }
-    this.value = this.value.slice(0, from) + text + this.value.slice(to);
+    const next = this.value.slice(0, from) + text + this.value.slice(to);
+    if (next !== this.value) {
+      if (kind === 'other' || kind !== this.#run) {
+        this.#undo.push({ value: this.value, caret: this.caret, anchor: this.anchor });
+        if (this.#undo.length > HISTORY) {
+          this.#undo.shift();
+        }
+      }
+      this.#redo.length = 0;
+    }
+    this.value = next;
     this.composing = '';
     this.caret = this.anchor = from + text.length;
     this.#goalX = null;
+    this.#run = kind === 'other' ? null : kind;
     this.#changed();
     this.onInput?.(this.value);
   }
 
   /** Delete the selection, or from the caret to `to` when nothing is selected. */
   #erase(to: number): void {
-    if (this.caret === this.anchor) {
+    const collapsed = this.caret === this.anchor;
+    if (collapsed) {
       this.anchor = to;
     }
     if (this.caret !== this.anchor) {
-      this.replace('');
+      this.replace('', collapsed ? 'delete' : 'other');
     }
+  }
+
+  /** Take back the last edit, or the run of typing or deleting it was part of. True when there was one. */
+  undo(): boolean {
+    return this.#travel(this.#undo, this.#redo);
+  }
+
+  /** Do again what `undo` took back. True when there was something to do. */
+  redo(): boolean {
+    return this.#travel(this.#redo, this.#undo);
+  }
+
+  #travel(from: Snapshot[], to: Snapshot[]): boolean {
+    if (this.#frozen() || this.composing !== '') {
+      return false;
+    }
+    const target = from.pop();
+    if (!target) {
+      return false;
+    }
+    to.push({ value: this.value, caret: this.caret, anchor: this.anchor });
+    this.value = target.value;
+    this.caret = target.caret;
+    this.anchor = target.anchor;
+    this.#goalX = null;
+    this.#run = null;
+    this.#changed();
+    this.onInput?.(this.value);
+    return true;
   }
 
   #oneLine(text: string): string {
@@ -367,7 +435,7 @@ export class TextEditing {
     }
     const typed = this.accept ? this.accept(text) : text;
     if (typed !== '') {
-      this.replace(this.#oneLine(typed));
+      this.replace(this.#oneLine(typed), 'insert');
     }
   }
 
@@ -516,9 +584,25 @@ export class TextEditing {
         // Typed as text, so it must not click the view as well.
         return true;
       default:
-        if (e.key.length === 1 && (mac ? e.metaKey : e.ctrlKey) && e.key.toLowerCase() === 'a') {
-          this.selectAll();
-          return true;
+        if (e.key.length === 1 && (mac ? e.metaKey : e.ctrlKey)) {
+          switch (e.key.toLowerCase()) {
+            case 'a':
+              this.selectAll();
+              return true;
+            case 'z':
+              if (e.shiftKey) {
+                this.redo();
+              } else {
+                this.undo();
+              }
+              return true;
+            case 'y':
+              // Redo where Shift-Z is not the habit.
+              if (!mac) {
+                this.redo();
+                return true;
+              }
+          }
         }
         return false;
     }
@@ -604,6 +688,7 @@ export class TextEditing {
   /** The view lost focus: any composition is dropped and the selection collapses to the caret. */
   blur(): void {
     this.#dragging = false;
+    this.#run = null;
     this.composing = '';
     this.anchor = this.caret;
     this.#changed();

@@ -336,3 +336,132 @@ test('changes are announced, and enter and escape reach the view', () => {
   e.blur();
   assert.equal(e.anchor, e.caret, 'blurring collapses the selection');
 });
+
+test('undo takes back a run of typing at once, and redo does it again', () => {
+  const e = editing();
+  const inputs = [];
+  e.onInput = (v) => inputs.push(v);
+  typed(e, 'a');
+  typed(e, 'b');
+  typed(e, 'c');
+  assert.equal(e.value, 'abc');
+  assert.equal(e.undo(), true);
+  assert.equal(e.value, '', 'the whole run goes');
+  assert.equal([e.caret, e.anchor].join(), '0,0');
+  assert.equal(e.undo(), false, 'and there is nothing before it');
+  assert.equal(e.redo(), true);
+  assert.equal(e.value, 'abc');
+  assert.equal(e.caret, 3, 'the caret comes back too');
+  assert.equal(e.redo(), false);
+  assert.deepEqual(inputs.slice(-2), ['', 'abc'], 'each is announced as an edit');
+});
+
+test('moving the caret ends a run, and so does a different kind of edit', () => {
+  const e = editing();
+  typed(e, 'one');
+  e.key(key('ArrowLeft'));
+  typed(e, 'X');
+  assert.equal(e.value, 'onXe');
+  e.undo();
+  assert.equal(e.value, 'one', 'only what was typed after the move');
+  e.undo();
+  assert.equal(e.value, '');
+  e.redo();
+  e.redo();
+  assert.equal(e.value, 'onXe');
+  e.setValue('abcdef');
+  assert.equal(e.undo(), false, 'a script setting the value clears what can be undone');
+  assert.equal(e.redo(), false);
+
+  const d = editing();
+  d.setValue('abcdef');
+  d.key(key('Backspace'));
+  d.key(key('Backspace'));
+  typed(d, 'Z');
+  d.key(key('Backspace'));
+  assert.equal(d.value, 'abcd');
+  d.undo();
+  assert.equal(d.value, 'abcdZ', 'deleting after typing is its own step');
+  d.undo();
+  assert.equal(d.value, 'abcd', 'typing is another');
+  d.undo();
+  assert.equal(d.value, 'abcdef', 'and the run of deletes the last');
+});
+
+test('a paste, a cut and a replaced selection are each a step that restores the selection', () => {
+  const e = editing();
+  e.setValue('hello world');
+  e.select(0, 5);
+  typed(e, 'bye');
+  assert.equal(e.value, 'bye world');
+  e.undo();
+  assert.equal(e.value, 'hello world');
+  assert.equal([e.anchor, e.caret].join(), '0,5', 'what was selected is selected again');
+  e.redo();
+  e.select(0, 3);
+  e.cut();
+  assert.equal(e.value, ' world');
+  e.paste('abc');
+  e.paste('def');
+  assert.equal(e.value, 'abcdef world');
+  e.undo();
+  assert.equal(e.value, 'abc world', 'each paste stands alone');
+  e.undo();
+  assert.equal(e.value, ' world');
+  e.undo();
+  assert.equal(e.value, 'bye world', 'and the cut');
+});
+
+test('a new edit drops what could be redone, and undo is bounded', () => {
+  const e = editing();
+  typed(e, 'a');
+  e.key(key('ArrowLeft'));
+  typed(e, 'b');
+  e.undo();
+  typed(e, 'c');
+  assert.equal(e.redo(), false, 'the undone edit is gone');
+  assert.equal(e.value, 'ca');
+
+  const lines = editing({ multiline: true });
+  for (let i = 0; i < 250; i++) {
+    lines.key(key('Enter'));
+  }
+  let steps = 0;
+  while (lines.undo()) {
+    steps++;
+  }
+  assert.equal(steps, 200, 'the last 200 edits can be taken back');
+  assert.equal(lines.value.length, 50);
+});
+
+test('undo and redo answer the platform shortcuts, and not a field that cannot change', () => {
+  const win = editing();
+  typed(win, 'abc');
+  const z = key('z', { ctrlKey: true });
+  assert.equal(win.key(z), true);
+  assert.equal(win.value, '');
+  assert.equal(win.key(key('Z', { ctrlKey: true, shiftKey: true })), true);
+  assert.equal(win.value, 'abc', 'Control Shift Z redoes');
+  win.key(key('z', { ctrlKey: true }));
+  assert.equal(win.key(key('y', { ctrlKey: true })), true);
+  assert.equal(win.value, 'abc', 'and Control Y');
+
+  const mac = editing({ mac: true });
+  typed(mac, 'abc');
+  assert.equal(mac.key(key('z', { ctrlKey: true })), false, 'Control Z is not Command Z on a Mac');
+  assert.equal(mac.value, 'abc');
+  mac.key(key('z', { metaKey: true }));
+  assert.equal(mac.value, '');
+  mac.key(key('z', { metaKey: true, shiftKey: true }));
+  assert.equal(mac.value, 'abc');
+  mac.key(key('z', { metaKey: true }));
+  assert.equal(mac.key(key('y', { metaKey: true })), false, 'Command Y is not redo on a Mac');
+  assert.equal(mac.value, '');
+
+  let readOnly = false;
+  const guarded = editing({ readOnly: () => readOnly });
+  typed(guarded, 'abc');
+  readOnly = true;
+  assert.equal(guarded.undo(), false);
+  assert.equal(guarded.value, 'abc', 'a read-only field is not changed by undo either');
+});

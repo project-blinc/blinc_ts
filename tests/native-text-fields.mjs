@@ -399,6 +399,32 @@ try {
     countEvents.includes('input') && countEvents.includes('change'),
     'stepping announces it',
   );
+  // Undo and redo go by the platform's shortcuts, and are edits the page hears of.
+  const note = place(el('input', { type: 'text' }));
+  const noteEvents = log(note);
+  note.focus();
+  typeText('one');
+  tap('ArrowLeft');
+  typeText('X');
+  assert.equal(note.value, 'onXe');
+  noteEvents.length = 0;
+  tap('z', shortcut);
+  assert.equal(note.value, 'one', 'undo takes back the last edit');
+  assert.deepEqual(noteEvents, ['input'], 'and tells the page');
+  tap('z', { ...shortcut, shift: true });
+  assert.equal(note.value, 'onXe', 'Shift redoes it');
+  tap('z', shortcut);
+  tap('z', shortcut);
+  assert.equal(note.value, '', 'the run of typing goes at once');
+  note.setAttribute('readonly', '');
+  tap('z', { ...shortcut, shift: true });
+  assert.equal(note.value, '', 'a read-only field is not changed');
+  note.removeAttribute('readonly');
+  note.value = 'set by a script';
+  tap('z', shortcut);
+  assert.equal(note.value, 'set by a script', 'a script setting the value leaves nothing to undo');
+  note.blur();
+  settle();
   settle();
   assert.deepEqual(errors, [], String(errors));
   assert.deepEqual(errors, [], String(errors));

@@ -638,7 +638,10 @@ Typing, the input method's composition (underlined, in place of the selection), 
 (Option on a Mac, Control elsewhere, by word; Command on a Mac to the ends of a line),
 Home and End, Backspace and Delete, Page Up and Down in a text area, select all, and the
 platform's copy, cut and paste shortcuts edit it, `copy`, `cut` and `paste` being the
-clipboard events they fire. Tab into a field selects what is in it; a script's `focus()`
+clipboard events they fire. Undo (Command or Control Z) takes back the last edit, a run of
+typing or of deleting at one place being one, and redo (Shift Z, or Control Y off a Mac)
+does it again, each an `input` event; moving the caret ends a run, and a script setting
+`value`, or a form's `reset()`, clears what can be undone, up to 200 edits. Tab into a field selects what is in it; a script's `focus()`
 does not. A password shows dots and neither copies nor cuts. `readonly` can be selected
 and copied but not changed, and a disabled field takes nothing. `maxlength` cuts what is
 typed or pasted. A single line field turns a pasted line break into a space and scrolls to
