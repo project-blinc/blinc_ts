@@ -9,7 +9,7 @@ import { probeShader } from '../dist/renderer/shaders.js';
 
 const native = loadNative();
 const W = 480;
-const H = 160;
+const H = 240;
 const target = await OffscreenRenderer.create(native, W, H, probeShader);
 const output = new URL('../.blinc/motion/', import.meta.url);
 await mkdir(output, { recursive: true });
@@ -67,6 +67,9 @@ const css = `
 #wide.on { width: 40px; }
 #missing { left: 380px; top: 100px; }
 #missing.go { animation: nowhere 100ms; }
+#themed { left: 20px; top: 180px; background: #000000; }
+#themed.go { animation: themed 100ms linear forwards; }
+@keyframes themed { from { background: var(--from); } to { background: #000000; } }
 `;
 
 const context = native.createReactive();
@@ -91,6 +94,7 @@ try {
   const dialog = make('dialog', 'box dialog');
   const wide = make('wide');
   const missing = make('missing');
+  const themed = make('themed');
 
   const at = (pixels, node, dx, dy) => {
     const [x, y] = node.bounds();
@@ -198,6 +202,23 @@ try {
   host.layout.flush();
   host.layout.tickMotion(5000);
   await left;
+
+  // A keyframe reads the theme, and a theme change mid-flight recolours it in place.
+  host.layout.setTheme({ '--from': '#ff0000' });
+  themed.classList.add('go');
+  host.compute(W, H);
+  const themedAt = async (t) => {
+    host.layout.tickMotion(t);
+    return at(await capture(host), themed, 50, 30);
+  };
+  assert.ok(near(await themedAt(6000), RED), 'it starts in the theme colour');
+  assert.ok(near(await themedAt(6050), [128, 0, 0], 6), 'and is halfway');
+  host.layout.setTheme({ '--from': '#0000ff' });
+  host.compute(W, H);
+  assert.ok(
+    near(await themedAt(6050), [0, 0, 128], 6),
+    `after the switch it is halfway from the new colour: ${await themedAt(6050)}`,
+  );
 
   // What motion cannot do is said once, not on every restyle.
   missing.classList.add('go');

@@ -309,7 +309,8 @@ halfway turns back from where it is. `@keyframes` read their paint
 declarations, with a stop's own `animation-timing-function`, and a property a
 block leaves out at `from` or `to` starts or ends at the node's style. Fill
 modes, delays, iteration counts, directions and `animation-play-state` work as
-CSS has them; `var()` inside a `@keyframes` block is reported as unsupported.
+CSS has them. A keyframe's `var()`s read the element's values and the theme,
+and a running animation follows a theme change.
 
 Values are interpolated natively and written to the node, so JavaScript only
 supplies the time. A mounted host ticks every frame and asks for another

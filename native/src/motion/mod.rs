@@ -14,6 +14,7 @@ mod spec;
 mod timing;
 
 use blend::{blend, same};
+use blinc_abi::css::Atom;
 use blinc_abi::css::cascade::Cascade;
 use blinc_abi::css::paint::PaintWrite;
 use blinc_abi::css::quantity::PaintUnits;
@@ -23,10 +24,12 @@ use spec::{Animation, Direction};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use timing::Timing;
 
-/// What a restyle reads keyframes and units from.
+/// What a restyle reads keyframes, their variables and units from.
 pub(crate) struct Context<'a> {
     pub(crate) cascade: &'a Cascade,
     pub(crate) units: PaintUnits<'a>,
+    /// The node's computed values, which a keyframe's `var()`s read.
+    pub(crate) values: &'a [(Atom, String)],
 }
 
 /// A transition of one field.
@@ -65,6 +68,8 @@ enum Stand {
 struct Anim {
     spec: Animation,
     tracks: Vec<Track>,
+    /// Whether its keyframes read variables, so are read again when those change.
+    variables: bool,
     start: Option<f64>,
     paused_at: Option<f64>,
     phase: Phase,
@@ -296,19 +301,28 @@ impl NodeMotion {
             if self.anims.iter().any(|a| a.spec.name == spec.name) {
                 continue;
             }
-            let Some(stops) =
-                keyframes::read(context.cascade, &spec.name, &context.units, problems)
-            else {
+            let Some((stops, variables)) = keyframes::read(context, &spec.name, problems) else {
                 problems.push(format!("animation \"{}\" has no @keyframes", spec.name));
                 continue;
             };
             self.anims.push(Anim {
                 spec,
                 tracks: tracks(&stops, &self.base),
+                variables,
                 start: None,
                 paused_at: None,
                 phase: Phase::Waiting,
             });
+        }
+    }
+
+    /// Read again the keyframes of animations that use variables, which may
+    /// have changed; where each has got to is kept.
+    fn reread(&mut self, context: &Context, problems: &mut Vec<String>) {
+        for anim in self.anims.iter_mut().filter(|a| a.variables) {
+            if let Some((stops, _)) = keyframes::read(context, &anim.spec.name, problems) {
+                anim.tracks = tracks(&stops, &self.base);
+            }
         }
     }
 
@@ -407,6 +421,8 @@ pub(crate) struct Motion {
     /// Nodes that gained motion after their first style, which the cascade has yet to
     /// write in full: their animations wait for `rebase`.
     unbased: Vec<u64>,
+    /// Whether the theme changed since the animations that read variables last read it.
+    rethemed: bool,
     reported: HashSet<String>,
 }
 
@@ -454,6 +470,8 @@ impl Motion {
                     node.respec(spec)
                 };
                 now.extend(node.route(writes, fresh));
+                // Its values changed, which its animations' variables may read.
+                node.reread(context, problems);
                 if fresh && !complete {
                     deferred = true;
                 } else {
@@ -509,6 +527,30 @@ impl Motion {
 
     pub(crate) fn take_finished(&mut self) -> Vec<u64> {
         std::mem::take(&mut self.finished)
+    }
+
+    /// The theme changed: animations whose keyframes read variables read them again.
+    pub(crate) fn theme_changed(&mut self) {
+        self.rethemed = true;
+    }
+
+    /// After a theme change, the nodes whose animations read variables, for `reread`.
+    pub(crate) fn take_rethemed(&mut self) -> Vec<u64> {
+        if !std::mem::take(&mut self.rethemed) {
+            return Vec::new();
+        }
+        self.nodes
+            .iter()
+            .filter(|(_, n)| n.anims.iter().any(|a| a.variables))
+            .map(|(&raw, _)| raw)
+            .collect()
+    }
+
+    /// Read `raw`'s animations' variables again.
+    pub(crate) fn reread(&mut self, raw: u64, context: &Context, problems: &mut Vec<String>) {
+        if let Some(node) = self.nodes.get_mut(&raw) {
+            node.reread(context, problems);
+        }
     }
 
     /// The nodes that need their whole paint, to be given to `rebase`.

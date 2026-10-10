@@ -39,6 +39,7 @@ fn restyle(
     let context = Context {
         cascade,
         units: PaintUnits::default(),
+        values: &[],
     };
     let mut problems = Vec::new();
     let now = motion.restyle(NODE, spec, writes, true, &context, &mut problems);
@@ -329,6 +330,7 @@ fn animation_problems_are_reported_once() {
     let context = Context {
         cascade: &cascade,
         units: PaintUnits::default(),
+        values: &[],
     };
     let mut problems = Vec::new();
     motion.restyle(
@@ -362,6 +364,7 @@ fn a_node_that_gains_motion_late_takes_its_base_from_the_rebase() {
     let context = Context {
         cascade: &cascade,
         units: PaintUnits::default(),
+        values: &[],
     };
     let mut problems = Vec::new();
     // Styled long ago, it was never told its paint; the animation waits for it.
@@ -381,4 +384,38 @@ fn a_node_that_gains_motion_late_takes_its_base_from_the_rebase() {
     near(opacity_at(&mut motion, 0.0), 0.0);
     // Over, it gives back what the cascade had, not the default.
     near(opacity_at(&mut motion, 100.0), 0.8);
+}
+
+#[test]
+fn a_keyframe_reads_variables_and_reads_them_again_when_the_theme_changes() {
+    let mut cascade =
+        cascade("@keyframes dim { from { opacity: var(--start) } to { opacity: 1 } }");
+    cascade.set_theme(&[("start", "0.2")]);
+    let mut motion = Motion::default();
+    let mut problems = Vec::new();
+    fn context(cascade: &Cascade) -> Context<'_> {
+        Context {
+            cascade,
+            units: PaintUnits::default(),
+            values: &[],
+        }
+    }
+    motion.restyle(
+        NODE,
+        Some(spec(&[("animation", "dim 100ms linear")])),
+        vec![],
+        true,
+        &context(&cascade),
+        &mut problems,
+    );
+    assert!(problems.is_empty(), "{problems:?}");
+    near(opacity_at(&mut motion, 0.0), 0.2);
+    near(opacity_at(&mut motion, 50.0), 0.6);
+    // A theme change is read at the next restyle, and the animation keeps its place.
+    cascade.set_theme(&[("start", "0.6")]);
+    motion.theme_changed();
+    assert_eq!(motion.take_rethemed(), [NODE]);
+    motion.reread(NODE, &context(&cascade), &mut problems);
+    near(opacity_at(&mut motion, 50.0), 0.8);
+    assert!(motion.take_rethemed().is_empty(), "taken once");
 }

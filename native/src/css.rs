@@ -76,6 +76,28 @@ impl StyleState {
     }
 }
 
+/// What motion reads for `node`: keyframes, the node's computed values and its units.
+fn motion_context<'a>(
+    styles: &'a Styles,
+    node: Node,
+    root_font_size: f64,
+    environment: &MediaEnvironment,
+) -> MotionContext<'a> {
+    let computed = styles.computed(node);
+    MotionContext {
+        cascade: styles.cascade(),
+        units: PaintUnits {
+            font_size: computed.map_or(root_font_size, |c| c.font_size),
+            root_font_size,
+            viewport_width: environment.width,
+            viewport_height: environment.height,
+            color: None,
+            declared: &[],
+        },
+        values: computed.map_or(&[], |c| c.values.as_slice()),
+    }
+}
+
 /// Tree edits that also tell the cascade what moved: a child under a new
 /// parent is `moved`, and a parent that gained, lost or reordered children
 /// has its children changed, so the cascade matches again only what that
@@ -369,6 +391,7 @@ impl NativeLayout {
             .styles
             .cascade_mut()
             .set_theme(&vars);
+        self.owner.styles.borrow_mut().motion.theme_changed();
         Ok(())
     }
     /// The viewport media queries and viewport units read, and the color scheme.
@@ -504,21 +527,12 @@ impl NativeLayout {
         }
         let mut painted = Vec::new();
         for (node, spec, writes) in jobs {
-            let font_size = state
-                .styles
-                .computed(node)
-                .map_or(state.root_font_size, |c| c.font_size);
-            let context = MotionContext {
-                cascade: state.styles.cascade(),
-                units: PaintUnits {
-                    font_size,
-                    root_font_size: state.root_font_size,
-                    viewport_width: state.environment.width,
-                    viewport_height: state.environment.height,
-                    color: None,
-                    declared: &[],
-                },
-            };
+            let context = motion_context(
+                &state.styles,
+                node,
+                state.root_font_size,
+                &state.environment,
+            );
             let mut problems = Vec::new();
             let (spec, complete) = match spec {
                 Some((spec, complete)) => (Some(spec), complete),
@@ -538,6 +552,18 @@ impl NativeLayout {
                 }
                 Err(e) => errors.push(format!("paint: {e}")),
             }
+        }
+        for raw in state.motion.take_rethemed() {
+            let Ok(node) = tree.node(raw) else { continue };
+            let context = motion_context(
+                &state.styles,
+                node,
+                state.root_font_size,
+                &state.environment,
+            );
+            let mut problems = Vec::new();
+            state.motion.reread(raw, &context, &mut problems);
+            errors.extend(state.motion.unreported(problems));
         }
         // A node that gained motion after its first style has not had all its paint written;
         // have the cascade write it again, which only motion reads.
@@ -563,21 +589,12 @@ impl NativeLayout {
             for raw in unbased {
                 let Ok(node) = tree.node(raw) else { continue };
                 let writes = repainted.remove(&raw).unwrap_or_default();
-                let units = PaintUnits {
-                    font_size: state
-                        .styles
-                        .computed(node)
-                        .map_or(state.root_font_size, |c| c.font_size),
-                    root_font_size: state.root_font_size,
-                    viewport_width: state.environment.width,
-                    viewport_height: state.environment.height,
-                    color: None,
-                    declared: &[],
-                };
-                let context = MotionContext {
-                    cascade: state.styles.cascade(),
-                    units,
-                };
+                let context = motion_context(
+                    &state.styles,
+                    node,
+                    state.root_font_size,
+                    &state.environment,
+                );
                 let mut problems = Vec::new();
                 state
                     .motion
