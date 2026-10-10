@@ -29,6 +29,7 @@ import type { Computed, Disposable, ReactiveContext, Signal } from './reactive.j
 import type { AffineTransform, Color, PaintStyle, TextStyle } from './scene.js';
 import type { ShapeTokens } from '../theme/shape.js';
 import { ScrollThumb, words } from './scrollbar.js';
+import { InlineFlows } from './inline-flow.js';
 import type { NativeBindings } from './index.js';
 import type { NativeWindowHost, WindowSceneOptions } from './window.js';
 import type { InteractionState } from './input.js';
@@ -135,6 +136,7 @@ const otherProperties: ReadonlySet<string> = new Set([
   'scrollbar-color',
   'scrollbar-width',
   'scrollbar-visibility',
+  'text-align',
   ...Object.keys(shapeProperties),
 ]);
 
@@ -586,6 +588,7 @@ export class HostElement extends HostNode {
     }
     this.host.assertOwn(child);
     this.layoutNode.queueInsertBefore(child.layoutNode, reference?.layoutNode ?? null);
+    const before = child.parentNode;
     child.parentNode?.unlink(child);
     const previous = reference ? reference.previousSibling : this.#last;
     HostNode.link(child, this, previous, reference);
@@ -599,6 +602,8 @@ export class HostElement extends HostNode {
     } else {
       this.#last = child;
     }
+    this.host.inlineFlows?.touch(before);
+    this.host.inlineFlows?.touch(this);
     return child;
   }
   appendChild<T extends HostNode>(child: T): T {
@@ -610,6 +615,7 @@ export class HostElement extends HostNode {
     }
     child.layoutNode.queueDetach();
     this.unlink(child);
+    this.host.inlineFlows?.touch(this);
     return child;
   }
   /** @internal Unlink in JavaScript only; the native edit was already made. */
@@ -731,8 +737,12 @@ export class Host {
   readonly #cursors = new Map<HostElement, string>();
   #hits: HitCache | undefined;
 
-  constructor(layout: Layout, scope?: Scope) {
+  /** Inline flows, where the host has the addon to measure them with. */
+  readonly inlineFlows: InlineFlows | undefined;
+
+  constructor(layout: Layout, scope?: Scope, native?: NativeBindings) {
     this.layout = layout;
+    this.inlineFlows = native ? new InlineFlows(this, native) : undefined;
     this.#stateBits = new Map(layout.stateNames.map((name, i) => [name, 1 << i]));
     this.root = this.#register(new HostElement(this, layout.createNode(), 'root'));
     this.styleChanged(this.root);
@@ -759,7 +769,7 @@ export class Host {
 
   /** A host on a new layout, released with `scope`. */
   static create(native: NativeBindings, scope?: Scope): Host {
-    return new Host(native.createLayout(scope), scope);
+    return new Host(native.createLayout(scope), scope, native);
   }
 
   createElement(tag: string): HostElement {
@@ -1000,6 +1010,7 @@ export class Host {
         }
         this.#textStyles.set(node, style);
         this.#text.add(node);
+        this.inlineFlows?.restyled(node.parentNode);
         continue;
       }
       if (!(node instanceof HostElement)) {
@@ -1028,6 +1039,7 @@ export class Host {
       ) {
         this.#scrollbar(node, now);
       }
+      this.inlineFlows?.restyled(node);
       for (const name of ['overflow', 'overflow-x', 'overflow-y']) {
         if (now.get(name) !== before.get(name)) {
           this.#overflow(node, name, now.get(name) ?? null);
@@ -1066,6 +1078,14 @@ export class Host {
     this.#text.add(node);
     this.#schedule();
   }
+  /** @internal The text style `node` has now, defaults under what the cascade gave it. */
+  textStyleOf(node: HostText): TextStyle {
+    return { ...defaultText, ...this.#textStyles.get(node) };
+  }
+  /** @internal The declarations the host reads that `element` has now, as the cascade last gave them. */
+  declaredOf(element: HostElement): ReadonlyMap<string, string> {
+    return this.#declared.get(element) ?? new Map();
+  }
   #schedule(): void {
     this.layout.queue();
   }
@@ -1081,7 +1101,13 @@ export class Host {
       if (node.destroyed) {
         continue;
       }
-      const style = { ...defaultText, ...this.#textStyles.get(node) };
+      // A text a flow hides or shows is the flow's to size: it does not wrap, and its display is the flow's.
+      const flowed = this.inlineFlows?.owns(node) ?? false;
+      const style = {
+        ...defaultText,
+        ...this.#textStyles.get(node),
+        ...(flowed ? { wrap: false } : {}),
+      };
       const sent = this.#sentText.get(node);
       if (sent?.data === node.data && sameText(sent.style, style)) {
         continue;
@@ -1089,7 +1115,7 @@ export class Host {
       // Unchanged text and style are not sent again; crossing text costs per character.
       this.#sentText.set(node, { data: node.data, style });
       node.layoutNode.queueText(node.data, style);
-      if ((sent?.data === '') !== (node.data === '')) {
+      if (!flowed && (sent?.data === '') !== (node.data === '')) {
         // Empty text, which renderers use as anchors, takes no space, as in the DOM.
         node.layoutNode.setLayoutProperty('display', node.data === '' ? 'none' : null);
       }
@@ -1413,6 +1439,8 @@ export class Host {
     if (node.destroyed) {
       return;
     }
+    // What a flow made for it goes first, while it is still where it was.
+    this.inlineFlows?.forget(node);
     node.parentNode?.unlink(node);
     const forget = (current: HostNode) => {
       if (current instanceof HostElement) {

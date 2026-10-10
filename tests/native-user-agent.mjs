@@ -354,6 +354,58 @@ try {
     }
   }
 
+  // Prose: a paragraph with inline elements wraps as one under the sheet, and a press on its link reaches it.
+  {
+    const host = Host.create(native);
+    try {
+      const errors = [];
+      host.onStyleErrors((e) => errors.push(...e));
+      const state = new ThemeState(context, neutralTheme, { scheme: 'light' });
+      state.attach(host.layout);
+      addUserAgent(host.layout);
+      const link = el(host, 'a', ['documentation for the whole of the thing']);
+      const code = el(host, 'code', ['use()']);
+      const prose = el(
+        host,
+        'p',
+        ['Read the ', link, ' and ', el(host, 'strong', ['then']), ' ', code, ' it every day.'],
+        'width: 180px',
+      );
+      const plain = el(
+        host,
+        'p',
+        ['Read the documentation for the whole of the thing and then use() it every day.'],
+        'width: 180px',
+      );
+      host.root.appendChild(el(host, 'div', [prose, plain]));
+      const frame = await capture(host, 'prose');
+      assert.ok(prose.bounds()[2] <= 180.5, 'inside its width');
+      assert.ok(prose.bounds()[3] >= 2 * 20, `over several lines: ${prose.bounds()[3]}`);
+      assert.ok(
+        Math.abs(prose.bounds()[3] - plain.bounds()[3]) <= 26,
+        `about the lines plain text takes: ${prose.bounds()[3]} against ${plain.bounds()[3]}`,
+      );
+      // The link's colour is the theme's, and a press where it is drawn reaches it.
+      const want = rgb8(neutralTheme.light.colors.textLink);
+      const [px, py, pw, ph] = prose.bounds();
+      let hit = null;
+      for (let y = Math.floor(py + ph) - 1; y >= py && !hit; y--) {
+        for (let x = Math.floor(px); x < px + pw; x++) {
+          if (near(pixel(frame, x, y), want, 6)) {
+            hit = [x, y];
+            break;
+          }
+        }
+      }
+      assert.ok(hit, `the link is drawn in the theme's colour ${want}`);
+      assert.equal(host.elementAt(hit[0], hit[1]), link, 'a press on it reaches the link');
+      assert.deepEqual(errors, []);
+      state.dispose();
+    } finally {
+      host.dispose();
+    }
+  }
+
   // The sheet is under every other: an app rule wins whichever was added first.
   for (const appFirst of [true, false]) {
     const host = Host.create(native);

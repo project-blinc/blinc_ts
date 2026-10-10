@@ -495,6 +495,43 @@ its parts are children the component supplies: a checkbox's `.check` and
 `.dash`, a radio's `.dot`, a range's `.fill`, `.thumb` and `.rest`, a progress
 bar's `.bar`, a summary's `.marker` and a select's `.chevron`.
 
+## Inline text flow
+
+A `p`, `h1` to `h6`, `dt`, `dd`, `figcaption`, `caption`, `legend`, `li`, `th`
+or `td` that holds an inline element (`a`, `strong`, `em`, `span`, `small`,
+`sub`, `sup`, `abbr`, `label`, …) or a `br` lays its content out as one
+paragraph: text and inline elements wrap together at its width, every line's
+pieces on one baseline whatever their font, whitespace collapsing as HTML's
+does. One that holds only text is a plain wrapping text, as before, and costs
+nothing.
+
+The elements keep their place in the tree, so CSS styles them, `childNodes`
+lists what you built, and they take input as before. Underneath, each text is
+measured in its own font and hidden, and what each line shows of it is a piece
+placed under the element that owns the text, styled by the cascade as the text
+is. A press on any piece of a wrapped link is a press on the link:
+`host.elementAt` and every pointer event see the `a`. The pieces are not in
+the host tree.
+
+- An inline element that paints nothing of its own (`a`, `strong`, `em`) is a
+  frame for its pieces: laid out at the paragraph's origin with no size of its
+  own, so its text wraps freely across lines. Its own box properties (padding,
+  border, background) have nothing to show.
+- An element that paints a box (`code`, `kbd`, `mark`), anything that is not
+  inline (`img`, `input`, `button`, an element holding a list) is kept whole
+  and placed as a box by its laid-out size, on the baseline of its first text.
+  A block takes a line of its own, as wide as the paragraph. A box does not
+  wrap across lines.
+- `text-align` (`left`, `center`, `right`, `justify`) is read from the
+  paragraph or its nearest ancestor that sets it.
+
+The flow runs after each layout, with `layout.onLaidOut`, and a window's
+layout settles it before the frame that first shows it. Without an addon to
+measure with (a `Host` built straight from a layout), nothing flows.
+`Paragraph` remains for runs given directly. Not done: hyphenation,
+`white-space: pre-wrap` inside a flow, `float`, the raised baseline of `sub`
+and `sup`, and a focus ring on a wrapped inline element.
+
 ## Scrolling and scroll thumbs
 
 An element with `overflow: auto` or `scroll` scrolls: the wheel scrolls the
