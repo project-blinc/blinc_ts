@@ -277,12 +277,14 @@ try {
         return pixel(await capture(host), x - 3, y + 8);
       };
       const ground = rgb8(colors.background);
-      assert.ok(near(await ring(), ground), 'no ring at rest');
+      // At rest there is only the button's shadow beside it, a faint darkening of the ground.
+      const rest = await ring();
+      assert.ok(near(rest, ground, 24), `no ring at rest: ${rest}`);
       host.input.focus(button, true);
       start();
-      assert.ok(near(await ring(), ground), 'the ring starts at no width');
+      assert.ok(near(await ring(), rest, 2), 'the ring starts at no width');
       advance(1000);
-      assert.ok(!near(await ring(), ground, 6), `the ring has grown: ${await ring()}`);
+      assert.ok(!near(await ring(), rest, 6), `the ring has grown: ${await ring()}`);
 
       // A dialog is hidden until open, grows in, and shrinks away while closing.
       assert.equal(dialog.bounds()[2], 0, 'a closed dialog is not shown');

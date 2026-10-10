@@ -92,7 +92,7 @@ code, kbd {
   border-radius: var(--radius-sm);
   background: var(--accent-subtle);
 }
-kbd { border: 1px solid var(--border); }
+kbd { border: 1px solid var(--border); border-bottom-width: 3px; box-shadow: var(--shadow-sm); }
 mark { background: var(--warning-bg); }
 u, ins { text-decoration: underline; }
 s, del { text-decoration: line-through; }
@@ -188,12 +188,13 @@ button {
   background: var(--primary);
   color: var(--text-inverse);
   font-weight: 500;
+  box-shadow: var(--shadow-md);
   cursor: pointer;
-  transition: background ${STATE}, opacity ${STATE}, transform ${PRESS}, outline-width ${RING};
+  transition: background ${STATE}, opacity ${STATE}, box-shadow ${STATE}, transform ${PRESS}, outline-width ${RING};
 }
 button:hover { background: var(--primary-hover); }
-button:active { background: var(--primary-active); transform: scale(0.97); }
-button:disabled { opacity: 0.5; transform: none; cursor: default; }
+button:active { background: var(--primary-active); box-shadow: var(--shadow-sm); transform: scale(0.97); }
+button:disabled { opacity: 0.5; box-shadow: none; transform: none; cursor: default; }
 
 /* Checkboxes and radios: a box, its mark scaling in while it is checked. */
 ${ticks} {
@@ -373,7 +374,7 @@ listbox {
   border: 1px solid var(--border);
   border-radius: var(--radius-default);
   background: var(--surface-elevated);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-md);
   overflow-y: auto;
   animation: blinc-list-in ${ENTER};
 }
@@ -400,9 +401,10 @@ dialog {
   gap: 12px;
   padding: 20px;
   min-width: 280px;
+  border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   background: var(--surface-elevated);
-  box-shadow: var(--shadow-2xl);
+  box-shadow: var(--shadow-xl);
 }
 dialog[open] { animation: blinc-grow-in ${ENTER}; }
 dialog[closing] { animation: blinc-shrink-out ${EXIT}; }
