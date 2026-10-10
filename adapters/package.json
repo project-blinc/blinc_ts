@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "tsc -p .",
-    "test": "npm run build && node test/adapters.mjs"
+    "test": "npm run build && node test/adapters.mjs && node test/base-ui-theme.mjs"
   },
   "dependencies": {
     "blinc_ts": "file:.."

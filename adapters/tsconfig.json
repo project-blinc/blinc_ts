@@ -8,5 +8,13 @@
     "declaration": false,
     "declarationMap": false
   },
-  "include": ["jsx/**/*.ts", "jsx/**/*.tsx", "vue/**/*.ts", "scene/**/*.ts", "scene/**/*.tsx"]
+  "include": [
+    "jsx/**/*.ts",
+    "jsx/**/*.tsx",
+    "vue/**/*.ts",
+    "scene/**/*.ts",
+    "scene/**/*.tsx",
+    "base-ui/**/*.ts",
+    "base-ui/**/*.tsx"
+  ]
 }
