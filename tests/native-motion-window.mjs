@@ -15,7 +15,7 @@ import { testWindow, waitForWindow } from './window-wait.mjs';
 
 const native = loadNative();
 const W = 480;
-const H = 160;
+const H = 260;
 const DURATION = 300;
 const output = new URL('../.blinc/motion-window/', import.meta.url);
 await mkdir(output, { recursive: true });
@@ -34,6 +34,12 @@ const css = `
 #slide.moved { transform: translateX(160px); }
 #bounce { left: 20px; top: 110px; width: 30px; height: 30px; background: #00ff00; transition: transform spring(1 170 10); }
 #bounce.moved { transform: translateX(200px); }
+#bar { position: absolute; left: 20px; top: 160px; width: 40px; height: 20px; background: #ff0000; transition: width ${DURATION}ms linear; }
+#bar.full { width: 240px; }
+#stack { position: absolute; left: 300px; top: 160px; width: 60px; flex-direction: column; }
+#opener { height: 10px; background: #ff0000; }
+#opener.tall { height: 50px; }
+#rider { height: 20px; background: #00ff00; }
 `;
 
 const window = new NativeWindowHost(native, {
@@ -62,6 +68,19 @@ try {
   const panel = make('panel');
   const slide = make('slide');
   const bounce = make('bounce');
+  const bar = host.createElement('div');
+  bar.setAttribute('id', 'bar');
+  host.root.appendChild(bar);
+  const stack = host.createElement('div');
+  stack.setAttribute('id', 'stack');
+  const opener = host.createElement('div');
+  opener.setAttribute('id', 'opener');
+  const rider = host.createElement('div');
+  rider.setAttribute('id', 'rider');
+  stack.appendChild(opener);
+  stack.appendChild(rider);
+  host.root.appendChild(stack);
+  rider.animateLayout({ duration: DURATION, easing: 'linear' });
   host.mount(window, { scope });
   await waitFor(() => window.frames > 0, 'First frame');
   await delay(100);
@@ -259,6 +278,38 @@ try {
     Math.abs(path.at(-1) - (home + 200)) <= 1,
     `then it goes out and lands: ${path.at(-1)}`,
   );
+
+  // A width, through layout: each frame's bar is as wide as the curve says at its time.
+  const barWidth = (frame) => {
+    const [x, y, , h] = bar.bounds();
+    let width = 0;
+    while (x + width < W && pixel(frame, x + width, y + h / 2)[0] > 200) {
+      width++;
+    }
+    return width;
+  };
+  const filling = await play('width', bar, () => bar.classList.add('full'));
+  const widths = await trace('width', filling, barWidth, 40, 240, 0.02);
+  assert.ok(
+    widths.slice(1).every((w, i) => w >= widths[i]),
+    'it only grows',
+  );
+  assert.equal(bar.bounds()[2], 240, 'and is laid out at its full width');
+
+  // A layout animation: pushed down, the box is drawn from where it was in every frame.
+  const riderTop = (frame) => {
+    for (let y = 150; y < H; y++) {
+      const [r, g, b] = pixel(frame, 330, y);
+      if (g > 200 && r < 60 && b < 60) {
+        return y;
+      }
+    }
+    return Number.NaN;
+  };
+  const pushed = await play('flip', rider, () => opener.classList.add('tall'));
+  const tops = await trace('flip', pushed, riderTop, 170, 210);
+  assert.equal(tops[0], 170, 'the first frame draws it where it was');
+  assert.equal(rider.bounds()[1], 210, 'while its layout is already where it is going');
 
   stop();
   assert.deepEqual(errors, []);
