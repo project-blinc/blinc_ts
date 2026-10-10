@@ -36,6 +36,8 @@ interface Control {
   /** A script chose no option at all: a value that matched none, or an index out of range. */
   none: boolean;
   readonly text: HostText;
+  /** The owned chevron, which turns over while the list is open. */
+  readonly chevron: HostElement;
   popup: Popup | null;
   typed: string;
   typedAt: number;
@@ -82,17 +84,24 @@ export class Selects {
     const label = this.host.ownedElement(element, 'span', ['value']);
     const text = this.host.createTextNode('');
     label.appendChild(text);
-    this.host.ownedElement(element, 'img', ['chevron']).setAttribute('src', CHEVRON);
+    const chevron = this.host.ownedElement(element, 'img', ['chevron']);
+    chevron.setAttribute('src', CHEVRON);
     this.#controls.set(element, {
       chosen: null,
       chosenByUser: false,
       none: false,
       text,
+      chevron,
       popup: null,
       typed: '',
       typedAt: 0,
     });
     this.#dirty.add(element);
+  }
+
+  /** The part a select made for itself: its `chevron`. */
+  part(select: HostElement, name: string): HostElement | undefined {
+    return name === 'chevron' ? this.#controls.get(select)?.chevron : undefined;
   }
 
   #selectAt(node: HostNode | null): HostElement | null {

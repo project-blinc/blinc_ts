@@ -293,6 +293,51 @@ try {
   assert.deepEqual([...form.formData().entries()], [['size', 'l']]);
   form.reset();
   assert.equal(sizeSelect.value, 'm', 'reset puts back the selected one');
+  // The chevron turns over as the list opens, and back as it closes, easing between the two.
+  {
+    const turning = el('select', { style: 'position: absolute; left: 330px; top: 300px' }, [
+      option('x', 'One'),
+      option('y', 'Two'),
+    ]);
+    host.root.appendChild(turning);
+    settle();
+    await host.images.idle();
+    const [cx, cy, cw, ch] = selects.part(turning, 'chevron').bounds();
+    const region = (pixels) => {
+      const rows = [];
+      for (let r = Math.floor(cy); r < Math.ceil(cy + ch); r++) {
+        rows.push(
+          pixels
+            .subarray((r * W + Math.floor(cx)) * 4, (r * W + Math.ceil(cx + cw)) * 4)
+            .toString('hex'),
+        );
+      }
+      return rows.join('');
+    };
+    const partway = async (change) => {
+      change();
+      host.compute(W, H);
+      host.layout.tickMotion((clock += 1));
+      host.layout.tickMotion((clock += 60));
+      const between = region(await capture(host));
+      settle();
+      return { between, after: region(await capture(host)) };
+    };
+    const closed = region(await capture(host));
+    const opening = await partway(() => press(turning));
+    assert.ok(
+      opening.between !== closed && opening.between !== opening.after,
+      'it is turning over',
+    );
+    assert.ok(opening.after !== closed, 'and over');
+    const closing = await partway(() => tap('Escape'));
+    assert.ok(
+      closing.between !== opening.after && closing.between !== closing.after,
+      'and turning back',
+    );
+    assert.equal(closing.after, closed, 'to where it was');
+  }
+
   assert.deepEqual(errors, [], String(errors));
   state.dispose();
 } finally {
