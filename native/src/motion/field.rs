@@ -68,6 +68,7 @@ pub(crate) enum Field {
     Filter,
     Mask,
     ClipPath,
+    OverflowFade,
     /// A layout property, by its router id; a length's percentage id is its pixel id's slot.
     Layout(i32),
     /// Where a layout animation draws it.
@@ -150,6 +151,7 @@ impl Field {
             PaintWrite::Filter(_) => Field::Filter,
             PaintWrite::Mask(_) => Field::Mask,
             PaintWrite::ClipPath(_) => Field::ClipPath,
+            PaintWrite::OverflowFade(_) => Field::OverflowFade,
         }
     }
 
@@ -181,6 +183,7 @@ impl Field {
             Field::Filter => PaintWrite::Filter(Filter::default()),
             Field::Mask => PaintWrite::Mask(None),
             Field::ClipPath => PaintWrite::ClipPath(None),
+            Field::OverflowFade => PaintWrite::OverflowFade([0.0; 4]),
             Field::Layout(slot) => return Write::Layout(slot, Value::Unset),
             Field::Visual => return Write::Visual(None),
         })
@@ -193,7 +196,7 @@ impl Field {
     }
 
     /// The paint slots `all` names, besides every layout one.
-    pub(crate) const ALL: [Field; 18] = [
+    pub(crate) const ALL: [Field; 19] = [
         Field::Background,
         Field::TextColor,
         Field::Opacity,
@@ -212,6 +215,7 @@ impl Field {
         Field::Filter,
         Field::Mask,
         Field::ClipPath,
+        Field::OverflowFade,
     ];
 }
 
@@ -243,6 +247,7 @@ pub(crate) fn fields_of(property: &str) -> Vec<Field> {
         "filter" => &[Field::Filter],
         "mask-image" | "-webkit-mask-image" => &[Field::Mask],
         "clip-path" => &[Field::ClipPath],
+        "overflow-fade" => &[Field::OverflowFade],
         _ => &[],
     };
     if !paint.is_empty() {

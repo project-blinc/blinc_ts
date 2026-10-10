@@ -467,6 +467,14 @@ pub(crate) fn apply_paint(
             PaintWrite::Mask(g) => {
                 props.mask_image = g.clone().map(scene::blinc_core::MaskImage::Gradient);
             }
+            PaintWrite::OverflowFade([top, right, bottom, left]) => {
+                props.overflow_fade = scene::blinc_core::OverflowFade {
+                    top: *top,
+                    right: *right,
+                    bottom: *bottom,
+                    left: *left,
+                };
+            }
             PaintWrite::ClipPath(clip) => {
                 props.clip_path = clip.as_ref().map(|c| c.path.clone());
                 even_odd = Some(clip.as_ref().is_some_and(|c| c.even_odd));

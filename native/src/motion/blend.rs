@@ -528,6 +528,9 @@ fn blend_paint(a: &PaintWrite, b: &PaintWrite, t: f64) -> PaintWrite {
         (W::Transform(x), W::Transform(y)) => W::Transform(transform(x, y, t)),
         (W::Filter(x), W::Filter(y)) => W::Filter(filter(x, y, t)),
         (W::Mask(x), W::Mask(y)) => W::Mask(flip(x, y, t).clone()),
+        (W::OverflowFade(x), W::OverflowFade(y)) => {
+            W::OverflowFade(std::array::from_fn(|i| lerp(x[i], y[i], t)))
+        }
         (W::ClipPath(x), W::ClipPath(y)) => W::ClipPath(
             x.as_ref()
                 .zip(y.as_ref())
@@ -557,7 +560,7 @@ fn vector_paint(write: &PaintWrite) -> Option<Vec<f32>> {
     };
     Some(match write {
         W::Opacity(v) | W::OutlineWidth(v) | W::OutlineOffset(v) => vec![*v],
-        W::BorderRadius(r) => r.to_vec(),
+        W::BorderRadius(r) | W::OverflowFade(r) => r.to_vec(),
         W::Background(Background::None) => vec![0.0; 4],
         W::Background(Background::Solid(c)) => rgba(*c).to_vec(),
         W::TextColor(Some(c))
@@ -601,7 +604,9 @@ fn same_paint(a: &PaintWrite, b: &PaintWrite) -> bool {
     match (a, b) {
         (W::Opacity(x), W::Opacity(y)) => x == y,
         (W::Visible(x), W::Visible(y)) => x == y,
-        (W::BorderRadius(x), W::BorderRadius(y)) => x == y,
+        (W::BorderRadius(x), W::BorderRadius(y)) | (W::OverflowFade(x), W::OverflowFade(y)) => {
+            x == y
+        }
         (W::TextColor(x), W::TextColor(y))
         | (W::BorderColor(x), W::BorderColor(y))
         | (W::OutlineColor(x), W::OutlineColor(y)) => x == y,
@@ -862,6 +867,16 @@ mod tests {
             blend_paint(&fill(false), &fill(true), 0.8),
             PaintWrite::ClipPath(Some(Clip { even_odd: true, .. }))
         ));
+    }
+
+    #[test]
+    fn overflow_fades_blend_edge_by_edge() {
+        let mid = blend_paint(
+            &PaintWrite::OverflowFade([0.0, 10.0, 0.0, 40.0]),
+            &PaintWrite::OverflowFade([20.0, 10.0, 0.0, 0.0]),
+            0.5,
+        );
+        assert!(matches!(mid, PaintWrite::OverflowFade(f) if f == [10.0, 10.0, 0.0, 20.0]));
     }
 
     #[test]

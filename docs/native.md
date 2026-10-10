@@ -280,6 +280,10 @@ means the same in a stylesheet, an inline `style` and a compiled sheet:
   the nearest side. `polygon()` and `path()` take `nonzero` (the default) or
   `evenodd` first. `farthest-side` and offset-style positions
   (`at right 10px bottom 20px`) are reported.
+- `overflow-fade` takes `none` or one to four distances, as `margin` takes its
+  sides, and fades what a clipping node (`overflow` hidden, scroll or auto)
+  holds to nothing over that distance at the matching edge. Percentages are
+  reported.
 
 - `border` and `border-top`, `-right`, `-bottom` and `-left` take a width
   (`thin`, `medium`, `thick` or a length), a style and a colour in any order.
@@ -307,8 +311,9 @@ the same native parser a sheet's go through.
 and layout properties: colours, `opacity`, `border-radius`, `outline-width`
 and `outline-offset`, `box-shadow`, `transform`, `filter` and same-shaped
 gradients blend, and so do `clip-path` shapes of one kind (same number of
-points for a polygon), a zero length taking the other end's unit; `visibility`,
-masks, other gradients and clips that do not line up flip at the midpoint.
+points for a polygon), a zero length taking the other end's unit, and
+`overflow-fade`, edge by edge; `visibility`, masks, other gradients and clips
+that do not line up flip at the midpoint.
 Colours blend premultiplied, transforms by translation, rotation (the short
 way round), scale and skew, and shadow lists layer by layer. Lengths such as
 `width`, `padding`, `margin`, `gap`, `top` or `flex-basis` blend when both
