@@ -17,6 +17,15 @@ addBaseUi(host.layout);
 mount(host, <Tabs.Root defaultValue="a">…</Tabs.Root>, { context });
 ```
 
+## The wiki
+
+`npm run wiki` opens the wiki in a window: a navigation column beside pages of prose, each with
+live examples beside the source that makes them (`adapters/wiki/examples`). It is built from these
+parts and the elements the host gives, so it is also the larger example of them. Its pages are
+`adapters/wiki/pages.tsx`; a new example is a file in `examples` and an `Example` on a page. The
+scheme switch under the navigation is a `Switch` with a day and night icon on its knob.
+`adapters/test/wiki.mjs` renders every page offscreen to `.blinc/wiki/`.
+
 ## Conventions
 
 - **Parts draw nothing.** Each part is an element with a class (`bui-tabs-tab`) and the state it

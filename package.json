@@ -116,7 +116,8 @@
     "start:native": "node .blinc/native-app/app.js",
     "bench:window": "node benchmarks/window-idle.mjs",
     "bench:renderer": "node benchmarks/renderer.mjs",
-    "bench:renderer:compare": "node benchmarks/compare-renderer.mjs"
+    "bench:renderer:compare": "node benchmarks/compare-renderer.mjs",
+    "wiki": "npm run build && npm --prefix adapters run wiki"
   },
   "peerDependencies": {
     "vite": "^8.0.0",
