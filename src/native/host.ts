@@ -231,12 +231,7 @@ export abstract class HostNode extends HostEventTarget {
   }
   /** Whether this node is in the host's tree, under its root: laid out, and so with bounds to read. */
   get isConnected(): boolean {
-    for (let n: HostNode | null = this; n; n = n.composedParent) {
-      if (n === this.host.root) {
-        return true;
-      }
-    }
-    return false;
+    return (this as HostNode) === this.host.root || (this.composedParent?.isConnected ?? false);
   }
   /** Take this node out of its parent. It can be inserted again. */
   remove(): void {
