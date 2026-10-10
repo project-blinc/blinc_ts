@@ -117,7 +117,7 @@ export const WHEEL_LINE = 40;
 
 function chainOf(element: HostElement | null): HostElement[] {
   const chain: HostElement[] = [];
-  for (let node = element; node; node = node.parentNode) {
+  for (let node = element; node; node = node.composedParent) {
     chain.push(node);
   }
   return chain;

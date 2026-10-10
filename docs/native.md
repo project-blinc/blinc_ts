@@ -525,10 +525,9 @@ colours over `--duration-fast` and `--ease-state`, a focus ring growing out
 from no width, a press shrinking a control a little, a check mark popping in
 on `--ease-spring`, a dialog growing in and, marked `[closing]`, shrinking
 away on `--ease-sheet`. A control's states come from `element.setState`, and
-the parts of a list item, a `summary`, a `progress` and a `meter` are made by
-the host (see built-in element behaviours); those of the controls it does not
-make are children the component supplies: a checkbox's `.check` and `.dash`, a
-radio's `.dot`, a range's `.fill`, `.thumb` and `.rest`, and a select's
+the parts of a list item, a `summary`, a `progress`, a `meter` and a checkbox,
+radio or range are made by the host (see built-in element behaviours); those of
+the controls it does not make are children the component supplies, a select's
 `.chevron`.
 
 ## Built-in element behaviours
@@ -593,6 +592,34 @@ that. `object-fit` is `fill` (the default), `contain` or `cover`; `none` and
 is taken, until an image has loaded; `alt` is kept as an attribute and not drawn.
 `host.mount` hands the images to its window; a renderer made by hand takes
 `renderer.useImages(host.images.library)`.
+
+**Checkboxes and radios.** An `input` of `type` `checkbox` or `radio` is checked by a
+click, by Space while it has focus (Enter does not), or by a click on its label,
+announcing `input` then `change` (bubbling); a click someone cancels, or on a
+disabled one, does nothing. `element.checked` reads and sets it, without an event
+as a script's setting is, and the `checked` attribute is only where it starts, until
+the user or a script has set it. `element.indeterminate` is `:indeterminate`, which a
+click clears. Radios of one `name` under one `form` (or one tree, with no form) are a
+set: checking one unchecks the rest, a checked one clicked again says nothing, and
+the arrow keys move focus through the set, wrapping and skipping a disabled radio,
+checking each as they land. The check mark, dash and dot are owned elements
+(`.check`, `.dash`, `.dot`) that the user-agent sheet styles; changing `type`
+swaps them.
+
+**Ranges.** An `input` of `type` `range` has owned `.fill`, `.thumb` and `.rest`, the
+fill and the rest sized to the value between `min` (0), `max` (100) and `step` (1);
+`data-orientation="vertical"` runs it from the bottom up. A press sets the value
+from where it lands, a drag follows it however far it strays (the pointer is
+captured) and clamps at the ends, announcing `input` as it moves and `change` once on
+release. The arrows step it, Page Up and Page Down move a tenth of the range, Home and
+End go to the ends, each an `input` and a `change`. A value is on the step counted
+from `min` and never past the last whole step. `element.value` and
+`element.valueAsNumber` read and set it. A disabled range takes no press and no key.
+
+**Owned parts and the pointer.** A part the host owns is under its owner for events,
+hover, press and click: a click on a `details` chevron or a range's thumb reaches the
+`summary` or the `input`, and the owner is `:hover` while the pointer is over a part.
+`element.owner` is the element a part was made for.
 
 **Disabled fieldsets.** A `fieldset` with `disabled` disables the controls in
 it: no presses, no focus and `:disabled`, including one added to it later.

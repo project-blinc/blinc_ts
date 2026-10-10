@@ -173,6 +173,7 @@ export class HostImages {
   dispose(): void {
     for (const slot of [...this.#slots.values()]) {
       slot.users = 0;
+      slot.waiters.clear();
       this.#drop(slot);
     }
   }

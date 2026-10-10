@@ -10,6 +10,7 @@ import { HostEvent, HostPointerEvent } from './events.js';
 import type { Host, HostElement, HostNode, HostText } from './host.js';
 import { HostElement as ElementClass } from './host.js';
 import type { ImageEntry } from './host-images.js';
+import { Inputs } from './inputs.js';
 import { ImageFit } from './generated/scene.js';
 import type { StyleSheet } from './layout.js';
 
@@ -58,6 +59,8 @@ interface Picture {
 
 export class Behaviours {
   readonly host: Host;
+  /** What the `input` elements do: checking, radio sets and ranges. */
+  readonly inputs: Inputs;
   /** Every `img`, and those whose image or fit may need putting right. */
   readonly #pictures = new Map<HostElement, Picture>();
   readonly #pictureDirty = new Set<HostElement>();
@@ -74,10 +77,12 @@ export class Behaviours {
 
   constructor(host: Host) {
     this.host = host;
+    this.inputs = new Inputs(host);
   }
 
   /** Once the host has its root. */
   attach(): void {
+    this.inputs.attach();
     // A click that nothing handled does what the element under it means: follow a link,
     // operate a label's control, open or close a details.
     this.host.root.addEventListener('click', (event) => {
@@ -89,6 +94,7 @@ export class Behaviours {
 
   /** An element was made: the parts its kind has. */
   created(element: HostElement): void {
+    this.inputs.created(element);
     switch (element.tag) {
       case 'summary':
         this.host.ownedElement(element, 'div', ['marker']);
@@ -233,7 +239,7 @@ export class Behaviours {
   }
 
   #clicked(event: HostPointerEvent): void {
-    for (let n = event.target as HostNode | null; n; n = n.parentNode) {
+    for (let n = event.target as HostNode | null; n; n = n.composedParent) {
       if (!(n instanceof ElementClass)) {
         continue;
       }
@@ -247,6 +253,9 @@ export class Behaviours {
         n.parentNode.tag === 'details'
       ) {
         this.#toggle(n.parentNode, n);
+        return;
+      }
+      if (n.tag === 'input' && this.inputs.clicked(n)) {
         return;
       }
       if (n.tag === 'label') {
@@ -394,6 +403,7 @@ export class Behaviours {
   }
 
   attributeChanged(element: HostElement, name: string): void {
+    this.inputs.attributeChanged(element, name);
     if (element.tag === 'progress' || element.tag === 'meter') {
       this.#sync(element);
     }
@@ -431,6 +441,7 @@ export class Behaviours {
 
   /** A node is destroyed. */
   forget(node: HostNode): void {
+    this.inputs.forget(node);
     if (node instanceof ElementClass) {
       const picture = this.#pictures.get(node);
       if (picture) {

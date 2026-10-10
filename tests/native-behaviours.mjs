@@ -219,6 +219,28 @@ try {
   settle();
   assert.equal(details.hasAttribute('open'), false, 'and Space closes it');
   summary.blur();
+  // The chevron is a part the host owns: a press on it is a press on the summary, and the pointer
+  // over it is over the summary.
+  const [sx, sy, , sh] = summary.bounds();
+  let over = null;
+  for (let dx = 1; dx < 60 && !over; dx += 2) {
+    host.input.pointerMove(sx + dx, sy + sh / 2);
+    const hit = host.input.hovered;
+    if (hit && hit !== summary && hit.owner === summary) {
+      over = hit;
+    }
+  }
+  assert.ok(over, 'the pointer finds the chevron');
+  assert.equal(host.input.stateOf(summary).hover, true, 'the summary is hovered over its chevron');
+  host.input.pointerDown();
+  host.input.pointerUp();
+  settle();
+  assert.equal(details.hasAttribute('open'), true, 'a press on the chevron opens it');
+  host.input.pointerMove(W - 1, H - 1);
+  assert.equal(host.input.stateOf(summary).hover, false);
+  press(summary);
+  settle();
+  assert.equal(details.hasAttribute('open'), false, 'and a press on the summary closes it again');
   // Only the first summary is the toggle.
   const second = el('summary', ['Not this']);
   details.appendChild(second);

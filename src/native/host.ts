@@ -215,6 +215,13 @@ export abstract class HostNode extends HostEventTarget {
     return this.#previous;
   }
   get eventParent(): HostEventTarget | null {
+    return this.composedParent;
+  }
+  /**
+   * Where events, hover and press go up to: the parent, or for an element the host made for
+   * another to hold, the one it holds it for.
+   */
+  get composedParent(): HostElement | null {
     return this.#parent;
   }
   /** Whether `destroy` released this node; a removed node cannot be used again. */
@@ -358,6 +365,7 @@ export class ClassList {
 export class HostElement extends HostNode {
   readonly tag: string;
   readonly classList: ClassList;
+  #owner: HostElement | null = null;
   #first: HostNode | null = null;
   #last: HostNode | null = null;
   readonly #attributes = new Map<string, string>();
@@ -388,6 +396,45 @@ export class HostElement extends HostNode {
   /** Whether `setState` gave the element `name`. */
   hasState(name: string): boolean {
     return this.host.elementHasState(this, name);
+  }
+  /** The element this one was made for, when the host made it: a marker, a bar, a thumb. */
+  get owner(): HostElement | null {
+    return this.#owner;
+  }
+  /** @internal */
+  setOwner(owner: HostElement): void {
+    this.#owner = owner;
+  }
+  override get composedParent(): HostElement | null {
+    return this.parentNode ?? this.#owner;
+  }
+  /** Whether a checkbox or a radio is checked; setting it fires no event, as a script's does. */
+  get checked(): boolean {
+    return this.host.behaviours.inputs.checked(this);
+  }
+  set checked(on: boolean) {
+    this.host.behaviours.inputs.setChecked(this, on);
+  }
+  /** A checkbox in neither state until it is clicked: `:indeterminate`. */
+  get indeterminate(): boolean {
+    return this.host.behaviours.inputs.indeterminate(this);
+  }
+  set indeterminate(on: boolean) {
+    this.host.behaviours.inputs.setIndeterminate(this, on);
+  }
+  /** An input's value as text: a range's number, else its `value` attribute. */
+  get value(): string {
+    return this.host.behaviours.inputs.value(this) ?? '';
+  }
+  set value(text: string) {
+    this.host.behaviours.inputs.setValue(this, text);
+  }
+  /** A range's value as a number, NaN for any other element. */
+  get valueAsNumber(): number {
+    return this.host.behaviours.inputs.valueAsNumber(this);
+  }
+  set valueAsNumber(value: number) {
+    this.host.behaviours.inputs.setValueAsNumber(this, value);
   }
   /** Animate this element's layout changes, or stop with null: see `LayoutNode.animateLayout`. */
   animateLayout(options: LayoutAnimationOptions | null = {}): void {
@@ -828,6 +875,7 @@ export class Host {
   ): HostElement {
     const element = this.createElement(tag);
     this.#anonymous.add(element);
+    element.setOwner(parent);
     for (const name of classes) {
       element.classList.add(name);
     }
@@ -1178,7 +1226,10 @@ export class Host {
     return this.#declared.get(element) ?? new Map();
   }
   #schedule(): void {
-    this.layout.queue();
+    // A load that settles after the host went has nothing to ask a frame of.
+    if (!this.layout.disposed) {
+      this.layout.queue();
+    }
   }
 
   /** Submit coalesced paint, text and layout writes now instead of at the end of the tick. */
