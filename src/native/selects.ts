@@ -319,7 +319,7 @@ export class Selects {
       rows.push({ row, choice });
     }
     // As tall as the room below the select or above it, whichever is more; past that it scrolls.
-    const [, y, , h] = select.bounds();
+    const [, y, , h] = select.viewBounds();
     const [, , , rootHeight = 0] = this.host.root.bounds();
     list.setProperty('max-height', Math.max(0, Math.max(rootHeight - y - h, y) - 8));
     list.setProperty('overflow-y', 'auto');

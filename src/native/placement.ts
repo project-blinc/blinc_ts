@@ -76,7 +76,11 @@ export interface Placed {
 
 export function boxOf(anchor: Anchor): Box {
   if ('bounds' in anchor) {
-    const [x = 0, y = 0, width = 0, height = 0] = anchor.bounds();
+    // An element is read where it shows, not where it is laid out.
+    const [x = 0, y = 0, width = 0, height = 0] =
+      'viewBounds' in anchor
+        ? (anchor as { viewBounds(): number[] }).viewBounds()
+        : anchor.bounds();
     return { x, y, width, height };
   }
   return anchor;

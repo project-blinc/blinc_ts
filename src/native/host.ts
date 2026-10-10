@@ -237,6 +237,14 @@ export abstract class HostNode extends HostEventTarget {
   bounds(): [x: number, y: number, width: number, height: number] {
     return this.host.boundsOf(this);
   }
+  /**
+   * Where this node is in the window now: its layout bounds less what the containers around it
+   * have scrolled, which move it without moving its layout. This is what a pointer's place or a
+   * floating box's anchor is read against.
+   */
+  viewBounds(): [x: number, y: number, width: number, height: number] {
+    return this.host.viewBoundsOf(this);
+  }
   /** @internal Link bookkeeping, called by HostElement. */
   static link(
     node: HostNode,
@@ -1423,6 +1431,18 @@ export class Host {
     const out = new Float32Array(4);
     this.layout.readBounds([node.layoutNode], out);
     return [out[0]!, out[1]!, out[2]!, out[3]!];
+  }
+  /** @internal HostNode.viewBounds. */
+  viewBoundsOf(node: HostNode): [number, number, number, number] {
+    const [x, y, width, height] = this.boundsOf(node);
+    let dx = 0;
+    let dy = 0;
+    for (let n = node.composedParent; n; n = n.composedParent) {
+      const [sx, sy] = this.scrollOf(n);
+      dx += sx;
+      dy += sy;
+    }
+    return [x - dx, y - dy, width, height];
   }
   /** The topmost element at a point, or null; text hits resolve to their element. */
   elementAt(x: number, y: number): HostElement | null {

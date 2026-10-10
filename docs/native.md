@@ -1165,7 +1165,10 @@ host.mount(windowHost, { scope });
   - Hit testing reuses the last hit region while the pointer stays inside it
     and nothing has changed, so quiet movement makes no native call.
 - **Reading back.** `node.bounds()` lays out if an edit is pending and returns
-  absolute bounds. `host.elementAt(x, y)` hit-tests.
+  absolute bounds, which are where layout put the node, not where a scrolled
+  container shows it. `node.viewBounds()` is where it shows: its bounds less what
+  each container around it has scrolled, which is what a pointer's place or a
+  floating box's anchor is read against. `host.elementAt(x, y)` hit-tests.
 - **Batching.** Tree edits, layout properties, paint, text and scroll offsets
   go into the layout's command buffer, and one native call applies the tick's
   commands at its end, or earlier when something reads layout. Writes coalesce:

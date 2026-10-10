@@ -429,7 +429,7 @@ export class Inputs {
 
   /** What value a pointer at `event` asks of a range: along its track, clear of the thumb's ends. */
   #valueAt(element: HostElement, control: Control, event: HostPointerEvent): number {
-    const [x, y, width, height] = element.bounds();
+    const [x, y, width, height] = element.viewBounds();
     const vertical = element.getAttribute('data-orientation') === 'vertical';
     const thumb = control.parts.get('thumb')?.bounds();
     const size = (vertical ? thumb?.[3] : thumb?.[2]) ?? 0;

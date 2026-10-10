@@ -786,9 +786,9 @@ export class TextFields {
   /** The point `event` is at, from the text's top left. */
   #local(field: Field, event: HostPointerEvent): [number, number] {
     const parts = field.parts!;
-    const [x = 0, y = 0] = parts.line.bounds();
-    // Layout positions are not scrolled; a text area's scroll is how far its text has moved up.
-    return [event.x - x, event.y - y + (field.area ? parts.clip.scrollTop : 0)];
+    // Where it shows, which has a text area's scroll in it: how far its text has moved up.
+    const [x = 0, y = 0] = parts.line.viewBounds();
+    return [event.x - x, event.y - y];
   }
 
   #pointerDown(event: HostPointerEvent): void {
