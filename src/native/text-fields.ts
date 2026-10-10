@@ -7,7 +7,7 @@
  */
 import { HostEvent, type HostPointerEvent } from './events.js';
 import type { HostClipboardEvent } from './clipboard.js';
-import type { Host, HostElement, HostNode } from './host.js';
+import type { Host, HostElement, HostNode, InputArea } from './host.js';
 import { HostElement as ElementClass, HostText } from './host.js';
 import type { HostCompositionEvent, HostKeyboardEvent, HostTextEvent } from './input.js';
 import type { TextStyle } from './scene.js';
@@ -91,6 +91,10 @@ export class TextFields {
   #release: (() => void) | null = null;
   /** When Tab last went down, so a focus that follows is one by keyboard. */
   #tabbedAt = -Infinity;
+  /** The area the input method was last told of. */
+  #told: InputArea | null = null;
+  /** A field lost focus, so the input method is to be turned off unless another takes it. */
+  #left = false;
 
   constructor(host: Host) {
     this.host = host;
@@ -508,6 +512,13 @@ export class TextFields {
 
   /** Before the tick's writes: show what each field holds. */
   flush(): void {
+    if (this.#left) {
+      this.#left = false;
+      const focused = this.host.input.focused;
+      if (!focused || !this.#fields.get(focused)?.parts) {
+        this.#tell(null);
+      }
+    }
     for (const field of this.#live) {
       if (field.stale && field.parts && !field.element.destroyed) {
         field.stale = false;
@@ -611,12 +622,20 @@ export class TextFields {
     const reads: { field: Field; width: number; height: number; top: number }[] = [];
     for (const field of this.#live) {
       const parts = field.parts;
-      if (!parts || field.element.destroyed || (!field.reveal && !field.area)) {
+      // A field out of the tree has no layout to read.
+      if (
+        !parts ||
+        field.element.destroyed ||
+        !field.element.isConnected ||
+        (!field.reveal && !field.area)
+      ) {
         continue;
       }
       const [, , width = 0, height = 0] = parts.clip.bounds();
       reads.push({ field, width, height, top: field.area ? parts.clip.scrollTop : 0 });
     }
+    // The caret's place is read here too, before any write.
+    const area = this.#caretArea();
     let moved = false;
     for (const { field, width, height, top } of reads) {
       const parts = field.parts!;
@@ -667,7 +686,43 @@ export class TextFields {
         moved = true;
       }
     }
+    this.#tell(area);
     return moved;
+  }
+
+  /** Where the caret of the field with focus shows, or none while no editable text has it. */
+  #caretArea(): InputArea | null {
+    const focused = this.host.input.focused;
+    const field = focused ? this.#fields.get(focused) : undefined;
+    if (
+      !field?.parts ||
+      field.element.destroyed ||
+      !field.element.isConnected ||
+      this.host.input.isDisabled(field.element) ||
+      field.element.hasAttribute('readonly')
+    ) {
+      return null;
+    }
+    const [x = 0, y = 0, width = 0, height = 0] = field.parts.caret.viewBounds();
+    return { x, y, width: Math.max(width, 1), height };
+  }
+
+  /** Tell the host's input method where candidates belong, when that has changed. */
+  #tell(area: InputArea | null): void {
+    const was = this.#told;
+    if (
+      area === was ||
+      (area !== null &&
+        was !== null &&
+        area.x === was.x &&
+        area.y === was.y &&
+        area.width === was.width &&
+        area.height === was.height)
+    ) {
+      return;
+    }
+    this.#told = area;
+    this.host.inputArea?.(area);
   }
 
   // --- the caret --------------------------------------------------------------------------
@@ -846,6 +901,7 @@ export class TextFields {
     } else {
       field.editing.blur();
       this.#commit(field);
+      this.#left = true;
     }
     this.#touch(field);
   }

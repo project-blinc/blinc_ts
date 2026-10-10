@@ -229,6 +229,15 @@ export abstract class HostNode extends HostEventTarget {
   get destroyed(): boolean {
     return this.#removed;
   }
+  /** Whether this node is in the host's tree, under its root: laid out, and so with bounds to read. */
+  get isConnected(): boolean {
+    for (let n: HostNode | null = this; n; n = n.composedParent) {
+      if (n === this.host.root) {
+        return true;
+      }
+    }
+    return false;
+  }
   /** Take this node out of its parent. It can be inserted again. */
   remove(): void {
     this.#parent?.removeChild(this);
@@ -907,6 +916,14 @@ export interface HostMountOptions extends WindowSceneOptions {
  * A host tree on one owned layout. `root` fills the viewport; adapters
  * create nodes, place them under it, and mount the host into a window.
  */
+/** Where the input method may show its candidates: a rectangle in window units. */
+export interface InputArea {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
 export class Host {
   readonly layout: Layout;
   readonly root: HostElement;
@@ -932,6 +949,12 @@ export class Host {
   readonly input: Input = new Input(this);
   /** Held in the process until the host is mounted in a window, then the system's. */
   clipboard: Clipboard = new MemoryClipboard();
+  /**
+   * Told where the input method may show its candidates, in window units: the caret of the text
+   * that has focus, or null when no text does. A mounted host sets it to its window's; an
+   * embedder or a test may set another.
+   */
+  inputArea: ((area: InputArea | null) => void) | null = null;
   readonly #cursors = new Map<HostElement, string>();
   #hits: HitCache | undefined;
 
@@ -1644,6 +1667,20 @@ export class Host {
       scope,
     );
     this.clipboard = new SystemClipboard(window.bindings.window);
+    // The input method is on while text has focus, its candidates by the caret.
+    let methodOn = false;
+    this.inputArea = (area) => {
+      if (window.disposed) {
+        return;
+      }
+      if ((area !== null) !== methodOn) {
+        methodOn = area !== null;
+        window.window.setImeAllowed(methodOn);
+      }
+      if (area) {
+        window.window.setImeCursorArea(area.x, area.y, area.width, area.height);
+      }
+    };
     const offCursor = this.input.onCursor((cursor) => {
       window.window.setCursorIcon(cursorIcon(cursor));
     });
@@ -1721,6 +1758,8 @@ export class Host {
         mounted = false;
         off();
         offCursor();
+        this.inputArea?.(null);
+        this.inputArea = null;
         if (!window.disposed) {
           window.detachScene();
         }

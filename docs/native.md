@@ -659,8 +659,11 @@ more than one text field is submitted. Escape empties a `search` field. A `numbe
 only the characters a number is written with, the up and down arrows and its owned `.steppers`
 (`.step-up` and `.step-down`) move it by `step` within `min` and `max`, an empty one
 starting from zero or the minimum, and `valueAsNumber` is NaN when it is empty or not one.
-A named field is in `form.formData()`. The caret's place is not yet published to the input
-method for its candidate window.
+A named field is in `form.formData()`. While an editable text field has focus the input
+method is on, and told where its candidate window belongs: the caret's rectangle as it shows,
+in window units, each time it moves (`host.inputArea`, which `mount` sets to the window's
+`setImeAllowed` and `setImeCursorArea`; an embedder or a test may set its own). It is off when
+no text has focus, and for a read-only or disabled field.
 
 **Validity.** A text field, a checkbox, a radio and a select are checked for their
 constraints unless they are disabled (alone or by a fieldset) or, for a text field,
