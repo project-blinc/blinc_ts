@@ -107,6 +107,8 @@ export type InteractionChange = (element: HostElement, state: Readonly<Interacti
 
 /** Elements that take focus without a `tabindex`, unless disabled. */
 const focusableTags = new Set(['button', 'input', 'textarea', 'select', 'summary']);
+/** The elements a disabled fieldset disables. */
+const controlTags = new Set(['button', 'input', 'textarea', 'select']);
 /** Presses in quick succession at about the same place count as one double- or triple-click. */
 const MULTI_CLICK_MS = 500;
 const MULTI_CLICK_SLOP = 4;
@@ -259,9 +261,36 @@ export class Input {
     }
     const disabled = element.hasAttribute('disabled');
     this.#set(element, 'disabled', disabled);
+    if (element.tag === 'fieldset') {
+      this.refreshDisabled(element);
+    }
     if (disabled && this.#focused && chainOf(this.#focused).includes(element)) {
       this.blur();
     }
+  }
+
+  /** Whether `element`, or an element it is in, is disabled. */
+  isDisabled(element: HostElement): boolean {
+    return disabledIn(chainOf(element));
+  }
+
+  /**
+   * The controls under `root` take their `:disabled` from the elements around
+   * them, as those in a disabled fieldset do: the state follows the fieldset,
+   * and a control's own attribute still disables it.
+   */
+  refreshDisabled(root: HostElement): void {
+    const walk = (element: HostElement) => {
+      if (element !== root && controlTags.has(element.tag)) {
+        this.#set(element, 'disabled', disabledIn(chainOf(element)));
+      }
+      for (const child of element.childNodes) {
+        if ('tag' in child) {
+          walk(child as HostElement);
+        }
+      }
+    };
+    walk(root);
   }
 
   setModifiers(modifiers: KeyModifiers): void {

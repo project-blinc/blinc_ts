@@ -21,9 +21,11 @@
  *
  * Control states the host does not track (`:checked`, `:indeterminate`,
  * `:user-invalid`) are given by the component with `element.setState`. The
- * parts of a control (a range's `.fill`, `.rest` and `.thumb`, a progress
- * bar's `.bar`, a checkbox's `.check` and `.dash`, a radio's `.dot`, a
- * summary's `.marker`) are children the component supplies.
+ * parts of a control the host makes itself (a list item's `.marker`, a
+ * summary's `.marker`, a progress or meter's `.bar`) are owned elements; those
+ * of the controls it does not (a range's `.fill`, `.rest` and `.thumb`, a
+ * checkbox's `.check` and `.dash`, a radio's `.dot`) are children the
+ * component supplies.
  *
  * Type metrics have fallbacks, since an unresolved one stops layout. It only
  * declares what has an effect. Tags are flex rows by default, so containers that stack their
@@ -396,8 +398,16 @@ summary {
   transition: opacity ${STATE}, outline-width ${RING};
 }
 summary:hover { opacity: 0.8; }
-summary > .marker { color: var(--text-secondary); transition: transform var(--duration-normal) var(--ease-state); }
-details[open] > summary > .marker { transform: rotate(90deg); }
+summary > .marker {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-right: 1.5px solid var(--text-secondary);
+  border-bottom: 1.5px solid var(--text-secondary);
+  transform: rotate(-45deg);
+  transition: transform var(--duration-normal) var(--ease-state);
+}
+details[open] > summary > .marker { transform: rotate(45deg); }
 details:not([open]) > :not(summary) { display: none; }
 details[open] > :not(summary) { animation: blinc-list-in ${ENTER}; }
 

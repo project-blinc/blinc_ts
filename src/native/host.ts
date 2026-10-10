@@ -641,6 +641,16 @@ export class HostElement extends HostNode {
     }
     HostNode.link(child, null, null, null);
   }
+  /** Click this element, as a press and release on it would, unless it is disabled. */
+  click(): void {
+    if (this.destroyed || this.host.input.isDisabled(this)) {
+      return;
+    }
+    const [x, y, width, height] = this.bounds();
+    this.dispatchEvent(
+      new HostPointerEvent('click', { x: x + width / 2, y: y + height / 2, button: 0, detail: 1 }),
+    );
+  }
   /** Give this element focus, if it can take it. */
   focus(): boolean {
     return this.host.input.focus(this, false);
@@ -761,6 +771,7 @@ export class Host {
     this.styleChanged(this.root);
     this.root.layoutNode.setLayoutProperty('width', '100%');
     this.root.layoutNode.setLayoutProperty('height', '100%');
+    this.behaviours.attach();
     layout.beforeFlush(() => {
       this.behaviours.flush();
       this.#queueElements();
@@ -793,6 +804,7 @@ export class Host {
     const element = this.#register(new HostElement(this, this.layout.createNode(), tag));
     // Described to the cascade now, so type and structural selectors reach it with no class set.
     this.styleChanged(element);
+    this.behaviours.created(element);
     return element;
   }
   /**
@@ -953,6 +965,11 @@ export class Host {
         inline: inlinePairs,
         anonymous: this.#anonymous.has(node),
       });
+      // Registering an element starts its states at none: those it already has are given again, after it.
+      const bits = this.#bits(node, this.input.stateOf(node));
+      if (bits !== 0) {
+        node.layoutNode.queueStates(bits);
+      }
     }
     this.#styleDirty.clear();
   }

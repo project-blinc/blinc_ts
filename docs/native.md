@@ -491,9 +491,11 @@ colours over `--duration-fast` and `--ease-state`, a focus ring growing out
 from no width, a press shrinking a control a little, a check mark popping in
 on `--ease-spring`, a dialog growing in and, marked `[closing]`, shrinking
 away on `--ease-sheet`. A control's states come from `element.setState`, and
-its parts are children the component supplies: a checkbox's `.check` and
-`.dash`, a radio's `.dot`, a range's `.fill`, `.thumb` and `.rest`, a progress
-bar's `.bar`, a summary's `.marker` and a select's `.chevron`.
+the parts of a list item, a `summary`, a `progress` and a `meter` are made by
+the host (see built-in element behaviours); those of the controls it does not
+make are children the component supplies: a checkbox's `.check` and `.dash`, a
+radio's `.dot`, a range's `.fill`, `.thumb` and `.rest`, and a select's
+`.chevron`.
 
 ## Built-in element behaviours
 
@@ -518,6 +520,32 @@ restarts the count at an item. They are kept right as items come, go and move,
 as attributes and styles change, and through whatever a framework does to an
 item's children. `host.behaviours.markerOf(li)` reads what a marker shows
 (`1.`, `iv.`, `disc`), or null for none.
+
+**Links.** A click on an `a` with an `href` (or Enter on it focused) that no
+listener cancelled opens the URL with the system's handler, for `http:`,
+`https:`, `mailto:` and `tel:`; any other scheme, and a path with no scheme,
+opens nothing. `#id` scrolls to the element with that id instead. Set
+`host.behaviours.opener` to receive the URL yourself. An `a` with no `href` is
+not focusable.
+
+**Labels.** A click on a `label` focuses its control, named by `for` or the
+first control inside, and clicks it, unless the click was on the control
+itself or the control is disabled. `HostElement.click()` is that click.
+
+**Details.** A click on a `details`' first `summary`, or Enter or Space on it
+focused, opens or closes it, setting `open` and dispatching `toggle`. The
+summary has an owned `.marker`, a chevron the user-agent sheet turns as it
+opens, and the sheet hides the rest of a closed `details`.
+
+**Progress and meter.** Each has an owned `.bar` sized from `value`, `max`
+(and `min`, `low`, `high`, `optimum` for a meter), kept as the attributes
+change. A `progress` with no `value` is `:indeterminate`, and the sheet pulses
+its bar. A meter's bar is `optimum`, `suboptimum` or `even-less-good` by which
+region of the range its value falls in against the optimum's.
+
+**Disabled fieldsets.** A `fieldset` with `disabled` disables the controls in
+it: no presses, no focus and `:disabled`, including one added to it later.
+`element.setState` gives the other states, `checked` and the like.
 
 ## Inline text flow
 

@@ -5,11 +5,33 @@
  * native tree and the cascade, not among `childNodes`, so a framework that
  * owns an element's children never sees or removes it.
  */
+import { spawn } from 'node:child_process';
+import { HostEvent, HostPointerEvent } from './events.js';
 import type { Host, HostElement, HostNode, HostText } from './host.js';
 import { HostElement as ElementClass } from './host.js';
 
 const LISTS: ReadonlySet<string> = new Set(['ul', 'ol', 'menu']);
 const BULLETS = ['disc', 'circle', 'square'] as const;
+
+/** The schemes a link may open with the system's handler. */
+const OPENABLE: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+
+/** Form controls: what a label operates, and what a disabled fieldset disables. */
+export const CONTROLS: ReadonlySet<string> = new Set(['input', 'button', 'select', 'textarea']);
+
+/** Open `url` with the system's handler for it. */
+function openWithSystem(url: string): void {
+  const [command, args]: [string, string[]] =
+    process.platform === 'darwin'
+      ? ['open', [url]]
+      : process.platform === 'win32'
+        ? ['cmd', ['/c', 'start', '""', url]]
+        : ['xdg-open', [url]];
+  const child = spawn(command, args, { detached: true, stdio: 'ignore' });
+  // No handler is not an error worth stopping for.
+  child.on('error', () => undefined);
+  child.unref();
+}
 
 /** A list item's marker, and what it shows. */
 interface Marker {
@@ -24,9 +46,189 @@ export class Behaviours {
   /** Lists whose items' markers may be wrong now. */
   readonly #lists = new Set<HostElement>();
   readonly #markers = new WeakMap<HostElement, Marker>();
+  /** The bar a progress or meter draws, which the host owns. */
+  readonly #bars = new WeakMap<HostElement, HostElement>();
+  /** Opens a link's URL: the system's handler, unless an embedder or a test gives another. */
+  opener: (url: string) => void = openWithSystem;
 
   constructor(host: Host) {
     this.host = host;
+  }
+
+  /** Once the host has its root. */
+  attach(): void {
+    // A click that nothing handled does what the element under it means: follow a link,
+    // operate a label's control, open or close a details.
+    this.host.root.addEventListener('click', (event) => {
+      if (event instanceof HostPointerEvent && !event.defaultPrevented && event.button === 0) {
+        this.#clicked(event);
+      }
+    });
+  }
+
+  /** An element was made: the parts its kind has. */
+  created(element: HostElement): void {
+    switch (element.tag) {
+      case 'summary':
+        this.host.ownedElement(element, 'div', ['marker']);
+        break;
+      case 'progress':
+      case 'meter':
+        this.#bars.set(element, this.host.ownedElement(element, 'div', ['bar']));
+        this.#sync(element);
+        break;
+    }
+  }
+
+  #byId(id: string): HostElement | null {
+    const find = (parent: HostElement): HostElement | null => {
+      for (let child = parent.firstChild; child; child = child.nextSibling) {
+        if (child instanceof ElementClass) {
+          if (child.id === id) {
+            return child;
+          }
+          const found = find(child);
+          if (found) {
+            return found;
+          }
+        }
+      }
+      return null;
+    };
+    return find(this.host.root);
+  }
+
+  #clicked(event: HostPointerEvent): void {
+    for (let n = event.target as HostNode | null; n; n = n.parentNode) {
+      if (!(n instanceof ElementClass)) {
+        continue;
+      }
+      if (n.tag === 'a' && n.hasAttribute('href')) {
+        this.#follow(n.getAttribute('href') ?? '');
+        return;
+      }
+      if (
+        n.tag === 'summary' &&
+        n.parentNode instanceof ElementClass &&
+        n.parentNode.tag === 'details'
+      ) {
+        this.#toggle(n.parentNode, n);
+        return;
+      }
+      if (n.tag === 'label') {
+        this.#operate(n, event.target as HostNode | null);
+        return;
+      }
+    }
+  }
+
+  /** A link: to an element of the page, or out to the system's handler. */
+  #follow(href: string): void {
+    if (href.startsWith('#')) {
+      this.#byId(decodeURIComponent(href.slice(1)))?.scrollIntoView({ block: 'start' });
+      return;
+    }
+    try {
+      if (OPENABLE.has(new URL(href).protocol)) {
+        this.opener(href);
+      }
+    } catch {
+      // Not a URL, so nothing to open.
+    }
+  }
+
+  /** A summary opens or closes the details it begins. */
+  #toggle(details: HostElement, summary: HostElement): void {
+    let first: HostNode | null = details.firstChild;
+    while (first && !(first instanceof ElementClass && first.tag === 'summary')) {
+      first = first.nextSibling;
+    }
+    if (first !== summary) {
+      return;
+    }
+    if (details.hasAttribute('open')) {
+      details.removeAttribute('open');
+    } else {
+      details.setAttribute('open', '');
+    }
+    details.dispatchEvent(new HostEvent('toggle'));
+  }
+
+  /** A click on a label is a click on its control: focused, and clicked unless it was the control that was. */
+  #operate(label: HostElement, target: HostNode | null): void {
+    const named = label.getAttribute('for');
+    let control: HostElement | null = named ? this.#byId(named) : null;
+    if (!control && !named) {
+      const find = (parent: HostElement): HostElement | null => {
+        for (let child = parent.firstChild; child; child = child.nextSibling) {
+          if (child instanceof ElementClass) {
+            if (CONTROLS.has(child.tag)) {
+              return child;
+            }
+            const found = find(child);
+            if (found) {
+              return found;
+            }
+          }
+        }
+        return null;
+      };
+      control = find(label);
+    }
+    if (!control || !CONTROLS.has(control.tag)) {
+      return;
+    }
+    for (let n = target; n; n = n.parentNode) {
+      if (n === control) {
+        return;
+      }
+    }
+    control.focus();
+    control.click();
+  }
+
+  /** A progress bar's width and a meter's colour, from its attributes. */
+  #sync(element: HostElement): void {
+    const bar = this.#bars.get(element);
+    if (!bar || bar.destroyed) {
+      return;
+    }
+    const number = (name: string): number | undefined => {
+      const v = Number.parseFloat(element.getAttribute(name) ?? '');
+      return Number.isFinite(v) ? v : undefined;
+    };
+    if (element.tag === 'progress') {
+      const value = number('value');
+      const max = number('max');
+      const total = max !== undefined && max > 0 ? max : 1;
+      // No value is a bar that does not know how far along it is.
+      element.setState('indeterminate', value === undefined);
+      bar.setProperty(
+        'width',
+        value === undefined
+          ? null
+          : `${Math.round(Math.min(Math.max(value / total, 0), 1) * 10000) / 100}%`,
+      );
+      return;
+    }
+    const min = number('min') ?? 0;
+    const max = Math.max(number('max') ?? 1, min);
+    const clamp = (v: number) => Math.min(Math.max(v, min), max);
+    const value = clamp(number('value') ?? 0);
+    const low = clamp(number('low') ?? min);
+    const high = clamp(Math.max(number('high') ?? max, low));
+    const optimum = clamp(number('optimum') ?? (min + max) / 2);
+    const span = max - min;
+    bar.setProperty('width', `${span > 0 ? Math.round(((value - min) / span) * 10000) / 100 : 0}%`);
+    // Where the optimum is decides which end is good: the value's region against its.
+    const region = (v: number) => (v < low ? 0 : v > high ? 2 : 1);
+    const distance = Math.abs(region(value) - region(optimum));
+    for (const name of ['optimum', 'suboptimum', 'even-less-good']) {
+      bar.classList.remove(name);
+    }
+    bar.classList.add(
+      distance === 0 ? 'optimum' : distance === 1 ? 'suboptimum' : 'even-less-good',
+    );
   }
 
   /** The text of `item`'s marker, for a bullet its shape's name: `1.`, `iv.`, `disc`; none without one. */
@@ -37,6 +239,17 @@ export class Behaviours {
 
   /** A child came or went under `parent`. */
   childrenChanged(parent: HostNode | null, child?: HostNode): void {
+    // A control put into a disabled fieldset is disabled by it.
+    if (
+      parent instanceof ElementClass &&
+      child instanceof ElementClass &&
+      this.host.input.isDisabled(parent)
+    ) {
+      this.host.input.refreshDisabled(child);
+      if (CONTROLS.has(child.tag)) {
+        this.host.input.refreshDisabled(parent);
+      }
+    }
     if (parent instanceof ElementClass && LISTS.has(parent.tag)) {
       this.#lists.add(parent);
     }
@@ -47,6 +260,9 @@ export class Behaviours {
   }
 
   attributeChanged(element: HostElement, name: string): void {
+    if (element.tag === 'progress' || element.tag === 'meter') {
+      this.#sync(element);
+    }
     if (LISTS.has(element.tag) && (name === 'start' || name === 'reversed' || name === 'type')) {
       this.#lists.add(element);
     } else if (element.tag === 'li' && (name === 'value' || name === 'type')) {
