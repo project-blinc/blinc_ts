@@ -182,6 +182,21 @@ test('utility classes are generated from the token names', () => {
   assert.equal(classes('p-4', false, 'bg-surface', undefined), 'p-4 bg-surface');
 });
 
+test('the user-agent sheet moves on the theme motion tokens', () => {
+  const css = userAgentCss();
+  const timed = [...css.matchAll(/(?:transition|animation):([^;}]+)/g)].flatMap((m) =>
+    m[1].split(','),
+  );
+  assert.ok(timed.length > 20, 'its interactive elements ease');
+  for (const part of timed) {
+    assert.match(
+      part,
+      /var\(--duration-[a-z]+\) var\(--ease-[a-z-]+\)/,
+      `"${part.trim()}" has no token timing`,
+    );
+  }
+});
+
 test('the user-agent sheet reads only variables a theme defines', () => {
   const css = userAgentCss();
   const used = new Set([...css.matchAll(/var\((--[a-z0-9-]+)[,)]/g)].map((m) => m[1]));
@@ -196,7 +211,7 @@ test('the user-agent sheet reads only variables a theme defines', () => {
 
 test('the user-agent sheet declares nothing the host drops', () => {
   // These parse without an error and then do nothing.
-  const dropped = /(?:^|[;{\s])(transition|animation|clip-path|text-decoration|text-align)\s*:/gm;
+  const dropped = /(?:^|[;{\s])(clip-path|text-decoration|text-align)\s*:/gm;
   assert.deepEqual(
     [...userAgentCss().matchAll(dropped)].map((m) => m[1]),
     [],

@@ -73,6 +73,13 @@ try {
     state.attach(host.layout);
     const sheet = addUserAgent(host.layout);
     assert.deepEqual(sheet.diagnostics, [], 'the sheet parses without a diagnostic');
+    // Restyle, then run what that started to its end.
+    let clock = 0;
+    const settle = () => {
+      host.compute(W, H);
+      host.layout.tickMotion((clock += 1));
+      host.layout.tickMotion((clock += 1000));
+    };
 
     const title = el(host, 'h1', ['Title']);
     const para = el(host, 'p', ['Paragraph text']);
@@ -127,6 +134,7 @@ try {
     );
 
     host.input.pointerMove(bx + bw / 2, by + 3);
+    settle();
     assert.ok(
       near(
         pixel(await capture(host), ...insideButton),
@@ -136,7 +144,9 @@ try {
     );
     host.input.pointerMove(W - 2, H - 2);
 
+    settle();
     state.setScheme('dark');
+    settle();
     const dark = await capture(host, 'dark');
     assert.deepEqual(geometry(host.root), layout, 'a scheme switch keeps the geometry');
     assert.ok(near(pixel(dark, W - 4, H - 4), rgb8(colors(neutralTheme.dark).background)));
@@ -145,6 +155,170 @@ try {
     state.dispose();
   } finally {
     host.dispose();
+  }
+
+  // Every element the sheet styles, in its states and through its motion, with nothing refused.
+  {
+    const host = Host.create(native);
+    try {
+      const errors = [];
+      host.onStyleErrors((e) => errors.push(...e));
+      const state = new ThemeState(context, neutralTheme, { scheme: 'light' });
+      state.attach(host.layout);
+      addUserAgent(host.layout);
+      const colors = neutralTheme.light.colors;
+      let clock = 0;
+      const start = () => {
+        host.compute(W, H);
+        host.layout.tickMotion((clock += 1));
+      };
+      const advance = (ms) => host.layout.tickMotion((clock += ms));
+      const settle = () => {
+        start();
+        advance(1000);
+      };
+      const part = (tag, name, children = []) => {
+        const element = el(host, tag, children);
+        element.setAttribute('class', name);
+        return element;
+      };
+      const input = (type, children = []) => {
+        const element = el(host, 'input', children);
+        element.setAttribute('type', type);
+        return element;
+      };
+      const row = (tag, ...cells) =>
+        el(
+          host,
+          'tr',
+          cells.map((c) => el(host, tag, [c])),
+        );
+      const rows = [row('td', 'a', 'bb', 'a much longer cell'), row('td', 'ccc', 'd', 'e')];
+      const table = el(host, 'table', [
+        el(host, 'caption', ['Sizes']),
+        el(host, 'thead', [row('th', 'Name', 'Short', 'Long')]),
+        el(host, 'tbody', rows),
+      ]);
+      const hidden = el(host, 'p', ['Hidden until open']);
+      const details = el(host, 'details', [
+        el(host, 'summary', [part('span', 'marker', ['>']), 'More']),
+        hidden,
+      ]);
+      const checkbox = input('checkbox', [part('span', 'check'), part('span', 'dash')]);
+      checkbox.setAttribute('style', 'position: absolute; left: 10px; top: 10px');
+      const button = el(host, 'button', ['Focus me']);
+      button.setAttribute('style', 'position: absolute; left: 10px; top: 50px');
+      const dialog = el(host, 'dialog', [el(host, 'p', ['A dialog'])]);
+      dialog.setAttribute(
+        'style',
+        'position: absolute; left: 140px; top: 10px; width: 200px; height: 100px',
+      );
+      const progress = el(host, 'progress', [part('div', 'bar')]);
+      const listbox = el(host, 'listbox', [
+        el(host, 'optgroup', ['Group']),
+        el(host, 'option', ['One']),
+        el(host, 'option', ['Two']),
+      ]);
+      const flow = el(host, 'div', [
+        table,
+        details,
+        el(host, 'fieldset', [
+          el(host, 'legend', ['Controls']),
+          el(host, 'label', [input('radio', [part('span', 'dot')]), 'Radio']),
+          input('text'),
+          el(host, 'textarea'),
+          input('number', [part('div', 'steppers', [el(host, 'div'), el(host, 'div')])]),
+          input('range', [part('div', 'fill'), part('div', 'thumb'), part('div', 'rest')]),
+          progress,
+          el(host, 'meter', [part('div', 'bar optimum')]),
+          el(host, 'select', ['Pick', part('span', 'chevron', ['v'])]),
+          listbox,
+        ]),
+        el(host, 'ul', [el(host, 'li', ['Item', el(host, 'ul', [el(host, 'li', ['Nested'])])])]),
+      ]);
+      flow.setAttribute('style', 'position: absolute; left: 0px; top: 140px; width: 360px');
+      host.root.appendChild(flow);
+      host.root.appendChild(checkbox);
+      host.root.appendChild(button);
+      host.root.appendChild(dialog);
+      settle();
+
+      // A table's columns line up from row to row, however long a cell is.
+      const cells = rows.map((r) => r.childNodes.map((c) => c.bounds()));
+      for (let i = 0; i < 3; i++) {
+        assert.equal(cells[0][i][0], cells[1][i][0], `column ${i} starts in one place`);
+        assert.equal(cells[0][i][2], cells[1][i][2], `column ${i} is one width`);
+      }
+
+      // A closed details shows only its summary.
+      assert.equal(hidden.bounds()[3], 0, 'closed, the rest is not shown');
+      details.setAttribute('open', '');
+      settle();
+      assert.ok(hidden.bounds()[3] > 0, 'open, it is');
+
+      // A checkbox given :checked eases from the field colour to the primary one.
+      const middle = async () => {
+        const [x, y, w, h] = checkbox.bounds();
+        return pixel(await capture(host), x + w / 2, y + h / 2);
+      };
+      assert.ok(near(await middle(), rgb8(colors.inputBg)), `unchecked ${await middle()}`);
+      checkbox.setState('checked', true);
+      assert.equal(checkbox.hasState('checked'), true);
+      start();
+      assert.ok(near(await middle(), rgb8(colors.inputBg)), 'it starts from where it was');
+      advance(1000);
+      assert.ok(near(await middle(), rgb8(colors.primary)), `checked ${await middle()}`);
+      assert.throws(() => checkbox.setState('hover', true), /not a state an element is given/);
+      assert.throws(() => checkbox.setState('glowing', true), /not a state an element is given/);
+
+      // A focus ring grows out from nothing.
+      const ring = async () => {
+        const [x, y] = button.bounds();
+        return pixel(await capture(host), x - 3, y + 8);
+      };
+      const ground = rgb8(colors.background);
+      assert.ok(near(await ring(), ground), 'no ring at rest');
+      host.input.focus(button, true);
+      start();
+      assert.ok(near(await ring(), ground), 'the ring starts at no width');
+      advance(1000);
+      assert.ok(!near(await ring(), ground, 6), `the ring has grown: ${await ring()}`);
+
+      // A dialog is hidden until open, grows in, and shrinks away while closing.
+      assert.equal(dialog.bounds()[2], 0, 'a closed dialog is not shown');
+      const panel = async () => {
+        const [x, y, w, h] = dialog.bounds();
+        return pixel(await capture(host), x + w / 2, y + h / 2);
+      };
+      dialog.setAttribute('open', '');
+      start();
+      assert.ok(near(await panel(), ground), 'it starts from nothing');
+      advance(1000);
+      assert.ok(near(await panel(), rgb8(colors.surfaceElevated)), `open ${await panel()}`);
+      dialog.setAttribute('closing', '');
+      dialog.removeAttribute('open');
+      const closed = dialog.animationsFinished();
+      start();
+      advance(1000);
+      await closed;
+      assert.ok(near(await panel(), ground), 'it has shrunk away');
+      dialog.removeAttribute('closing');
+      settle();
+      assert.equal(dialog.bounds()[2], 0, 'and once it is gone, it is not shown');
+
+      // An indeterminate progress bar pulses until it is told its value.
+      progress.setState('indeterminate', true);
+      start();
+      assert.equal(advance(100), true, 'the pulse runs');
+      progress.setState('indeterminate', false);
+      settle();
+      assert.equal(advance(100), false, 'and stops');
+
+      assert.deepEqual(errors, [], 'no declaration was refused');
+      state.dispose();
+    } finally {
+      host.dispose();
+    }
   }
 
   // The sheet is under every other: an app rule wins whichever was added first.
@@ -195,5 +369,5 @@ try {
   target.dispose();
 }
 console.log(
-  'Native user-agent sheet: stacking, type, theme ground, states, rules and precedence passed',
+  'Native user-agent sheet: stacking, type, theme ground, states, controls, motion, rules and precedence passed',
 );

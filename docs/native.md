@@ -448,11 +448,22 @@ addUserAgent(host.layout); // first among the sheets, so every other rule wins
 It sets the window's ground, ink and type from the theme, stacks the flow
 containers (`div`, `section`, `ul`, `form`, `pre`, …) in columns, sets the
 text elements (`p`, `h1` to `h6`, `code`, `kbd`, `mark`, `a`) in a wrapping
-baseline row at the browser's relative sizes, and styles `pre`, `blockquote`,
-`hr`, `a`, `button`, `label` and `fieldset`. Everything it uses is a theme
-variable, so a theme change restyles it, and it only declares what the host
-applies. Margins are half a browser's because flex siblings do not collapse
-them, and lists have no markers yet.
+baseline row at the browser's relative sizes, and styles quotations, rules,
+tables (each row shares its width among its cells, so columns line up),
+links, buttons, labels, fieldsets, text fields, checkboxes, radios, ranges,
+progress bars, meters, selects and their options, dialogs, backdrops and
+`details`. Everything it uses is a theme variable, so a theme change restyles
+it, and it only declares what has an effect. Margins are half a browser's
+because flex siblings do not collapse them, and lists have no markers yet.
+
+Every change it shows eases on the theme's motion tokens: hover and press
+colours over `--duration-fast` and `--ease-state`, a focus ring growing out
+from no width, a press shrinking a control a little, a check mark popping in
+on `--ease-spring`, a dialog growing in and, marked `[closing]`, shrinking
+away on `--ease-sheet`. A control's states come from `element.setState`, and
+its parts are children the component supplies: a checkbox's `.check` and
+`.dash`, a radio's `.dot`, a range's `.fill`, `.thumb` and `.rest`, a progress
+bar's `.bar`, a summary's `.marker` and a select's `.chevron`.
 
 ## Measuring text and inline runs
 
