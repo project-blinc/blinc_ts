@@ -13,6 +13,7 @@ import type { ImageEntry } from './host-images.js';
 import { Dialogs } from './dialogs.js';
 import { Forms } from './forms.js';
 import { Inputs } from './inputs.js';
+import { Selects } from './selects.js';
 import { ImageFit } from './generated/scene.js';
 import type { StyleSheet } from './layout.js';
 
@@ -67,6 +68,8 @@ export class Behaviours {
   readonly forms: Forms;
   /** What dialogs do: open, close and answer Escape. */
   readonly dialogs: Dialogs;
+  /** What selects do: their label, and their list of options. */
+  readonly selects: Selects;
   /** Every `img`, and those whose image or fit may need putting right. */
   readonly #pictures = new Map<HostElement, Picture>();
   readonly #pictureDirty = new Set<HostElement>();
@@ -86,12 +89,14 @@ export class Behaviours {
     this.inputs = new Inputs(host);
     this.forms = new Forms(host);
     this.dialogs = new Dialogs(host);
+    this.selects = new Selects(host);
   }
 
   /** Once the host has its root. */
   attach(): void {
     this.inputs.attach();
     this.dialogs.attach();
+    this.selects.attach();
     // A click that nothing handled does what the element under it means: follow a link,
     // operate a label's control, open or close a details.
     this.host.root.addEventListener('click', (event) => {
@@ -104,6 +109,7 @@ export class Behaviours {
   /** An element was made: the parts its kind has. */
   created(element: HostElement): void {
     this.inputs.created(element);
+    this.selects.created(element);
     switch (element.tag) {
       case 'summary':
         this.host.ownedElement(element, 'div', ['marker']);
@@ -394,6 +400,7 @@ export class Behaviours {
 
   /** A child came or went under `parent`. */
   childrenChanged(parent: HostNode | null, child?: HostNode): void {
+    this.selects.changed(parent);
     // A control put into a disabled fieldset is disabled by it.
     if (
       parent instanceof ElementClass &&
@@ -417,6 +424,7 @@ export class Behaviours {
   attributeChanged(element: HostElement, name: string): void {
     this.inputs.attributeChanged(element, name);
     this.dialogs.attributeChanged(element, name);
+    this.selects.changed(element);
     if (element.tag === 'progress' || element.tag === 'meter') {
       this.#sync(element);
     }
@@ -457,6 +465,7 @@ export class Behaviours {
     this.inputs.forget(node);
     if (node instanceof ElementClass) {
       this.dialogs.forget(node);
+      this.selects.forget(node);
       const picture = this.#pictures.get(node);
       if (picture) {
         picture.use?.release();
@@ -474,6 +483,7 @@ export class Behaviours {
 
   /** Before the tick's writes go: put right what changed. */
   flush(): void {
+    this.selects.flush();
     if (this.#pictureDirty.size > 0) {
       const dirty = [...this.#pictureDirty];
       this.#pictureDirty.clear();

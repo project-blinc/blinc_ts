@@ -343,6 +343,7 @@ select {
   cursor: pointer;
   transition: background ${STATE}, border-color ${STATE}, transform ${PRESS}, outline-width ${RING};
 }
+select > :is(option, optgroup) { display: none; }
 select:hover { border-color: var(--border-hover); }
 select:active { transform: scale(0.98); }
 select[open] { border-color: var(--border-focus); }

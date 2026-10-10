@@ -476,12 +476,29 @@ export class HostElement extends HostNode {
   set indeterminate(on: boolean) {
     this.host.behaviours.inputs.setIndeterminate(this, on);
   }
-  /** An input's value as text: a range's number, else its `value` attribute. */
+  /** An input's value as text: a range's number, else its `value` attribute; a select's chosen option's value. */
   get value(): string {
-    return this.host.behaviours.inputs.value(this) ?? '';
+    const { inputs, selects } = this.host.behaviours;
+    return selects.has(this) ? selects.value(this) : (inputs.value(this) ?? '');
   }
   set value(text: string) {
-    this.host.behaviours.inputs.setValue(this, text);
+    const { inputs, selects } = this.host.behaviours;
+    if (selects.has(this)) {
+      selects.setValue(this, text);
+    } else {
+      inputs.setValue(this, text);
+    }
+  }
+  /** A select's: the index of the chosen option, or -1. */
+  get selectedIndex(): number {
+    return this.host.behaviours.selects.selectedIndex(this);
+  }
+  set selectedIndex(index: number) {
+    this.host.behaviours.selects.setSelectedIndex(this, index);
+  }
+  /** A select's options, in order, those in an `optgroup` too. */
+  get options(): HostElement[] {
+    return this.host.behaviours.selects.options(this);
   }
   /** A range's value as a number, NaN for any other element. */
   get valueAsNumber(): number {
@@ -1268,6 +1285,7 @@ export class Host {
   }
   /** @internal */
   textChanged(node: HostText): void {
+    this.behaviours.selects.changed(node.parentNode);
     this.#text.add(node);
     this.#schedule();
   }

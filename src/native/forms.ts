@@ -69,7 +69,14 @@ export class Forms {
     const data = new FormData();
     for (const control of this.elements(form)) {
       const name = control.getAttribute('name');
-      if (!name || control.tag !== 'input' || this.host.input.isDisabled(control)) {
+      if (!name || this.host.input.isDisabled(control)) {
+        continue;
+      }
+      if (control.tag === 'select') {
+        data.append(name, control.value);
+        continue;
+      }
+      if (control.tag !== 'input') {
         continue;
       }
       const type = control.getAttribute('type')?.trim().toLowerCase();
@@ -120,6 +127,7 @@ export class Forms {
     }
     for (const control of this.elements(form)) {
       this.host.behaviours.inputs.reset(control);
+      this.host.behaviours.selects.reset(control);
     }
     return true;
   }

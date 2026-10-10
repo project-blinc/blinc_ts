@@ -630,6 +630,23 @@ false when it was cancelled (a submitter that is not a submit button of the form
 checkbox and radio back as its `checked` attribute says and each range as its `value`
 does, as if the user had not touched them.
 
+**Selects.** A `select` shows the label of its chosen option (its `label` attribute, else
+its text) with an owned `.value` and `.chevron`, and keeps its `option`s, and the ones in
+an `optgroup`, in the tree, hidden, for a framework to own. A click, Enter or Space opens
+the options as a `listbox` of `option` rows in the top layer under it, at least as wide,
+tall as the room above or below allows and scrolling past that, the chosen row `:checked`
+and focused; the select is `[open]` meanwhile. The arrows move among the enabled rows,
+Home and End go to the ends, typing finds the first row whose label starts with what was
+typed in the last second, Enter or Space or a click chooses, and Escape, Tab or a press
+outside shuts it without choosing. A choice that changes the value fires `input` then
+`change`; the same option again fires nothing. A closed, focused select opens on
+ArrowUp or ArrowDown and chooses by typing, also as a change. Which option is chosen is
+the user's or a script's, else, until one has chosen, the one with `selected`, else the
+first that is enabled. `select.value`, `selectedIndex` and `options` read and set it
+without an event; a value that matches no option leaves none chosen. A named select is in
+`form.formData()` and `form.reset()` puts it back. `multiple` and `size` are not
+supported.
+
 **Dialogs.** A `dialog` is open while it has `open`. `dialog.show()` opens it where it
 is. `dialog.showModal()` opens it in the top layer, centred over a dimmed backdrop, with
 focus moved into it, Tab kept inside it, and focus given back to what had it as it

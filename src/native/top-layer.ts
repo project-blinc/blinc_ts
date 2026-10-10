@@ -180,6 +180,10 @@ export class TopLayerEntry {
     }
     this.#layer.setProperty('pointer-events', 'none');
     this.#closed = Promise.all(marked.map((element) => element.animationsFinished())).then(() => {
+      // The host may have gone while they played.
+      if (this.content.host.layout.disposed) {
+        return;
+      }
       for (const element of marked) {
         if (!element.destroyed) {
           element.removeAttribute('closing');
