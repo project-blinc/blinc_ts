@@ -9,6 +9,8 @@ import { createContext, Show } from '#jsx/flow';
 import { read, useContext, type Source } from '#jsx/owner';
 import type { Child, JsxNode } from '#jsx/jsx-runtime';
 import { descendants, step } from './dom.js';
+import { Chevron } from './icons.js';
+import { presence } from './presence.js';
 import { flag, merge, type PartProps } from './props.js';
 import { held } from './state.js';
 
@@ -123,6 +125,8 @@ function ItemPart(props: PartProps & { value?: string; disabled?: Source<boolean
             'data-open': flag(item.open),
             'data-closed': flag(() => !item.open()),
             'data-disabled': flag(item.disabled),
+            // An item that opens eases to its size, and those below ease out of its way.
+            ref: (e: HostElement) => e.animateLayout(),
           },
           rest,
         )}
@@ -135,7 +139,8 @@ function Header(props: PartProps): JsxNode {
   return <h3 {...merge({ class: 'bui-accordion-header' }, props)} />;
 }
 
-function Trigger(props: PartProps): JsxNode {
+function Trigger(props: PartProps & { chevron?: boolean }): JsxNode {
+  const { chevron, children, ...rest } = props;
   const accordion = useContext(AccordionContext);
   const item = useContext(ItemContext);
   return (
@@ -150,29 +155,38 @@ function Trigger(props: PartProps): JsxNode {
           disabled: item.disabled,
           onClick: () => accordion.toggle(item.value),
         },
-        props,
+        rest,
       )}
-    />
+    >
+      {children}
+      {chevron === false ? null : <Chevron />}
+    </button>
   );
 }
 
 function Panel(props: PartProps & { keepMounted?: boolean }): JsxNode {
   const { keepMounted, children, ...rest } = props;
   const item = useContext(ItemContext);
+  let panel: HostElement | undefined;
+  const present = presence(item.open, () => panel);
   return (
     <div
       {...merge(
         {
           class: 'bui-accordion-panel',
           role: 'region',
-          hidden: () => !item.open(),
+          hidden: () => !present(),
           'data-open': flag(item.open),
           'data-closed': flag(() => !item.open()),
+          ref: (e: HostElement) => {
+            panel = e;
+            e.animateLayout({ position: false });
+          },
         },
         rest,
       )}
     >
-      {keepMounted ? children : <Show when={item.open}>{children as Child}</Show>}
+      {keepMounted ? children : <Show when={present}>{children as Child}</Show>}
     </div>
   );
 }

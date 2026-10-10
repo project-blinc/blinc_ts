@@ -9,3 +9,4 @@ export { addBaseUi } from './sheet.js';
 export { baseUiTheme } from './theme.js';
 export { merge, type PartProps } from './props.js';
 export { held, type Held } from './state.js';
+export { Check, Chevron, Moon, Sun } from './icons.js';

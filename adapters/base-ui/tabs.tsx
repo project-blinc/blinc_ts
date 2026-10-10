@@ -8,7 +8,7 @@
 import type { HostElement } from 'blinc_ts/native/host';
 import { Signal } from 'blinc_ts/native';
 import { createContext, Show } from '#jsx/flow';
-import { onCleanup, read, signal, useContext, type Source } from '#jsx/owner';
+import { onCleanup, read, signal, useContext, useHost, type Source } from '#jsx/owner';
 import type { Child, JsxNode } from '#jsx/jsx-runtime';
 import { descendants, step } from './dom.js';
 import { flag, merge, type PartProps } from './props.js';
@@ -19,7 +19,15 @@ interface Tabs {
   current(): string | undefined;
   choose(value: string): void;
   orientation(): 'horizontal' | 'vertical';
-  register(value: string, disabled: () => boolean): () => void;
+  variant: 'segmented' | 'underline';
+  register(
+    value: string,
+    disabled: () => boolean,
+    element: () => HostElement | undefined,
+  ): () => void;
+  /** The element of the tab chosen, and of the list that holds the tabs, for what follows it. */
+  active(): HostElement | undefined;
+  list: HostElement | undefined;
 }
 const TabsContext = createContext<Tabs>();
 
@@ -28,16 +36,24 @@ export interface TabsRootProps extends PartProps {
   defaultValue?: string;
   onValueChange?: (value: string) => void;
   orientation?: Source<'horizontal' | 'vertical'>;
+  /** `segmented`, a tray with a raised pill under the chosen tab, or `underline`, a bar. */
+  variant?: 'segmented' | 'underline';
 }
 
 function Root(props: TabsRootProps): JsxNode {
-  const { value, defaultValue, onValueChange, orientation, ...rest } = props;
+  const { value, defaultValue, onValueChange, orientation, variant, ...rest } = props;
   const chosen = held<string | undefined>(
     value as Source<string | undefined> | undefined,
     defaultValue,
     (next) => onValueChange?.(next as string),
   );
-  const tabs: Signal<readonly { value: string; disabled: () => boolean }[]> = signal([]);
+  const tabs: Signal<
+    readonly {
+      value: string;
+      disabled: () => boolean;
+      element: () => HostElement | undefined;
+    }[]
+  > = signal([]);
   const along = () => read(orientation) ?? 'horizontal';
   const context: Tabs = {
     current: () => {
@@ -49,21 +65,37 @@ function Root(props: TabsRootProps): JsxNode {
     },
     choose: (v) => chosen.set(v),
     orientation: along,
-    register: (v, disabled) => {
-      const entry = { value: v, disabled };
+    variant: variant ?? 'segmented',
+    active: () => {
+      const now = context.current();
+      return tabs
+        .peek()
+        .find((t) => t.value === now)
+        ?.element();
+    },
+    list: undefined,
+    register: (v, disabled, element) => {
+      const entry = { value: v, disabled, element };
       tabs.set([...tabs.peek(), entry]);
       return () => tabs.set(tabs.peek().filter((t) => t !== entry));
     },
   };
   return (
     <TabsContext.Provider value={context}>
-      <div {...merge({ class: 'bui-tabs', 'data-orientation': along }, rest)} />
+      <div
+        {...merge(
+          { class: 'bui-tabs', 'data-orientation': along, 'data-variant': context.variant },
+          rest,
+        )}
+      />
     </TabsContext.Provider>
   );
 }
 
-function List(props: PartProps & { activateOnFocus?: boolean; loop?: boolean }): JsxNode {
-  const { activateOnFocus, loop, ...rest } = props;
+function List(
+  props: PartProps & { activateOnFocus?: boolean; loop?: boolean; indicator?: boolean },
+): JsxNode {
+  const { activateOnFocus, loop, indicator, children, ...rest } = props;
   const tabs = useContext(TabsContext);
   let list: HostElement | undefined;
   const key = (event: { key: string; target: unknown; preventDefault(): void }) => {
@@ -102,14 +134,20 @@ function List(props: PartProps & { activateOnFocus?: boolean; loop?: boolean }):
           role: 'tablist',
           'aria-orientation': tabs.orientation,
           'data-orientation': tabs.orientation,
+          'data-variant': tabs.variant,
           onKeyDown: key,
           ref: (e: HostElement) => {
             list = e;
+            tabs.list = e;
           },
         },
         rest,
       )}
-    />
+    >
+      {/* First, so it is drawn under the tabs: what comes later in a parent draws over. */}
+      {indicator === false ? null : <Indicator />}
+      {children}
+    </div>
   );
 }
 
@@ -117,7 +155,8 @@ function Tab(props: PartProps & { value: string; disabled?: Source<boolean> }): 
   const { value, disabled, ...rest } = props;
   const tabs = useContext(TabsContext);
   const off = () => Boolean(read(disabled));
-  onCleanup(tabs.register(value, off));
+  let self: HostElement | undefined;
+  onCleanup(tabs.register(value, off, () => self));
   const active = () => tabs.current() === value;
   return (
     <button
@@ -133,6 +172,9 @@ function Tab(props: PartProps & { value: string; disabled?: Source<boolean> }): 
           'data-disabled': flag(off),
           'data-orientation': tabs.orientation,
           disabled: off,
+          ref: (e: HostElement) => {
+            self = e;
+          },
           onClick: () => {
             if (!off()) {
               tabs.choose(value);
@@ -164,6 +206,67 @@ function Panel(props: PartProps & { value: string; keepMounted?: boolean }): Jsx
     >
       {keepMounted ? children : <Show when={shown}>{children as Child}</Show>}
     </div>
+  );
+}
+
+/**
+ * What marks the chosen tab, and slides to the next as it is chosen: a raised pill behind it, or
+ * a bar under it (beside it when vertical). The list holds it. It is placed after layout, from
+ * where the tab is, and eases from then on.
+ */
+function Indicator(props: PartProps): JsxNode {
+  const tabs = useContext(TabsContext);
+  const host = useHost();
+  let element: HostElement | undefined;
+  let placed = '';
+  let ready = false;
+  const release = host.layout.onLaidOut(() => {
+    const list = tabs.list;
+    const tab = tabs.active();
+    if (!element || element.destroyed || !list || !tab || !tab.isConnected) {
+      return false;
+    }
+    // Read before writing: a write makes the bounds unreadable until layout runs again.
+    const [lx = 0, ly = 0] = list.bounds();
+    const [tx = 0, ty = 0, tw = 0, th = 0] = tab.bounds();
+    const vertical = tabs.orientation() === 'vertical';
+    // The pill covers the tab; the bar runs along its edge, so it has only the one axis to follow.
+    const box: Record<string, number> =
+      tabs.variant === 'segmented'
+        ? { left: tx - lx, top: ty - ly, width: tw, height: th }
+        : vertical
+          ? { top: ty - ly, height: th }
+          : { left: tx - lx, width: tw };
+    const key = JSON.stringify(box);
+    if (key === placed) {
+      if (!ready) {
+        // Placed once without easing; from now on it eases.
+        ready = true;
+        element.setAttribute('data-ready', '');
+      }
+      return false;
+    }
+    placed = key;
+    for (const [name, value] of Object.entries(box)) {
+      element.setProperty(name, value);
+    }
+    return true;
+  });
+  onCleanup(release);
+  return (
+    <span
+      {...merge(
+        {
+          class: 'bui-tabs-indicator',
+          'data-orientation': tabs.orientation,
+          'data-variant': tabs.variant,
+          ref: (e: HostElement) => {
+            element = e;
+          },
+        },
+        props,
+      )}
+    />
   );
 }
 

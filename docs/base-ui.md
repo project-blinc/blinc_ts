@@ -38,6 +38,30 @@ mount(host, <Tabs.Root defaultValue="a">…</Tabs.Root>, { context });
   is an error that says so. Keys: Enter and Space click a focused button, since the parts are
   buttons, and a click on a disabled one does nothing.
 
+## Character
+
+The parts have the depth and motion of ashui's components, in a monochrome palette.
+
+- **Tokens only.** `sheet.ts` and the wiki's sheet say only the theme's tokens: colours, spacing
+  (`--space-*`), type (`--text-*`, `--font-*`, `--leading-*`), shadows (`--shadow-*`) and motion
+  (`--duration-*`, `--ease-*`). Only the size of a box, which has no token, is a length.
+  `adapters/test/base-ui-tokens.mjs` refuses a raw colour, space, type size, weight or duration.
+- **Shape is the theme's.** A corner is `var(--radius-*)` and nothing else, and a sheet sets no
+  `corner-*` property, so the theme's corner smoothing reaches every part. The showcase test turns
+  smoothing off and requires an accordion's corner to change.
+- **Shadows as ashui has them.** An outline button, the knob of a switch and a tooltip stand on
+  `--shadow-sm`; an accordion and a popover on `--shadow-md`; a dialog on `--shadow-xl`; what is
+  flat has none, and a disabled button or knob loses its shadow.
+- **Everything that changes eases.** Colours and borders ease over `--duration-fast`; a press
+  shrinks a button; a switch's knob slides to the other end by layout, with a day and a night
+  icon (`Sun`, `Moon`) that turn into each other (`size="lg"`, and `bui-thumb-unchecked` or
+  `bui-thumb-checked` on the icons); a check mark pops in; `Chevron` turns over with its trigger
+  (the accordion and collapsible triggers have one, `chevron={false}` for none); a panel is
+  built while it folds away and eases between its height and none; a segmented tab list's raised
+  pill (`variant="underline"` for a bar instead) slides to the chosen tab; popups ease in from
+  where they are.
+  `adapters/test/base-ui-motion.mjs` catches each partway between its two states.
+
 ## The parts
 
 | Component     | Parts                                                       | Holds                                  | Keys                                              |

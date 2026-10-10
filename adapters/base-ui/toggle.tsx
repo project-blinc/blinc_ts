@@ -3,6 +3,7 @@
  * Space come with it, that holds its state, shared with the user as `checked` or `pressed`
  * (see ./state) and shown as `data-checked`/`data-unchecked`, `data-pressed`, `data-disabled`.
  */
+import type { HostElement } from 'blinc_ts/native/host';
 import { createContext, Show } from '#jsx/flow';
 import { read, useContext, type Source } from '#jsx/owner';
 import type { Child, JsxNode } from '#jsx/jsx-runtime';
@@ -102,12 +103,18 @@ function control(
 const SwitchContext = createContext<Control>();
 
 export interface SwitchRootProps extends CheckedProps {
+  /** `lg` is roomy enough for an icon on the knob. */
+  size?: 'md' | 'lg';
   children?: Child;
 }
 
 function SwitchRoot(props: SwitchRootProps): JsxNode {
-  const { children, ...rest } = props;
-  const { context, element } = control(rest, 'switch', 'bui-switch');
+  const { children, size, ...rest } = props;
+  const { context, element } = control(
+    { ...rest, ...(size ? { 'data-size': size } : {}) },
+    'switch',
+    'bui-switch',
+  );
   return <SwitchContext.Provider value={context}>{element(children)}</SwitchContext.Provider>;
 }
 
@@ -121,6 +128,8 @@ function SwitchThumb(props: PartProps): JsxNode {
           'data-checked': flag(state.checked),
           'data-unchecked': flag(() => !state.checked()),
           'data-disabled': flag(state.disabled),
+          // The sheet moves it by putting it at the other end, and it eases across.
+          ref: (e: HostElement) => e.animateLayout({ size: false }),
         },
         props,
       )}

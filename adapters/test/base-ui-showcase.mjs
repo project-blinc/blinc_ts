@@ -54,6 +54,7 @@ try {
       };
       settle();
       const draw = async () => {
+        host.compute(W, H);
         const renderer = new SceneRenderer(target.device, host.layout);
         try {
           renderer.useImages(host.images.library);
@@ -98,18 +99,43 @@ try {
       const [cx, cy] = s.refs.checked.bounds();
       const [ex, ey] = s.refs.unchecked.bounds();
       assert.ok(Math.abs(luma(at(pixels, cx + 2, cy + 2)) - luma(at(pixels, ex + 2, ey + 2))) > 90);
-      // The chosen tab has the ink under it, and the other does not.
+      // The indicator is under the chosen tab, and not the other.
       const [ax, ay, aw, ah] = s.refs.overview.bounds();
       const [bx, by, bw] = s.refs.api.bounds();
       const rule = luma(at(pixels, ax + aw / 2, ay + ah - 1));
       const none = luma(at(pixels, bx + bw / 2, by + ah - 1));
       assert.ok(Math.abs(rule - none) > 60, `the chosen tab is underlined (${rule} vs ${none})`);
 
-      // Choosing another moves the underline.
+      // Choosing another moves it: it eases there, so it is between at first, and under it after.
       s.tab.set('api');
+      host.flush();
+      host.compute(W, H);
+      host.layout.tickMotion((clock += 1));
+      host.layout.tickMotion((clock += 60));
+      const between = await draw();
+      const under = (pixelsOf) => luma(at(pixelsOf, bx + bw / 2, by + ah - 1));
       settle();
       const after = await draw();
-      assert.ok(Math.abs(luma(at(after, bx + bw / 2, by + ah - 1)) - none) > 60, 'it moved');
+      assert.ok(Math.abs(under(after) - none) > 60, 'it moved under the other tab');
+      assert.ok(!Buffer.from(between).equals(Buffer.from(after)), 'it was still on its way');
+      assert.ok(!Buffer.from(between).equals(Buffer.from(pixels)), 'and had left where it was');
+      // The theme's shape reaches the parts: with smoothing off, an accordion's corner is a circle's.
+      const [gx, gy] = s.refs.accordion.bounds();
+      const corner = (frame) => {
+        const patch = [];
+        for (let dy = 0; dy < 6; dy++) {
+          for (let dx = 0; dx < 6; dx++) {
+            patch.push(luma(at(frame, gx + dx, gy + dy)));
+          }
+        }
+        return patch;
+      };
+      const smooth = corner(await draw());
+      state.override({ shape: { cornerSmoothing: 0 } });
+      settle();
+      const round = corner(await draw());
+      assert.notDeepEqual(smooth, round, `${scheme}: smoothing changes a part's corner`);
+      state.override({ shape: {} });
       assert.deepEqual(errors, [], String(errors));
       unmount();
       state.dispose();

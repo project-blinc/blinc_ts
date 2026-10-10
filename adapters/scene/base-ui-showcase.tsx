@@ -4,11 +4,8 @@ import type { Child } from '#jsx/jsx-runtime';
 import { Accordion } from '../base-ui/accordion.js';
 import { Collapsible } from '../base-ui/collapsible.js';
 import { Tabs } from '../base-ui/tabs.js';
+import { Check, Moon, Sun } from '../base-ui/icons.js';
 import { Checkbox, Switch, Toggle } from '../base-ui/toggle.js';
-
-const check = `data:image/svg+xml;utf8,${encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.5 5 9l4.5-5.5"/></svg>',
-)}`;
 
 export interface Showcase {
   tab: Signal<string>;
@@ -34,17 +31,23 @@ export const showcase = (s: Showcase): Child => (
         <Switch.Thumb ref={(e: HostElement) => (s.refs['on-thumb'] = e)} />
       </Switch.Root>
       <Checkbox.Root ref={(e: HostElement) => (s.refs.unchecked = e)}>
-        <Checkbox.Indicator>
-          <img src={check} style={{ width: 12, height: 12 }} />
+        <Checkbox.Indicator keepMounted>
+          <Check />
         </Checkbox.Indicator>
       </Checkbox.Root>
+      <Switch.Root size="lg" ref={(e: HostElement) => (s.refs.night = e)}>
+        <Switch.Thumb ref={(e: HostElement) => (s.refs['night-thumb'] = e)}>
+          <Sun class="bui-thumb-unchecked" />
+          <Moon class="bui-thumb-checked" />
+        </Switch.Thumb>
+      </Switch.Root>
       <Checkbox.Root defaultChecked ref={(e: HostElement) => (s.refs.checked = e)}>
-        <Checkbox.Indicator>
-          <img src={check} style={{ width: 12, height: 12 }} />
+        <Checkbox.Indicator keepMounted>
+          <Check />
         </Checkbox.Indicator>
       </Checkbox.Root>
     </div>
-    <Tabs.Root value={s.tab}>
+    <Tabs.Root value={s.tab} variant="underline">
       <Tabs.List ref={(e: HostElement) => (s.refs.list = e)}>
         <Tabs.Tab value="overview" ref={(e: HostElement) => (s.refs.overview = e)}>
           Overview
@@ -59,7 +62,15 @@ export const showcase = (s: Showcase): Child => (
       <Tabs.Panel value="overview">Parts that draw nothing of their own.</Tabs.Panel>
       <Tabs.Panel value="api">State is shared as a signal.</Tabs.Panel>
     </Tabs.Root>
-    <Accordion.Root defaultValue={['one']}>
+    <Tabs.Root defaultValue="b">
+      <Tabs.List ref={(e: HostElement) => (s.refs.tray = e)}>
+        <Tabs.Tab value="a">First</Tabs.Tab>
+        <Tabs.Tab value="b" ref={(e: HostElement) => (s.refs.pill = e)}>
+          Second
+        </Tabs.Tab>
+      </Tabs.List>
+    </Tabs.Root>
+    <Accordion.Root defaultValue={['one']} ref={(e: HostElement) => (s.refs.accordion = e)}>
       <Accordion.Item value="one">
         <Accordion.Header>
           <Accordion.Trigger>What is a part?</Accordion.Trigger>

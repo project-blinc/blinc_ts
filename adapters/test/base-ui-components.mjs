@@ -32,11 +32,23 @@ try {
     host.input.keyDown({ key });
     host.input.keyUp({ key });
   };
-  const run = (view, s, check) => {
+  let clock = 0;
+  /** Let motion play out, and what waits for it: a panel stays built while it folds away. */
+  const exit = async () => {
+    for (let i = 0; i < 3; i++) {
+      host.flush();
+      host.compute(W, H);
+      host.layout.tickMotion((clock += 1));
+      host.layout.tickMotion((clock += 3000));
+      host.compute(W, H);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  };
+  const run = async (view, s, check) => {
     const unmount = mount(host, view(s), { context });
     host.compute(W, H);
     try {
-      check();
+      await check();
     } finally {
       unmount();
     }
@@ -47,7 +59,7 @@ try {
   // Toggle, Switch and Checkbox: state held, shared as a signal, or only asked for.
   {
     const s = shared();
-    run(views.toggles, s, () => {
+    await run(views.toggles, s, async () => {
       const { toggle, switch: sw, thumb, off, box, fixed } = s.refs;
       assert.equal(toggle.tag, 'button');
       assert.equal(attr(toggle, 'class'), 'bui-toggle mine', 'the user class is added');
@@ -144,7 +156,7 @@ try {
   // Collapsible: the trigger toggles; the panel is built only while open unless kept.
   {
     const s = shared();
-    run(views.collapsible, s, () => {
+    await run(views.collapsible, s, async () => {
       const { root, trigger, panel, kept } = s.refs;
       assert.equal(has(root, 'data-closed'), true);
       assert.equal(attr(trigger, 'aria-expanded'), 'false');
@@ -164,6 +176,13 @@ try {
       host.compute(W, H);
       assert.ok(panel.bounds()[3] > 0, 'open, it has height');
       trigger.click();
+      host.flush();
+      host.compute(W, H);
+      host.layout.tickMotion((clock += 1));
+      host.layout.tickMotion((clock += 60));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      assert.equal(panel.textContent, 'Hidden until open', 'it is seen folding away');
+      await exit();
       assert.equal(
         panel.childNodes.filter((n) => n instanceof HostElement).length,
         0,
@@ -178,7 +197,7 @@ try {
   // Accordion: one open at a time, keys among the enabled triggers, shared values.
   {
     const s = shared();
-    run(views.accordion, s, () => {
+    await run(views.accordion, s, async () => {
       const { root, 'trigger-a': a, 'trigger-b': b, 'trigger-c': c } = s.refs;
       assert.equal(attr(root, 'class'), 'bui-accordion');
       assert.equal(has(b, 'data-disabled'), true);
@@ -188,10 +207,12 @@ try {
       assert.equal(attr(a, 'aria-expanded'), 'true');
       c.click();
       assert.deepEqual(s.list.get(), ['c'], 'opening another closes the first');
+      await exit();
       assert.equal(s.refs['panel-a'].textContent, '');
       b.click();
       assert.deepEqual(s.list.get(), ['c'], 'a disabled item does not open');
       s.list.set(['a']);
+      await exit();
       assert.equal(s.refs['panel-a'].textContent, 'Body a', 'the user value moves it');
       assert.deepEqual(s.log, ['a', 'c']);
       // Arrow keys skip what is disabled, and wrap.
@@ -210,7 +231,7 @@ try {
   }
   {
     const s = shared();
-    run(views.multiple, s, () => {
+    await run(views.multiple, s, async () => {
       const { 'trigger-x': x, 'trigger-y': y } = s.refs;
       assert.equal(attr(x, 'aria-expanded'), 'true', 'defaultValue opens it');
       y.click();
@@ -225,7 +246,7 @@ try {
   for (const activate of [false, true]) {
     const s = shared();
     s.flag.set(activate);
-    run(views.tabs, s, () => {
+    await run(views.tabs, s, async () => {
       const { root, list, one, two, three, four } = s.refs;
       assert.equal(attr(root, 'data-orientation'), 'horizontal');
       assert.equal(attr(list, 'role'), 'tablist');
@@ -274,7 +295,7 @@ try {
   }
   {
     const s = shared();
-    run(views.uncontrolledTabs, s, () => {
+    await run(views.uncontrolledTabs, s, async () => {
       const { root, a, b } = s.refs;
       assert.equal(attr(root, 'data-orientation'), 'vertical');
       assert.equal(has(a, 'data-active'), true, 'the first tab is chosen with no value given');
