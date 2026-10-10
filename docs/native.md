@@ -271,6 +271,15 @@ means the same in a stylesheet, an inline `style` and a compiled sheet:
   viewport units, one to four values), `corner-shape`, `border-color`,
   `box-shadow` (outer and `inset` layers), `transform` (2D functions, about the
   node's centre), `filter` and `mask-image` (a gradient).
+- `clip-path` takes `none`, `circle()`, `ellipse()`, `inset()`, `rect()`,
+  `xywh()`, `polygon()` and `path()` (SVG path data, curves and arcs cut into
+  short steps). The shape is in the node's own coordinates, so it turns and
+  scales with the node, and it clips what the node holds and where the pointer
+  reaches it. Lengths are px, `em`, `rem`, viewport units or percentages;
+  `round` takes one pixel length; a radius left out, or `closest-side`, reaches
+  the nearest side. `polygon()` and `path()` take `nonzero` (the default) or
+  `evenodd` first. `farthest-side` and offset-style positions
+  (`at right 10px bottom 20px`) are reported.
 
 - `border` and `border-top`, `-right`, `-bottom` and `-left` take a width
   (`thin`, `medium`, `thick` or a length), a style and a colour in any order.
@@ -282,8 +291,7 @@ means the same in a stylesheet, an inline `style` and a compiled sheet:
 
 A node that loses a declaration gets that field's default back. Paint set
 directly with `element.setProperty('background', brush)` stays over the
-cascade until it is cleared with `null`. `clip-path` is accepted and has no
-effect yet.
+cascade until it is cleared with `null`.
 
 `box-shadow` takes any mix of outer and `inset` layers, the first drawn on
 top. Inset layers are cast inside the padding box, over the background and
@@ -298,7 +306,9 @@ the same native parser a sheet's go through.
 `transition` and `animation` (the shorthands and their longhands) move paint
 and layout properties: colours, `opacity`, `border-radius`, `outline-width`
 and `outline-offset`, `box-shadow`, `transform`, `filter` and same-shaped
-gradients blend; `visibility`, masks and other gradients flip at the midpoint.
+gradients blend, and so do `clip-path` shapes of one kind (same number of
+points for a polygon), a zero length taking the other end's unit; `visibility`,
+masks, other gradients and clips that do not line up flip at the midpoint.
 Colours blend premultiplied, transforms by translation, rotation (the short
 way round), scale and skew, and shadow lists layer by layer. Lengths such as
 `width`, `padding`, `margin`, `gap`, `top` or `flex-basis` blend when both

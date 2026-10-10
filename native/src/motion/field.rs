@@ -67,6 +67,7 @@ pub(crate) enum Field {
     Transform,
     Filter,
     Mask,
+    ClipPath,
     /// A layout property, by its router id; a length's percentage id is its pixel id's slot.
     Layout(i32),
     /// Where a layout animation draws it.
@@ -148,6 +149,7 @@ impl Field {
             PaintWrite::Transform(_) => Field::Transform,
             PaintWrite::Filter(_) => Field::Filter,
             PaintWrite::Mask(_) => Field::Mask,
+            PaintWrite::ClipPath(_) => Field::ClipPath,
         }
     }
 
@@ -178,6 +180,7 @@ impl Field {
             Field::Transform => PaintWrite::Transform(IDENTITY),
             Field::Filter => PaintWrite::Filter(Filter::default()),
             Field::Mask => PaintWrite::Mask(None),
+            Field::ClipPath => PaintWrite::ClipPath(None),
             Field::Layout(slot) => return Write::Layout(slot, Value::Unset),
             Field::Visual => return Write::Visual(None),
         })
@@ -190,7 +193,7 @@ impl Field {
     }
 
     /// The paint slots `all` names, besides every layout one.
-    pub(crate) const ALL: [Field; 17] = [
+    pub(crate) const ALL: [Field; 18] = [
         Field::Background,
         Field::TextColor,
         Field::Opacity,
@@ -208,6 +211,7 @@ impl Field {
         Field::Transform,
         Field::Filter,
         Field::Mask,
+        Field::ClipPath,
     ];
 }
 
@@ -238,6 +242,7 @@ pub(crate) fn fields_of(property: &str) -> Vec<Field> {
         "transform" => &[Field::Transform],
         "filter" => &[Field::Filter],
         "mask-image" | "-webkit-mask-image" => &[Field::Mask],
+        "clip-path" => &[Field::ClipPath],
         _ => &[],
     };
     if !paint.is_empty() {

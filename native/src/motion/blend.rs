@@ -5,10 +5,11 @@
 
 use super::field::{Value, Write, non_negative, slot};
 
+use blinc_abi::css::clip_path::Clip;
 use blinc_abi::css::filter::Filter;
 use blinc_abi::css::paint::{Background, PaintWrite};
 use blinc_abi::scene::blinc_core::layer::{Affine2D, Gradient, GradientStop};
-use blinc_abi::scene::blinc_core::{self, Color, Shadow};
+use blinc_abi::scene::blinc_core::{self, ClipLength, ClipPath, Color, Shadow};
 
 fn lerp(a: f32, b: f32, t: f64) -> f32 {
     a + (b - a) * t as f32
@@ -183,6 +184,172 @@ fn background(a: &Background, b: &Background, t: f64) -> Background {
             .unwrap_or_else(|| flip(a, b, t).clone()),
         _ => flip(a, b, t).clone(),
     }
+}
+
+/// A clip length blended with another of its unit; a zero takes the other's, and
+/// pixels against percentages are not a blend.
+fn clip_length(a: ClipLength, b: ClipLength, t: f64) -> Option<ClipLength> {
+    use ClipLength::{Percent, Px};
+    Some(match (a, b) {
+        (Px(x), Px(y)) => Px(lerp(x, y, t)),
+        (Percent(x), Percent(y)) => Percent(lerp(x, y, t)),
+        (Px(x), Percent(y)) if x == 0.0 => Percent(lerp(0.0, y, t)),
+        (Percent(x), Px(y)) if x == 0.0 => Px(lerp(0.0, y, t)),
+        (Px(x), Percent(y)) if y == 0.0 => Px(lerp(x, 0.0, t)),
+        (Percent(x), Px(y)) if y == 0.0 => Percent(lerp(x, 0.0, t)),
+        _ => return None,
+    })
+}
+
+/// Two clip shapes of one kind, blended by their lengths; none for shapes that do not line up.
+fn clip_path(a: &Clip, b: &Clip, t: f64) -> Option<Clip> {
+    if a.even_odd != b.even_odd {
+        return None;
+    }
+    let len = |x, y| clip_length(x, y, t);
+    let pair = |x: (ClipLength, ClipLength), y: (ClipLength, ClipLength)| {
+        Some((len(x.0, y.0)?, len(x.1, y.1)?))
+    };
+    // A radius that reaches the closest side blends with nothing but itself.
+    let radius = |x: Option<ClipLength>, y: Option<ClipLength>| match (x, y) {
+        (None, None) => Some(None),
+        (Some(x), Some(y)) => len(x, y).map(Some),
+        _ => None,
+    };
+    let round = |x: Option<f32>, y: Option<f32>| match (x, y) {
+        (None, None) => None,
+        (x, y) => Some(lerp(x.unwrap_or(0.0), y.unwrap_or(0.0), t)),
+    };
+    let path = match (&a.path, &b.path) {
+        (
+            ClipPath::Circle {
+                radius: rx,
+                center: cx,
+            },
+            ClipPath::Circle {
+                radius: ry,
+                center: cy,
+            },
+        ) => ClipPath::Circle {
+            radius: radius(*rx, *ry)?,
+            center: pair(*cx, *cy)?,
+        },
+        (
+            ClipPath::Ellipse {
+                rx: ax,
+                ry: ay,
+                center: ac,
+            },
+            ClipPath::Ellipse {
+                rx: bx,
+                ry: by,
+                center: bc,
+            },
+        ) => ClipPath::Ellipse {
+            rx: radius(*ax, *bx)?,
+            ry: radius(*ay, *by)?,
+            center: pair(*ac, *bc)?,
+        },
+        (
+            ClipPath::Inset {
+                top: at,
+                right: ar,
+                bottom: ab,
+                left: al,
+                round: aq,
+            },
+            ClipPath::Inset {
+                top: bt,
+                right: br,
+                bottom: bb,
+                left: bl,
+                round: bq,
+            },
+        ) => ClipPath::Inset {
+            top: len(*at, *bt)?,
+            right: len(*ar, *br)?,
+            bottom: len(*ab, *bb)?,
+            left: len(*al, *bl)?,
+            round: round(*aq, *bq),
+        },
+        (
+            ClipPath::Rect {
+                top: at,
+                right: ar,
+                bottom: ab,
+                left: al,
+                round: aq,
+            },
+            ClipPath::Rect {
+                top: bt,
+                right: br,
+                bottom: bb,
+                left: bl,
+                round: bq,
+            },
+        ) => ClipPath::Rect {
+            top: len(*at, *bt)?,
+            right: len(*ar, *br)?,
+            bottom: len(*ab, *bb)?,
+            left: len(*al, *bl)?,
+            round: round(*aq, *bq),
+        },
+        (
+            ClipPath::Xywh {
+                x: ax,
+                y: ay,
+                w: aw,
+                h: ah,
+                round: aq,
+            },
+            ClipPath::Xywh {
+                x: bx,
+                y: by,
+                w: bw,
+                h: bh,
+                round: bq,
+            },
+        ) => ClipPath::Xywh {
+            x: len(*ax, *bx)?,
+            y: len(*ay, *by)?,
+            w: len(*aw, *bw)?,
+            h: len(*ah, *bh)?,
+            round: round(*aq, *bq),
+        },
+        (ClipPath::Polygon { points: ap }, ClipPath::Polygon { points: bp })
+            if ap.len() == bp.len() =>
+        {
+            ClipPath::Polygon {
+                points: ap
+                    .iter()
+                    .zip(bp)
+                    .map(|(x, y)| pair(*x, *y))
+                    .collect::<Option<_>>()?,
+            }
+        }
+        (ClipPath::Path { vertices: av }, ClipPath::Path { vertices: bv })
+            if av.len() == bv.len() =>
+        {
+            // The vertex that parts two rings stays one.
+            let part = |v: &(f32, f32)| v.0 >= 1e29;
+            ClipPath::Path {
+                vertices: av
+                    .iter()
+                    .zip(bv)
+                    .map(|(x, y)| match (part(x), part(y)) {
+                        (true, true) => Some(*x),
+                        (false, false) => Some((lerp(x.0, y.0, t), lerp(x.1, y.1, t))),
+                        _ => None,
+                    })
+                    .collect::<Option<_>>()?,
+            }
+        }
+        _ => return None,
+    };
+    Some(Clip {
+        path,
+        even_odd: a.even_odd,
+    })
 }
 
 fn flip<'a, T>(a: &'a T, b: &'a T, t: f64) -> &'a T {
@@ -361,6 +528,12 @@ fn blend_paint(a: &PaintWrite, b: &PaintWrite, t: f64) -> PaintWrite {
         (W::Transform(x), W::Transform(y)) => W::Transform(transform(x, y, t)),
         (W::Filter(x), W::Filter(y)) => W::Filter(filter(x, y, t)),
         (W::Mask(x), W::Mask(y)) => W::Mask(flip(x, y, t).clone()),
+        (W::ClipPath(x), W::ClipPath(y)) => W::ClipPath(
+            x.as_ref()
+                .zip(y.as_ref())
+                .and_then(|(x, y)| clip_path(x, y, t))
+                .or_else(|| flip(x, y, t).clone()),
+        ),
         _ => b.clone(),
     }
 }
@@ -526,6 +699,169 @@ mod tests {
         assert_eq!(mid.len(), 1);
         assert!((mid[0].color.a - 0.5).abs() < 1e-6);
         assert!((mid[0].offset_y - 1.0).abs() < 1e-6);
+    }
+
+    fn shape(path: ClipPath) -> PaintWrite {
+        PaintWrite::ClipPath(Some(Clip {
+            path,
+            even_odd: false,
+        }))
+    }
+
+    fn clip_of(write: PaintWrite) -> Option<ClipPath> {
+        match write {
+            PaintWrite::ClipPath(c) => c.map(|c| c.path),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn clip_shapes_of_one_kind_blend_their_lengths() {
+        use ClipLength::{Percent, Px};
+        let circle = |r| ClipPath::Circle {
+            radius: Some(r),
+            center: (Percent(50.0), Percent(50.0)),
+        };
+        match clip_of(blend_paint(
+            &shape(circle(Px(0.0))),
+            &shape(circle(Px(100.0))),
+            0.25,
+        )) {
+            Some(ClipPath::Circle { radius, .. }) => assert_eq!(radius, Some(Px(25.0))),
+            other => panic!("{other:?}"),
+        }
+        // A reveal from the right: a zero takes the other side's unit.
+        let inset = |right| ClipPath::Inset {
+            top: Px(0.0),
+            right,
+            bottom: Px(0.0),
+            left: Px(0.0),
+            round: None,
+        };
+        match clip_of(blend_paint(
+            &shape(inset(Percent(100.0))),
+            &shape(inset(Px(0.0))),
+            0.5,
+        )) {
+            Some(ClipPath::Inset { right, round, .. }) => {
+                assert_eq!(right, Percent(50.0));
+                assert_eq!(round, None);
+            }
+            other => panic!("{other:?}"),
+        }
+        let round = |r| ClipPath::Inset {
+            top: Px(0.0),
+            right: Px(0.0),
+            bottom: Px(0.0),
+            left: Px(0.0),
+            round: r,
+        };
+        match clip_of(blend_paint(
+            &shape(round(None)),
+            &shape(round(Some(20.0))),
+            0.5,
+        )) {
+            Some(ClipPath::Inset { round, .. }) => assert_eq!(round, Some(10.0)),
+            other => panic!("{other:?}"),
+        }
+        let triangle = |top: f32| ClipPath::Polygon {
+            points: vec![
+                (Percent(50.0), Percent(top)),
+                (Percent(100.0), Percent(100.0)),
+                (Px(0.0), Percent(100.0)),
+            ],
+        };
+        match clip_of(blend_paint(
+            &shape(triangle(0.0)),
+            &shape(triangle(40.0)),
+            0.5,
+        )) {
+            Some(ClipPath::Polygon { points }) => assert_eq!(points[0].1, Percent(20.0)),
+            other => panic!("{other:?}"),
+        }
+        let path = |x: f32| ClipPath::Path {
+            vertices: vec![(0.0, 0.0), (x, 0.0), (1e30, 1e30), (1.0, 1.0)],
+        };
+        match clip_of(blend_paint(&shape(path(10.0)), &shape(path(30.0)), 0.5)) {
+            Some(ClipPath::Path { vertices }) => {
+                assert_eq!(vertices[1], (20.0, 0.0));
+                assert!(vertices[2].0 >= 1e29, "the ring break stays one");
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn clip_shapes_that_do_not_line_up_flip_at_the_midpoint() {
+        use ClipLength::{Percent, Px};
+        let circle = ClipPath::Circle {
+            radius: Some(Px(10.0)),
+            center: (Percent(50.0), Percent(50.0)),
+        };
+        let inset = ClipPath::Inset {
+            top: Px(1.0),
+            right: Px(1.0),
+            bottom: Px(1.0),
+            left: Px(1.0),
+            round: None,
+        };
+        for (t, wants_circle) in [(0.4, true), (0.6, false)] {
+            let got = clip_of(blend_paint(
+                &shape(circle.clone()),
+                &shape(inset.clone()),
+                t,
+            ));
+            assert_eq!(
+                matches!(got, Some(ClipPath::Circle { .. })),
+                wants_circle,
+                "{t}"
+            );
+        }
+        // Pixels against a nonzero percentage have no common unit.
+        let r = |r| ClipPath::Circle {
+            radius: Some(r),
+            center: (Percent(50.0), Percent(50.0)),
+        };
+        match clip_of(blend_paint(
+            &shape(r(Px(10.0))),
+            &shape(r(Percent(50.0))),
+            0.3,
+        )) {
+            Some(ClipPath::Circle { radius, .. }) => assert_eq!(radius, Some(Px(10.0))),
+            other => panic!("{other:?}"),
+        }
+        // A clip against none, and polygons of different sizes.
+        assert!(
+            clip_of(blend_paint(
+                &shape(circle.clone()),
+                &PaintWrite::ClipPath(None),
+                0.7
+            ))
+            .is_none()
+        );
+        let two = ClipPath::Polygon {
+            points: vec![(Px(0.0), Px(0.0)), (Px(1.0), Px(1.0))],
+        };
+        let one = ClipPath::Polygon {
+            points: vec![(Px(0.0), Px(0.0))],
+        };
+        assert!(matches!(
+            clip_of(blend_paint(&shape(two), &shape(one), 0.2)),
+            Some(ClipPath::Polygon { points }) if points.len() == 2
+        ));
+        // A fill rule is not a quantity.
+        let fill = |even_odd| {
+            PaintWrite::ClipPath(Some(Clip {
+                path: ClipPath::Polygon {
+                    points: vec![(Px(0.0), Px(0.0)), (Px(8.0), Px(0.0)), (Px(0.0), Px(8.0))],
+                },
+                even_odd,
+            }))
+        };
+        assert!(matches!(
+            blend_paint(&fill(false), &fill(true), 0.8),
+            PaintWrite::ClipPath(Some(Clip { even_odd: true, .. }))
+        ));
     }
 
     #[test]

@@ -279,12 +279,8 @@ impl PaintStyle<'_> {
             if v.len() != 4 {
                 return Err(error("Expected four corner shapes"));
             }
-            p.corner_shape = CornerShape::new(
-                number(v[0])?,
-                number(v[1])?,
-                number(v[2])?,
-                number(v[3])?,
-            );
+            p.corner_shape =
+                CornerShape::new(number(v[0])?, number(v[1])?, number(v[2])?, number(v[3])?);
         }
         if let Some(v) = self.corner_shape_locked {
             p.corner_shape_locked = v;
@@ -347,7 +343,10 @@ impl PaintStyle<'_> {
             filter.saturate = positive(v.saturate.unwrap_or(1.0))?;
             filter.sepia = unit(v.sepia.unwrap_or(0.0))?;
             filter.blur = positive(v.blur.unwrap_or(0.0))?;
-            if v.drop_shadow.as_ref().is_some_and(|d| d.inset == Some(true)) {
+            if v.drop_shadow
+                .as_ref()
+                .is_some_and(|d| d.inset == Some(true))
+            {
                 return Err(error("A drop shadow cannot be inset"));
             }
             filter.drop_shadow = v.drop_shadow.map(PaintShadow::into_shadow).transpose()?;
@@ -380,6 +379,7 @@ pub(crate) fn apply_paint(
 ) -> std::result::Result<(), &'static str> {
     let mut props = tree.properties(node)?;
     let mut glass = None;
+    let mut even_odd = None;
     for write in writes {
         match write {
             PaintWrite::Background(background) => {
@@ -467,11 +467,18 @@ pub(crate) fn apply_paint(
             PaintWrite::Mask(g) => {
                 props.mask_image = g.clone().map(scene::blinc_core::MaskImage::Gradient);
             }
+            PaintWrite::ClipPath(clip) => {
+                props.clip_path = clip.as_ref().map(|c| c.path.clone());
+                even_odd = Some(clip.as_ref().is_some_and(|c| c.even_odd));
+            }
         }
     }
     tree.set_properties(node, props)?;
     if let Some(effects) = glass {
         tree.set_glass_effects(node, effects)?;
+    }
+    if let Some(rule) = even_odd {
+        tree.set_clip_even_odd(node, rule)?;
     }
     Ok(())
 }

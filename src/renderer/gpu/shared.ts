@@ -39,11 +39,27 @@ export const crossing = tgpu
     return w;
   })
   .$name('crossing');
+/** Whether a winding number is inside: nonzero, or odd when the clip asks for the even-odd rule. */
+export const filled = tgpu
+  .fn(
+    [d.i32, d.f32],
+    d.i32,
+  )((w, evenOdd) => {
+    let inside = 0;
+    if (w !== 0) {
+      inside = 1;
+    }
+    if (evenOdd > 0.5 && w % 2 === 0) {
+      inside = 0;
+    }
+    return inside;
+  })
+  .$name('filled');
 export const polygonCoverage = tgpu
   .fn(
-    [d.vec2f, d.i32, d.i32, d.f32],
+    [d.vec2f, d.i32, d.i32, d.f32, d.f32],
     d.f32,
-  )((q, first, count, aa) => {
+  )((q, first, count, evenOdd, aa) => {
     let distance = d.f32(1e20);
     const s = aa * 0.7;
     let w0 = 0;
@@ -76,21 +92,10 @@ export const polygonCoverage = tgpu
       prev = d.vec2f(v);
       i++;
     }
-    let inside = 0;
-    if (w1 !== 0) {
-      inside++;
-    }
-    if (w2 !== 0) {
-      inside++;
-    }
-    if (w3 !== 0) {
-      inside++;
-    }
-    if (w4 !== 0) {
-      inside++;
-    }
+    const inside =
+      filled(w1, evenOdd) + filled(w2, evenOdd) + filled(w3, evenOdd) + filled(w4, evenOdd);
     let dist = std.sqrt(distance);
-    if (w0 !== 0) {
+    if (filled(w0, evenOdd) !== 0) {
       dist = -dist;
     }
     let cover = 1 - std.smoothstep(-aa, aa, dist);
@@ -118,7 +123,7 @@ export const shapeCoverage = tgpu
     const aa = halfPixel(q);
     let alpha = d.f32(1);
     if (rest.z > 2.5) {
-      alpha = polygonCoverage(q, d.i32(shape.x), d.i32(shape.y), aa);
+      alpha = polygonCoverage(q, d.i32(shape.x), d.i32(shape.y), shape.z, aa);
     } else if (rest.z > 1.5) {
       alpha =
         1 -
