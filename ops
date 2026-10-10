@@ -1,1 +1,1 @@
-{"author":{"id":"a51b5961cc6de343a64125d8eb6a0f965aa434020b9c46ed932a1bbf143eb532"},"ops":[{"type":5,"timestamp":1791630714,"nonce":"Z46dJ9MtW00UR2rOhS5ZGM+BHg0=","added":["perf","area:style"],"removed":null}]}
+{"author":{"id":"a51b5961cc6de343a64125d8eb6a0f965aa434020b9c46ed932a1bbf143eb532"},"ops":[{"type":3,"timestamp":1791630720,"nonce":"e+wrR3PuSvsuctScpTWqGLLTO/Q=","message":"The declaration cache landed as 3ba41e5 (the 0f4df81 above was its SHA before the commit message was amended).","files":null}]}
