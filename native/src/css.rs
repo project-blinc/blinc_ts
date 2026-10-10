@@ -4,10 +4,12 @@
 //! states, and a restyle that applies layout declarations through the
 //! property router and hands paint and text declarations back to JavaScript.
 use crate::layout::{NativeLayout, OwnedLayout};
+use crate::motion::{Context as MotionContext, Motion, Spec};
 use blinc_abi::context::{LayoutContext, Node};
 use blinc_abi::css::cascade::{Element, SheetId, States};
 use blinc_abi::css::layout::{Units, is_layout_property, layout_writes};
-use blinc_abi::css::paint::is_paint_property;
+use blinc_abi::css::paint::{PaintWrite, is_paint_property};
+use blinc_abi::css::quantity::PaintUnits;
 use blinc_abi::css::styled::Styles;
 use blinc_abi::css::{Atom, MediaEnvironment, Severity, compiled, parse};
 use napi::bindgen_prelude::{Either, Uint8Array, Uint32Array};
@@ -30,6 +32,8 @@ pub(crate) struct StyleState {
     resolved: HashMap<u64, Vec<(Atom, String)>>,
     /// The declarations the host reads, as last handed to it.
     sent: HashMap<u64, Vec<(Atom, String)>>,
+    /// Transitions and animations in flight.
+    motion: Motion,
     environment: MediaEnvironment,
     root_font_size: f64,
 }
@@ -43,6 +47,7 @@ impl Default for StyleState {
             elements: HashSet::new(),
             resolved: HashMap::new(),
             sent: HashMap::new(),
+            motion: Motion::default(),
             environment: MediaEnvironment {
                 width: 0.0,
                 height: 0.0,
@@ -124,6 +129,7 @@ pub(crate) fn remove(
         styles.elements.remove(&n.raw());
         styles.resolved.remove(&n.raw());
         styles.sent.remove(&n.raw());
+        styles.motion.forget(n.raw());
     }
     if let Some(parent) = parent {
         styles.styles.children_changed(parent);
@@ -203,6 +209,17 @@ pub struct NativeRestyle {
     pub counts: Uint32Array,
     pub names: Vec<String>,
     pub values: Vec<String>,
+    /// Whether a transition or animation needs a tick now.
+    pub motion: bool,
+}
+
+#[napi(object)]
+pub struct NativeMotionTick {
+    /// Whether a transition or animation still needs a frame.
+    pub active: bool,
+    /// Nodes whose last transition or animation ended: raw ids, low then high word.
+    pub finished: Uint32Array,
+    pub errors: Vec<String>,
 }
 
 fn diagnostics(sheet: &blinc_abi::css::Stylesheet) -> Vec<NativeDiagnostic> {
@@ -411,17 +428,10 @@ impl NativeLayout {
         let mut state = self.owner.styles.borrow_mut();
         let state = &mut *state;
         let mut errors = state.styles.restyle(&mut tree, root.node);
-        let mut painted = Vec::new();
-        for (node, writes) in state.styles.take_paint() {
-            match crate::scene::apply_paint(&mut tree, node, &writes) {
-                Ok(()) => {
-                    painted.extend([(node.raw() & 0xffff_ffff) as u32, (node.raw() >> 32) as u32])
-                }
-                Err(e) => errors.push(format!("paint: {e}")),
-            }
-        }
         let (mut nodes, mut counts, mut names, mut values) =
             (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        let mut specs: HashMap<u64, (Spec, bool)> = HashMap::new();
+        let mut problems = Vec::new();
         for &raw in &state.elements {
             let Ok(node) = tree.node(raw) else { continue };
             let Some(computed) = state.styles.computed(node) else {
@@ -431,8 +441,26 @@ impl NativeLayout {
             if state.resolved.get(&raw).map(Vec::as_slice) == Some(computed.resolved.as_slice()) {
                 continue;
             }
-            state.resolved.insert(raw, computed.resolved.clone());
+            // A node restyled for the first time has all its paint written, not only a change.
+            let first = state
+                .resolved
+                .insert(raw, computed.resolved.clone())
+                .is_none();
             let cascade = state.styles.cascade();
+            let motion = |k: &Atom| {
+                let name = cascade.str(*k);
+                name.starts_with("transition") || name.starts_with("animation")
+            };
+            if state.motion.has(raw) || computed.resolved.iter().any(|(k, _)| motion(k)) {
+                let (spec, found) = Spec::read(
+                    computed
+                        .resolved
+                        .iter()
+                        .map(|(k, v)| (cascade.str(*k), v.as_str())),
+                );
+                problems.extend(found);
+                specs.insert(raw, (spec, first));
+            }
             // What the host still reads: text and the like, not what was applied here.
             let host: Vec<(Atom, String)> = computed
                 .resolved
@@ -457,6 +485,106 @@ impl NativeLayout {
             nodes.extend([(raw & 0xffff_ffff) as u32, (raw >> 32) as u32]);
             counts.push(count);
         }
+        errors.extend(state.motion.unreported(problems));
+        // A node's paint goes through motion, which applies it now or later; so does
+        // a changed transition or animation on a node whose paint did not change.
+        let mut jobs: Vec<(Node, Option<(Spec, bool)>, Vec<PaintWrite>)> = state
+            .styles
+            .take_paint()
+            .into_iter()
+            .map(|(node, writes)| {
+                let spec = specs.remove(&node.raw());
+                (node, spec, writes)
+            })
+            .collect();
+        for (raw, spec) in specs {
+            if let Ok(node) = tree.node(raw) {
+                jobs.push((node, Some(spec), Vec::new()));
+            }
+        }
+        let mut painted = Vec::new();
+        for (node, spec, writes) in jobs {
+            let font_size = state
+                .styles
+                .computed(node)
+                .map_or(state.root_font_size, |c| c.font_size);
+            let context = MotionContext {
+                cascade: state.styles.cascade(),
+                units: PaintUnits {
+                    font_size,
+                    root_font_size: state.root_font_size,
+                    viewport_width: state.environment.width,
+                    viewport_height: state.environment.height,
+                    color: None,
+                    declared: &[],
+                },
+            };
+            let mut problems = Vec::new();
+            let (spec, complete) = match spec {
+                Some((spec, complete)) => (Some(spec), complete),
+                None => (None, true),
+            };
+            let writes =
+                state
+                    .motion
+                    .restyle(node.raw(), spec, writes, complete, &context, &mut problems);
+            errors.extend(state.motion.unreported(problems));
+            if writes.is_empty() {
+                continue;
+            }
+            match crate::scene::apply_paint(&mut tree, node, &writes) {
+                Ok(()) => {
+                    painted.extend([(node.raw() & 0xffff_ffff) as u32, (node.raw() >> 32) as u32])
+                }
+                Err(e) => errors.push(format!("paint: {e}")),
+            }
+        }
+        // A node that gained motion after its first style has not had all its paint written;
+        // have the cascade write it again, which only motion reads.
+        let unbased = state.motion.take_unbased();
+        if !unbased.is_empty() {
+            for &raw in &unbased {
+                if let Ok(node) = tree.node(raw) {
+                    state.styles.repaint(node);
+                }
+            }
+            for error in state.styles.restyle(&mut tree, root.node) {
+                if !errors.contains(&error) {
+                    errors.push(error);
+                }
+            }
+            let mut repainted: HashMap<u64, Vec<PaintWrite>> = state
+                .styles
+                .take_paint()
+                .into_iter()
+                .map(|(node, writes)| (node.raw(), writes))
+                .collect();
+            // A node that declares no paint has none written, and is rebased all the same.
+            for raw in unbased {
+                let Ok(node) = tree.node(raw) else { continue };
+                let writes = repainted.remove(&raw).unwrap_or_default();
+                let units = PaintUnits {
+                    font_size: state
+                        .styles
+                        .computed(node)
+                        .map_or(state.root_font_size, |c| c.font_size),
+                    root_font_size: state.root_font_size,
+                    viewport_width: state.environment.width,
+                    viewport_height: state.environment.height,
+                    color: None,
+                    declared: &[],
+                };
+                let context = MotionContext {
+                    cascade: state.styles.cascade(),
+                    units,
+                };
+                let mut problems = Vec::new();
+                state
+                    .motion
+                    .rebase(node.raw(), &writes, &context, &mut problems);
+                errors.extend(state.motion.unreported(problems));
+            }
+        }
         Ok(NativeRestyle {
             errors,
             restyled: state.styles.last_restyled() as u32,
@@ -465,7 +593,46 @@ impl NativeLayout {
             counts: Uint32Array::new(counts),
             names,
             values,
+            motion: state.motion.pending(),
         })
+    }
+
+    /// Sample every transition and animation at `now` milliseconds and write
+    /// the values. Call it once a frame while it says it is active.
+    #[napi]
+    pub fn css_tick_motion(&self, now: f64) -> Result<NativeMotionTick> {
+        self.owner.check()?;
+        let mut tree = self.owner.tree.borrow_mut();
+        let mut state = self.owner.styles.borrow_mut();
+        let mut errors = Vec::new();
+        for (raw, writes) in state.motion.tick(now) {
+            match tree.node(raw) {
+                Ok(node) => {
+                    if let Err(e) = crate::scene::apply_paint(&mut tree, node, &writes) {
+                        errors.push(format!("motion: {e}"));
+                    }
+                }
+                Err(_) => state.motion.forget(raw),
+            }
+        }
+        let finished = state
+            .motion
+            .take_finished()
+            .into_iter()
+            .flat_map(|raw| [(raw & 0xffff_ffff) as u32, (raw >> 32) as u32])
+            .collect();
+        Ok(NativeMotionTick {
+            active: state.motion.active(),
+            finished: Uint32Array::new(finished),
+            errors,
+        })
+    }
+
+    /// How many transitions and animations of `node` have not ended.
+    #[napi]
+    pub fn css_motion_running(&self, node: &crate::layout::NativeLayoutNode) -> Result<u32> {
+        self.owner.check()?;
+        Ok(self.owner.styles.borrow().motion.running(node.node.raw()) as u32)
     }
 }
 

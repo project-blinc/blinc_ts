@@ -349,6 +349,17 @@ export class HostElement extends HostNode {
       host.styleChanged(this);
     });
   }
+  /**
+   * Resolves when this element's transitions and animations have ended, or
+   * at once when it has none. Styles are applied first, so a class or
+   * attribute set just before has started what it starts: a component sets
+   * `closing`, awaits this, then removes the element.
+   */
+  animationsFinished(): Promise<void> {
+    const { layout, root } = this.host;
+    layout.restyle(root.layoutNode);
+    return layout.motionFinished(this.layoutNode);
+  }
   get firstChild(): HostNode | null {
     return this.#first;
   }

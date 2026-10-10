@@ -15,6 +15,7 @@ mod enum_value;
 mod gpu;
 mod layout;
 mod layout_values;
+mod motion;
 mod reactive;
 mod scene;
 mod scene_values;

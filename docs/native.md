@@ -282,8 +282,8 @@ means the same in a stylesheet, an inline `style` and a compiled sheet:
 
 A node that loses a declaration gets that field's default back. Paint set
 directly with `element.setProperty('background', brush)` stays over the
-cascade until it is cleared with `null`. `clip-path`, `transition` and
-`animation` are accepted and have no effect yet.
+cascade until it is cleared with `null`. `clip-path` is accepted and has no
+effect yet.
 
 `box-shadow` takes any mix of outer and `inset` layers, the first drawn on
 top. Inset layers are cast inside the padding box, over the background and
@@ -292,6 +292,41 @@ same layers as `shadows`, each with `inset: true` for an inner one.
 
 `LayoutNode.setLayoutProperty(name, value)` reads a CSS layout declaration with
 the same native parser a sheet's go through.
+
+### Transitions and animations
+
+`transition` and `animation` (the shorthands and their longhands) move paint
+properties: colours, `opacity`, `border-radius`, `outline-width` and
+`outline-offset`, `box-shadow`, `transform`, `filter` and same-shaped
+gradients blend; `visibility`, masks and other gradients flip at the midpoint.
+Colours blend premultiplied, transforms by translation, rotation (the short
+way round), scale and skew, and shadow lists layer by layer. Layout
+properties do not animate; a transition of one is reported once.
+
+A node's first style is not a change, so nothing runs as it appears. A change
+to a transitioned property runs from the value shown, so a hover that ends
+halfway turns back from where it is. `@keyframes` read their paint
+declarations, with a stop's own `animation-timing-function`, and a property a
+block leaves out at `from` or `to` starts or ends at the node's style. Fill
+modes, delays, iteration counts, directions and `animation-play-state` work as
+CSS has them; `var()` inside a `@keyframes` block is reported as unsupported.
+
+Values are interpolated natively and written to the node, so JavaScript only
+supplies the time. A mounted host ticks every frame and asks for another
+while anything moves; with nothing moving, a frame makes no native call.
+Without a window, advance the clock yourself:
+
+```ts
+element.classList.add('open');
+host.compute(width, height);
+host.layout.tickMotion(performance.now()); // true while anything still moves
+```
+
+`element.animationsFinished()` resolves when the element's transitions and
+animations have ended, or at once when it has none; it restyles first, so an
+attribute set just before has started its animation. That is how a component
+plays an exit: set `closing`, await it, then remove the element. `attachScene`
+and `mount` take `now` to run motion on another clock.
 
 ### Compile-time CSS
 

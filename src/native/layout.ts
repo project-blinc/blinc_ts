@@ -247,7 +247,10 @@ export interface NativeLayout extends BrushFactory {
     counts: Uint32Array;
     names: string[];
     values: string[];
+    motion: boolean;
   };
+  cssTickMotion(now: number): { active: boolean; finished: Uint32Array; errors: string[] };
+  cssMotionRunning(node: NativeLayoutNode): number;
   dispose(): void;
 }
 
@@ -293,6 +296,9 @@ export class Layout {
   readonly #layoutNames = new Map<string, boolean>();
   readonly #restyleListeners = new Set<(restyled: Restyled) => void>();
   #styled = false;
+  /** Whether a tick may have something to do: false lets frames skip the native call. */
+  #motion = false;
+  readonly #motionWaiters = new Map<bigint, (() => void)[]>();
   #shapeTokens: ShapeTokens | null = null;
   #shapeOverride: Partial<ShapeTokens> = {};
   #fullRadius = 9999;
@@ -632,6 +638,7 @@ export class Layout {
   restyle(root: LayoutNode): Restyled {
     this.flush();
     const r = this.#native.cssRestyle(LayoutNode.unwrap(root, this));
+    this.#motion ||= r.motion;
     const nodes = new Map<bigint, [string, string][]>();
     let at = 0;
     for (let i = 0; i < r.counts.length; i++) {
@@ -657,6 +664,61 @@ export class Layout {
     }
     return restyled;
   }
+  /**
+   * Advance transitions and animations to `now`, in milliseconds on any
+   * steady clock, and write their values. True while any still needs
+   * frames, so a host asks for another; it costs no native call when none
+   * has been started.
+   */
+  tickMotion(now: number): boolean {
+    if (!this.#motion) {
+      return false;
+    }
+    const tick = this.#native.cssTickMotion(now);
+    this.#motion = tick.active;
+    for (const error of tick.errors) {
+      console.warn(`CSS: ${error}`);
+    }
+    for (let i = 0; i < tick.finished.length; i += 2) {
+      const id = BigInt(tick.finished[i]!) | (BigInt(tick.finished[i + 1]!) << 32n);
+      const waiting = this.#motionWaiters.get(id);
+      if (waiting) {
+        this.#motionWaiters.delete(id);
+        for (const resolve of waiting) {
+          resolve();
+        }
+      }
+    }
+    return tick.active;
+  }
+
+  /**
+   * Resolves when the node's transitions and animations have ended, or it is
+   * removed; at once when it has none. Restyle first, so a class or attribute
+   * set just before has started what it starts.
+   */
+  motionFinished(node: LayoutNode): Promise<void> {
+    if (this.#native.cssMotionRunning(LayoutNode.unwrap(node, this)) === 0) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      const waiting = this.#motionWaiters.get(node.id);
+      if (waiting) {
+        waiting.push(resolve);
+      } else {
+        this.#motionWaiters.set(node.id, [resolve]);
+      }
+      this.#motion = true;
+    });
+  }
+
+  /** @internal A node and its descendants are gone; whoever waited on their motion is told at the next tick. */
+  motionRemoved(): void {
+    if (this.#motionWaiters.size > 0) {
+      this.#motion = true;
+    }
+  }
+
   /** @internal Something the cascade reads changed. */
   markStyled(): void {
     this.#markStyled();
@@ -852,6 +914,7 @@ export class LayoutNode implements QueuedNode {
   /** @internal Queue removing this node and its descendants. */
   queueRemove(): void {
     this.#layout.queue().remove(this);
+    this.#layout.motionRemoved();
   }
 
   /** Merge the supplied style fields; omitted fields retain their values. */
@@ -943,6 +1006,7 @@ export class LayoutNode implements QueuedNode {
   remove(): void {
     this.#layout.flush();
     this.#native.remove();
+    this.#layout.motionRemoved();
     this.#layout.changed('layout');
   }
 }

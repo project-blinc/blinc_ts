@@ -201,12 +201,36 @@ try {
   box.setProperty('height', 40);
   box.setProperty('background', '#ff8800');
   box.appendChild(mounted.createTextNode('Mounted'));
-  mounted.mount(window, { scope });
+  mounted.layout.addStyleSheet(
+    '.fading { transition: opacity 100ms linear } .fading.out { opacity: 0 }',
+  );
+  const fading = mounted.root.appendChild(mounted.createElement('div'));
+  fading.setAttribute('class', 'fading');
+  // A clock that moves 10ms a frame, so the transition takes about ten.
+  let clock = 0;
+  mounted.mount(window, { scope, now: () => (clock += 10) });
   await waitFor(() => window.frames > 0 && window.stats?.primitives > 1, 'First mounted frame');
   assert.equal(box.bounds()[2], 160);
   const frames = window.frames;
   box.setProperty('height', 60);
   await waitFor(() => window.frames > frames, 'An edit redraws');
+
+  // A transition draws frames by itself until it ends, then the window is idle again.
+  const beforeFade = window.frames;
+  fading.classList.add('out');
+  await Promise.race([
+    fading.animationsFinished(),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('the transition stalled without frames')), 3000),
+    ),
+  ]);
+  assert.ok(
+    window.frames >= beforeFade + 8,
+    `${window.frames - beforeFade} frames for a 100ms fade`,
+  );
+  const settled = window.frames;
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.ok(window.frames <= settled + 1, 'no frames once it has ended');
   scope.dispose();
   assert.equal(mounted.layout.disposed, true);
   assert.equal(window.stats, undefined);
@@ -215,4 +239,4 @@ try {
   window.dispose();
   await window.closed;
 }
-console.log('Native host: window mount and scope unmount passed');
+console.log('Native host: window mount, transition frames and scope unmount passed');

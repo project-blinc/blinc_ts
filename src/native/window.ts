@@ -8,7 +8,10 @@ export interface NativeWindowOptions extends window.WindowAttributes {
 }
 
 /** Scene presentation options; the window supplies dimensions and display scale. */
-export type WindowSceneOptions = Omit<RenderOptions, 'width' | 'height' | 'scale'>;
+export type WindowSceneOptions = Omit<RenderOptions, 'width' | 'height' | 'scale'> & {
+  /** Milliseconds on a steady clock, which transitions and animations run on; `performance.now` by default. */
+  now?: () => number;
+};
 type Paint = (
   encoder: gpu.GpuEncoder,
   target: gpu.GpuTextureView,
@@ -251,6 +254,7 @@ export class NativeWindowHost {
     LayoutNode.unwrap(root, layout);
     const renderer = new SceneRenderer(state.device, layout, state.format);
     const render: RenderOptions = { ...options, width: 0, height: 0, scale: 1 };
+    const clock = options.now ?? (() => performance.now());
     let needsLayout = true;
     let width = -1,
       height = -1,
@@ -265,10 +269,16 @@ export class NativeWindowHost {
           height = h;
           scale = ratio;
         }
+        // After layout, which restyles and may have started a transition; before encoding, which draws it.
+        const time = clock();
+        const moving = layout.tickMotion(time);
         render.width = w;
         render.height = h;
         render.scale = ratio;
         this.#stats = renderer.encode(encoder, root, target, render);
+        if (moving) {
+          this.requestFrame();
+        }
       },
       () => {
         unsubscribe();
