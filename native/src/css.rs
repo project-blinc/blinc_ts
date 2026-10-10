@@ -770,9 +770,11 @@ impl NativeLayout {
         let mut errors = Vec::new();
         let mut layout = false;
         let frame = {
+            // One view for the frame, so nodes under the same ancestors share the walk to them.
             let tree = &*tree;
+            let mut view = tree.view().map_err(error)?;
             state.motion.tick(now, |raw| {
-                tree.node(raw).and_then(|n| tree.in_view(n)).unwrap_or(true)
+                tree.node(raw).and_then(|n| view.in_view(n)).unwrap_or(true)
             })
         };
         for (raw, writes) in frame.writes {

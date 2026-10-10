@@ -616,7 +616,7 @@ impl Motion {
     /// what it would draw there is not written, and asks for no frames: only for
     /// a wake when it ends. Layout is written wherever it is, since it moves
     /// what is in view. `in_view` says whether a node's box is on screen.
-    pub(crate) fn tick(&mut self, now: f64, in_view: impl Fn(u64) -> bool) -> Frame {
+    pub(crate) fn tick(&mut self, now: f64, mut in_view: impl FnMut(u64) -> bool) -> Frame {
         let mut frame = Frame {
             writes: Vec::new(),
             drawing: false,
