@@ -296,12 +296,16 @@ the same native parser a sheet's go through.
 ### Transitions and animations
 
 `transition` and `animation` (the shorthands and their longhands) move paint
-properties: colours, `opacity`, `border-radius`, `outline-width` and
-`outline-offset`, `box-shadow`, `transform`, `filter` and same-shaped
+and layout properties: colours, `opacity`, `border-radius`, `outline-width`
+and `outline-offset`, `box-shadow`, `transform`, `filter` and same-shaped
 gradients blend; `visibility`, masks and other gradients flip at the midpoint.
 Colours blend premultiplied, transforms by translation, rotation (the short
-way round), scale and skew, and shadow lists layer by layer. Layout
-properties do not animate; a transition of one is reported once.
+way round), scale and skew, and shadow lists layer by layer. Lengths such as
+`width`, `padding`, `margin`, `gap`, `top` or `flex-basis` blend when both
+ends are in pixels or both in percentages, and the box is laid out at each
+value between, so what follows it moves with it; `auto`, or pixels against a
+percentage, flips at the midpoint, and a size never goes below zero. A
+property that is not a quantity, such as `display`, is reported once.
 
 A node's first style is not a change, so nothing runs as it appears. A change
 to a transitioned property runs from the value shown, so a hover that ends

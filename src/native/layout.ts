@@ -249,7 +249,12 @@ export interface NativeLayout extends BrushFactory {
     values: string[];
     motion: boolean;
   };
-  cssTickMotion(now: number): { active: boolean; finished: Uint32Array; errors: string[] };
+  cssTickMotion(now: number): {
+    active: boolean;
+    layout: boolean;
+    finished: Uint32Array;
+    errors: string[];
+  };
   cssMotionRunning(node: NativeLayoutNode): number;
   dispose(): void;
 }
@@ -668,7 +673,8 @@ export class Layout {
    * Advance transitions and animations to `now`, in milliseconds on any
    * steady clock, and write their values. True while any still needs
    * frames, so a host asks for another; it costs no native call when none
-   * has been started.
+   * has been started. One that moved layout reports a `layout` change, so
+   * compute before drawing.
    */
   tickMotion(now: number): boolean {
     if (!this.#motion) {
@@ -676,6 +682,10 @@ export class Layout {
     }
     const tick = this.#native.cssTickMotion(now);
     this.#motion = tick.active;
+    if (tick.layout) {
+      // A transitioned size or place: lay out again before drawing.
+      this.changed('layout');
+    }
     for (const error of tick.errors) {
       console.warn(`CSS: ${error}`);
     }

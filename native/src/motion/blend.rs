@@ -1,6 +1,9 @@
-//! Values between two paint writes of one field. Colours blend premultiplied,
+//! Values between two writes of one field. Colours blend premultiplied,
 //! transforms by their translation, rotation, scale and skew, shadow lists by
-//! position; what has no between flips at the midpoint.
+//! position, layout lengths of one unit in a line; what has no between flips
+//! at the midpoint.
+
+use super::field::{Value, Write, non_negative, slot};
 
 use blinc_abi::css::filter::Filter;
 use blinc_abi::css::paint::{Background, PaintWrite};
@@ -290,7 +293,28 @@ fn filter(a: &Filter, b: &Filter, t: f64) -> Filter {
 
 /// The write `t` of the way from `a` to `b`, two writes of one field; `b`
 /// when they are not.
-pub(crate) fn blend(a: &PaintWrite, b: &PaintWrite, t: f64) -> PaintWrite {
+pub(crate) fn blend(a: &Write, b: &Write, t: f64) -> Write {
+    match (a, b) {
+        (Write::Paint(x), Write::Paint(y)) => Write::Paint(blend_paint(x, y, t)),
+        (Write::Layout(i, Value::Number(x)), Write::Layout(j, Value::Number(y)))
+            if i == j && x.is_finite() && y.is_finite() =>
+        {
+            let v = lerp(*x, *y, t);
+            Write::Layout(
+                *i,
+                Value::Number(if non_negative(slot(*i)) {
+                    v.max(0.0)
+                } else {
+                    v
+                }),
+            )
+        }
+        // `auto`, a keyword, or pixels against a percentage.
+        _ => flip(a, b, t).clone(),
+    }
+}
+
+fn blend_paint(a: &PaintWrite, b: &PaintWrite, t: f64) -> PaintWrite {
     use PaintWrite as W;
     match (a, b) {
         (W::Background(x), W::Background(y)) => W::Background(background(x, y, t)),
@@ -343,7 +367,15 @@ pub(crate) fn blend(a: &PaintWrite, b: &PaintWrite, t: f64) -> PaintWrite {
 
 /// A write as numbers that blend in a straight line, to measure how fast a
 /// field moves; none for one that does not, such as a gradient or a mask.
-pub(crate) fn vector(write: &PaintWrite) -> Option<Vec<f32>> {
+pub(crate) fn vector(write: &Write) -> Option<Vec<f32>> {
+    match write {
+        Write::Paint(paint) => vector_paint(paint),
+        Write::Layout(_, Value::Number(v)) if v.is_finite() => Some(vec![*v]),
+        Write::Layout(..) => None,
+    }
+}
+
+fn vector_paint(write: &PaintWrite) -> Option<Vec<f32>> {
     use PaintWrite as W;
     let rgba = |c: Color| [c.r * c.a, c.g * c.a, c.b * c.a, c.a];
     let shadow = |s: &Shadow| {
@@ -376,7 +408,22 @@ pub(crate) fn vector(write: &PaintWrite) -> Option<Vec<f32>> {
 }
 
 /// Whether two writes set a slot to the same value.
-pub(crate) fn same(a: &PaintWrite, b: &PaintWrite) -> bool {
+pub(crate) fn same(a: &Write, b: &Write) -> bool {
+    match (a, b) {
+        (Write::Paint(x), Write::Paint(y)) => same_paint(x, y),
+        (Write::Layout(i, x), Write::Layout(j, y)) => {
+            i == j
+                && match (x, y) {
+                    // auto against auto.
+                    (Value::Number(x), Value::Number(y)) => x == y || (x.is_nan() && y.is_nan()),
+                    _ => x == y,
+                }
+        }
+        _ => false,
+    }
+}
+
+fn same_paint(a: &PaintWrite, b: &PaintWrite) -> bool {
     use PaintWrite as W;
     match (a, b) {
         (W::Opacity(x), W::Opacity(y)) => x == y,
@@ -485,11 +532,45 @@ mod tests {
     fn a_pair_that_cannot_blend_flips_at_the_midpoint() {
         let a = PaintWrite::Mask(None);
         let b = PaintWrite::Visible(false);
-        assert!(matches!(blend(&a, &b, 0.3), PaintWrite::Visible(false)));
-        let shown = blend(&PaintWrite::Visible(true), &PaintWrite::Visible(false), 0.5);
+        assert!(matches!(
+            blend_paint(&a, &b, 0.3),
+            PaintWrite::Visible(false)
+        ));
+        let shown = blend_paint(&PaintWrite::Visible(true), &PaintWrite::Visible(false), 0.5);
         assert!(matches!(shown, PaintWrite::Visible(true)));
-        let gone = blend(&PaintWrite::Visible(true), &PaintWrite::Visible(false), 1.0);
+        let gone = blend_paint(&PaintWrite::Visible(true), &PaintWrite::Visible(false), 1.0);
         assert!(matches!(gone, PaintWrite::Visible(false)));
+    }
+
+    #[test]
+    fn layout_lengths_of_one_unit_blend_and_others_flip() {
+        use blinc_abi::css::layout::id;
+        let px = |v: f32| Write::Layout(id::WIDTH, Value::Number(v));
+        let Write::Layout(_, Value::Number(mid)) = blend(&px(100.0), &px(200.0), 0.25) else {
+            panic!("a length");
+        };
+        assert_eq!(mid, 125.0);
+        let Write::Layout(_, Value::Number(floor)) = blend(&px(10.0), &px(100.0), -0.5) else {
+            panic!("a length");
+        };
+        assert_eq!(floor, 0.0, "a width overshooting below zero stops there");
+        let margin = |v: f32| Write::Layout(id::MARGIN_TOP, Value::Number(v));
+        let Write::Layout(_, Value::Number(m)) = blend(&margin(10.0), &margin(100.0), -0.5) else {
+            panic!("a length");
+        };
+        assert_eq!(m, -35.0, "a margin can go negative");
+        let percent = Write::Layout(id::WIDTH_PERCENT, Value::Number(0.5));
+        assert!(matches!(
+            blend(&px(100.0), &percent, 0.4),
+            Write::Layout(id::WIDTH, _)
+        ));
+        assert!(matches!(
+            blend(&px(100.0), &percent, 0.6),
+            Write::Layout(id::WIDTH_PERCENT, _)
+        ));
+        let auto = Write::Layout(id::WIDTH, Value::Number(f32::NAN));
+        assert!(same(&auto, &auto.clone()));
+        assert!(!same(&auto, &px(1.0)));
     }
 
     #[test]

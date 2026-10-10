@@ -63,12 +63,16 @@ const css = `
 .dialog { left: 140px; top: 100px; background: #ff0000; }
 .dialog[closing] { animation: shrink 100ms linear forwards; }
 @keyframes shrink { from { opacity: 1; } to { opacity: 0; } }
-#wide { left: 260px; top: 100px; background: #ff0000; transition: width 100ms linear; }
-#wide.on { width: 40px; }
+#wide { left: 260px; top: 100px; background: #ff0000; transition: display 100ms linear; }
+#wide.on { display: none; }
 #missing { left: 380px; top: 100px; }
 #missing.go { animation: nowhere 100ms; }
 #themed { left: 20px; top: 180px; background: #000000; }
 #themed.go { animation: themed 100ms linear forwards; }
+#row { position: absolute; left: 140px; top: 180px; flex-direction: row; }
+#grow { width: 40px; height: 20px; background: #ff0000; transition: width 100ms linear; }
+#grow.on { width: 140px; }
+#after { width: 20px; height: 20px; background: #0000ff; }
 @keyframes themed { from { background: var(--from); } to { background: #000000; } }
 `;
 
@@ -95,6 +99,15 @@ try {
   const wide = make('wide');
   const missing = make('missing');
   const themed = make('themed');
+  const row = host.createElement('div');
+  row.setAttribute('id', 'row');
+  host.root.appendChild(row);
+  const grow = host.createElement('div');
+  grow.setAttribute('id', 'grow');
+  const after = host.createElement('div');
+  after.setAttribute('id', 'after');
+  row.appendChild(grow);
+  row.appendChild(after);
 
   const at = (pixels, node, dx, dy) => {
     const [x, y] = node.bounds();
@@ -220,6 +233,31 @@ try {
     `after the switch it is halfway from the new colour: ${await themedAt(6050)}`,
   );
 
+  // A width transitions through layout: the box is laid out at the width between, and what
+  // follows it moves with it.
+  host.compute(W, H);
+  const [, , startWidth] = grow.bounds();
+  assert.equal(startWidth, 40);
+  grow.classList.add('on');
+  host.compute(W, H);
+  assert.equal(grow.bounds()[2], 40, 'held at the old width until the clock moves');
+  host.layout.tickMotion(7000);
+  host.layout.tickMotion(7050);
+  host.compute(W, H);
+  assert.equal(grow.bounds()[2], 90, `halfway: ${grow.bounds()[2]}`);
+  assert.equal(after.bounds()[0], grow.bounds()[0] + 90, 'its sibling is laid out after it');
+  const midway = await capture(host, 'width');
+  assert.ok(near(at(midway, after, 10, 10), [0, 0, 255]), 'and drawn there');
+  // Restyled for another reason mid-flight, the run goes on rather than starting again.
+  after.setAttribute('style', 'width: 24px');
+  host.compute(W, H);
+  host.layout.tickMotion(7075);
+  host.compute(W, H);
+  assert.equal(grow.bounds()[2], 115);
+  host.layout.tickMotion(7100);
+  host.compute(W, H);
+  assert.equal(grow.bounds()[2], 140);
+
   // What motion cannot do is said once, not on every restyle.
   missing.classList.add('go');
   wide.classList.add('on');
@@ -229,9 +267,9 @@ try {
   wide.classList.add('on');
   host.compute(W, H);
   assert.equal(
-    errors.filter((e) => /transition of "width"/.test(e)).length,
+    errors.filter((e) => /transition of "display"/.test(e)).length,
     1,
-    `a layout transition is reported once: ${errors}`,
+    `a transition of a keyword is reported once: ${errors}`,
   );
   assert.equal(
     errors.filter((e) => /no @keyframes/.test(e) && /nowhere/.test(e)).length,

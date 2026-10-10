@@ -17,6 +17,8 @@ pub(crate) struct Transition {
     pub(crate) duration: f64,
     pub(crate) delay: f64,
     pub(crate) timing: Timing,
+    /// The slots a named property sets, read once.
+    pub(crate) fields: Vec<Field>,
 }
 
 impl Transition {
@@ -28,7 +30,7 @@ impl Transition {
     pub(crate) fn covers(&self, field: Field) -> bool {
         match &self.property {
             Property::All => field.blends(),
-            Property::Named(name) => fields_of(name).contains(&field),
+            Property::Named(_) => self.fields.contains(&field),
         }
     }
 }
@@ -98,20 +100,30 @@ impl Spec {
                 found.take(name, value.trim());
             }
         }
-        let spec = Spec {
+        let mut spec = Spec {
             transitions: found.transitions(&mut problems),
             animations: found.animations(&mut problems),
         };
-        for t in &spec.transitions {
+        for t in &mut spec.transitions {
             if let Property::Named(name) = &t.property {
-                if fields_of(name).is_empty() {
+                t.fields = fields_of(name);
+                if t.fields.is_empty() {
                     problems.push(format!(
-                        "transition of \"{name}\" has no effect: only paint properties animate"
+                        "transition of \"{name}\" has no effect: it is not a quantity motion can move"
                     ));
                 }
             }
         }
         (spec, problems)
+    }
+
+    /// Whether it may move layout: it transitions a layout property, or animates.
+    pub(crate) fn moves_layout(&self) -> bool {
+        !self.animations.is_empty()
+            || self.transitions.iter().any(|t| match t.property {
+                Property::All => true,
+                Property::Named(_) => t.fields.iter().any(|f| matches!(f, Field::Layout(_))),
+            })
     }
 }
 
@@ -252,6 +264,7 @@ impl<'a> Found<'a> {
                     } else {
                         timings[i % timings.len()].clone()
                     },
+                    fields: Vec::new(),
                 })
             })
             .collect()
@@ -472,6 +485,7 @@ fn transition_item(item: &str) -> Result<Option<Transition>, String> {
         duration: 0.0,
         delay: 0.0,
         timing: Timing::EASE,
+        fields: Vec::new(),
     };
     let (mut times, mut named) = (0, false);
     for word in words(item) {
@@ -595,10 +609,11 @@ mod tests {
     fn none_ends_the_list_and_a_layout_property_is_reported() {
         let (spec, _) = read(&[("transition", "none")]);
         assert!(spec.is_empty());
-        let (spec, problems) = read(&[("transition", "width 200ms, opacity 200ms")]);
+        let (spec, problems) = read(&[("transition", "width 200ms, display 200ms")]);
         assert_eq!(spec.transitions.len(), 2);
-        assert_eq!(problems.len(), 1);
-        assert!(problems[0].contains("width"), "{problems:?}");
+        assert_eq!(problems.len(), 1, "a length moves; a keyword does not");
+        assert!(problems[0].contains("display"), "{problems:?}");
+        assert!(spec.moves_layout());
     }
 
     #[test]

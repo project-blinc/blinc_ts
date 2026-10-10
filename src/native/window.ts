@@ -296,6 +296,11 @@ export class NativeWindowHost {
         // After layout, which restyles and may have started a transition; before encoding, which draws it.
         const time = clock();
         const moving = layout.tickMotion(time);
+        // A transitioned size or place reported a layout change: lay out what it moved.
+        if (needsLayout) {
+          needsLayout = false;
+          layout.compute(root, w / ratio, h / ratio);
+        }
         render.width = w;
         render.height = h;
         render.scale = ratio;

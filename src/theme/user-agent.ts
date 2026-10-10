@@ -26,8 +26,7 @@
  * summary's `.marker`) are children the component supplies.
  *
  * Type metrics have fallbacks, since an unresolved one stops layout. It only
- * declares what has an effect: transitions and animations are of paint
- * properties. Tags are flex rows by default, so containers that stack their
+ * declares what has an effect. Tags are flex rows by default, so containers that stack their
  * children are set to columns here, and margins are half a browser's
  * because flex siblings do not collapse them.
  */
@@ -267,7 +266,7 @@ input[type="range"][data-orientation="vertical"] > :is(.fill, .rest) { width: 4p
 input[type="range"][data-orientation="vertical"] > .fill { border-radius: 0 0 var(--radius-full) var(--radius-full); }
 input[type="range"][data-orientation="vertical"] > .rest { border-radius: var(--radius-full) var(--radius-full) 0 0; }
 
-/* Progress and meters: a track, filled to the value. */
+/* Progress and meters: a track, filled to the value, easing to a new one. */
 progress, meter {
   flex-direction: row;
   width: 160px;
@@ -276,7 +275,11 @@ progress, meter {
   background: var(--border);
   overflow: hidden;
 }
-progress > .bar, meter > .bar { height: 100%; border-radius: var(--radius-full); transition: background ${STATE}; }
+progress > .bar, meter > .bar {
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width var(--duration-normal) var(--ease-out), background ${STATE};
+}
 progress > .bar { background: var(--primary); }
 progress:indeterminate > .bar {
   width: 30%;

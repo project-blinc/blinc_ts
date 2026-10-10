@@ -1,14 +1,16 @@
 //! A `@keyframes` block read into typed stops.
 
 use super::Context;
+use super::field::{Value, Write};
 use super::timing::Timing;
-use blinc_abi::css::paint::{PaintWrite, is_paint_property, paint_writes};
+use blinc_abi::css::layout::{Units, is_layout_property, layout_writes};
+use blinc_abi::css::paint::{is_paint_property, paint_writes};
 
 /// What the block sets at one offset.
 pub(crate) struct Stop {
     /// 0 to 1.
     pub(crate) offset: f64,
-    pub(crate) writes: Vec<PaintWrite>,
+    pub(crate) writes: Vec<Write>,
     /// The curve from this stop to the next, when the block names one.
     pub(crate) timing: Option<Timing>,
 }
@@ -24,6 +26,12 @@ pub(crate) fn read(
     let (sheet, block) = context.cascade.keyframes(name)?;
     let mut stops = Vec::new();
     let mut variables = false;
+    let units = Units {
+        font_size: context.units.font_size,
+        root_font_size: context.units.root_font_size,
+        viewport_width: context.units.viewport_width,
+        viewport_height: context.units.viewport_height,
+    };
     for frame in sheet.keyframe_list(block) {
         let mut writes = Vec::new();
         let mut timing = None;
@@ -46,16 +54,24 @@ pub(crate) fn read(
                         "@keyframes {name}: \"{value}\" is not a timing function"
                     )),
                 }
-            } else if !is_paint_property(property) {
-                problems.push(format!(
-                    "@keyframes {name}: \"{property}\" is not animated: only paint properties are"
-                ));
-            } else {
+            } else if is_paint_property(property) {
                 match paint_writes(property, Some(value), &context.units) {
-                    Some(Ok(w)) => writes.extend(w),
+                    Some(Ok(w)) => writes.extend(w.into_iter().map(Write::Paint)),
                     Some(Err(e)) => problems.push(format!("@keyframes {name}: {property}: {e}")),
                     None => {}
                 }
+            } else if is_layout_property(property) {
+                match layout_writes(property, Some(value), &units) {
+                    Some(Ok(w)) => {
+                        writes.extend(w.iter().map(|(id, v)| Write::Layout(*id, Value::of(v))))
+                    }
+                    Some(Err(e)) => problems.push(format!("@keyframes {name}: {property}: {e}")),
+                    None => {}
+                }
+            } else {
+                problems.push(format!(
+                    "@keyframes {name}: \"{property}\" is neither paint nor layout"
+                ));
             }
         }
         for &offset in sheet.keyframe_offsets(frame) {

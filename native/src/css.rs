@@ -4,13 +4,13 @@
 //! states, and a restyle that applies layout declarations through the
 //! property router and hands paint and text declarations back to JavaScript.
 use crate::layout::{NativeLayout, OwnedLayout};
-use crate::motion::{Context as MotionContext, Motion, Spec};
-use blinc_abi::context::{LayoutContext, Node};
+use crate::motion::{Context as MotionContext, Motion, Spec, Value, Write};
+use blinc_abi::context::{LayoutContext, Node, PropValue};
 use blinc_abi::css::cascade::{Element, SheetId, States};
 use blinc_abi::css::layout::{Units, is_layout_property, layout_writes};
-use blinc_abi::css::paint::{PaintWrite, is_paint_property};
+use blinc_abi::css::paint::is_paint_property;
 use blinc_abi::css::quantity::PaintUnits;
-use blinc_abi::css::styled::Styles;
+use blinc_abi::css::styled::{Host, Styles};
 use blinc_abi::css::{Atom, MediaEnvironment, Severity, compiled, parse};
 use napi::bindgen_prelude::{Either, Uint8Array, Uint32Array};
 use napi::{Error, Result, Status};
@@ -74,6 +74,78 @@ impl StyleState {
     pub(crate) fn set_states(&mut self, node: Node, states: u32) {
         self.styles.set_states(node, States(states));
     }
+}
+
+/// The tree as a restyle writes layout to it, with the layout writes of
+/// nodes whose motion moves layout held back for it.
+struct Restyling<'a> {
+    tree: &'a mut LayoutContext,
+    motion: &'a Motion,
+    held: &'a mut HashMap<u64, Vec<Write>>,
+}
+
+impl Host for Restyling<'_> {
+    fn live(&self, node: u64) -> bool {
+        Host::live(&*self.tree, node)
+    }
+    fn parent(&self, node: u64) -> Option<u64> {
+        Host::parent(&*self.tree, node)
+    }
+    fn children(&self, node: u64) -> Vec<u64> {
+        Host::children(&*self.tree, node)
+    }
+    fn apply_layout(
+        &mut self,
+        node: u64,
+        writes: &[(i32, PropValue<'_>)],
+    ) -> std::result::Result<(), &'static str> {
+        if !self.motion.moves_layout(node) {
+            return Host::apply_layout(&mut *self.tree, node, writes);
+        }
+        self.held.entry(node).or_default().extend(
+            writes
+                .iter()
+                .map(|(id, value)| Write::Layout(*id, Value::of(value))),
+        );
+        Ok(())
+    }
+    fn context(&self) -> Option<u64> {
+        Host::context(&*self.tree)
+    }
+}
+
+/// What applying motion's writes to a node touched.
+#[derive(Default)]
+struct Applied {
+    paint: bool,
+    layout: bool,
+}
+
+/// Motion's writes for `node`: paint to its properties, layout through the property router.
+fn apply_writes(
+    tree: &mut LayoutContext,
+    node: Node,
+    writes: Vec<Write>,
+) -> std::result::Result<Applied, String> {
+    let mut paint = Vec::with_capacity(writes.len());
+    let mut layout = Vec::new();
+    for write in writes {
+        match write {
+            Write::Paint(p) => paint.push(p),
+            Write::Layout(id, value) => layout.push((id, value)),
+        }
+    }
+    if !paint.is_empty() {
+        crate::scene::apply_paint(tree, node, &paint).map_err(|e| format!("paint: {e}"))?;
+    }
+    if !layout.is_empty() {
+        let staged: Vec<_> = layout.iter().map(|(id, v)| (node, *id, v.prop())).collect();
+        tree.apply(&staged).map_err(|e| format!("layout: {e}"))?;
+    }
+    Ok(Applied {
+        paint: !paint.is_empty(),
+        layout: !layout.is_empty(),
+    })
 }
 
 /// What motion reads for `node`: keyframes, the node's computed values and its units.
@@ -239,6 +311,8 @@ pub struct NativeRestyle {
 pub struct NativeMotionTick {
     /// Whether a transition or animation still needs a frame.
     pub active: bool,
+    /// Whether it moved layout, which must be computed again before drawing.
+    pub layout: bool,
     /// Nodes whose last transition or animation ended: raw ids, low then high word.
     pub finished: Uint32Array,
     pub errors: Vec<String>,
@@ -450,7 +524,15 @@ impl NativeLayout {
         let mut tree = self.owner.tree.borrow_mut();
         let mut state = self.owner.styles.borrow_mut();
         let state = &mut *state;
-        let mut errors = state.styles.restyle(&mut tree, root.node);
+        let mut held = HashMap::new();
+        let mut errors = state.styles.restyle_host(
+            &mut Restyling {
+                tree: &mut tree,
+                motion: &state.motion,
+                held: &mut held,
+            },
+            root.node,
+        );
         let (mut nodes, mut counts, mut names, mut values) =
             (Vec::new(), Vec::new(), Vec::new(), Vec::new());
         let mut specs: HashMap<u64, (Spec, bool)> = HashMap::new();
@@ -509,17 +591,24 @@ impl NativeLayout {
             counts.push(count);
         }
         errors.extend(state.motion.unreported(problems));
-        // A node's paint goes through motion, which applies it now or later; so does
-        // a changed transition or animation on a node whose paint did not change.
-        let mut jobs: Vec<(Node, Option<(Spec, bool)>, Vec<PaintWrite>)> = state
+        // A node's paint, and the layout held back, go through motion, which applies them now
+        // or later; so does a changed transition or animation on a node whose paint did not change.
+        let mut jobs: Vec<(Node, Option<(Spec, bool)>, Vec<Write>)> = state
             .styles
             .take_paint()
             .into_iter()
             .map(|(node, writes)| {
                 let spec = specs.remove(&node.raw());
+                let mut writes: Vec<Write> = writes.into_iter().map(Write::Paint).collect();
+                writes.extend(held.remove(&node.raw()).unwrap_or_default());
                 (node, spec, writes)
             })
             .collect();
+        for (raw, writes) in held {
+            if let Ok(node) = tree.node(raw) {
+                jobs.push((node, specs.remove(&raw), writes));
+            }
+        }
         for (raw, spec) in specs {
             if let Ok(node) = tree.node(raw) {
                 jobs.push((node, Some(spec), Vec::new()));
@@ -546,11 +635,12 @@ impl NativeLayout {
             if writes.is_empty() {
                 continue;
             }
-            match crate::scene::apply_paint(&mut tree, node, &writes) {
-                Ok(()) => {
+            match apply_writes(&mut tree, node, writes) {
+                Ok(applied) if applied.paint => {
                     painted.extend([(node.raw() & 0xffff_ffff) as u32, (node.raw() >> 32) as u32])
                 }
-                Err(e) => errors.push(format!("paint: {e}")),
+                Ok(_) => {}
+                Err(e) => errors.push(e),
             }
         }
         for raw in state.motion.take_rethemed() {
@@ -565,8 +655,8 @@ impl NativeLayout {
             state.motion.reread(raw, &context, &mut problems);
             errors.extend(state.motion.unreported(problems));
         }
-        // A node that gained motion after its first style has not had all its paint written;
-        // have the cascade write it again, which only motion reads.
+        // A node new to motion whose values motion has not all seen: have the cascade write
+        // its paint and layout again, which only motion reads.
         let unbased = state.motion.take_unbased();
         if !unbased.is_empty() {
             for &raw in &unbased {
@@ -574,17 +664,27 @@ impl NativeLayout {
                     state.styles.repaint(node);
                 }
             }
-            for error in state.styles.restyle(&mut tree, root.node) {
+            let mut held = HashMap::new();
+            let again = state.styles.restyle_host(
+                &mut Restyling {
+                    tree: &mut tree,
+                    motion: &state.motion,
+                    held: &mut held,
+                },
+                root.node,
+            );
+            for error in again {
                 if !errors.contains(&error) {
                     errors.push(error);
                 }
             }
-            let mut repainted: HashMap<u64, Vec<PaintWrite>> = state
-                .styles
-                .take_paint()
-                .into_iter()
-                .map(|(node, writes)| (node.raw(), writes))
-                .collect();
+            let mut repainted: HashMap<u64, Vec<Write>> = held;
+            for (node, writes) in state.styles.take_paint() {
+                repainted
+                    .entry(node.raw())
+                    .or_default()
+                    .extend(writes.into_iter().map(Write::Paint));
+            }
             // A node that declares no paint has none written, and is rebased all the same.
             for raw in unbased {
                 let Ok(node) = tree.node(raw) else { continue };
@@ -622,13 +722,13 @@ impl NativeLayout {
         let mut tree = self.owner.tree.borrow_mut();
         let mut state = self.owner.styles.borrow_mut();
         let mut errors = Vec::new();
+        let mut layout = false;
         for (raw, writes) in state.motion.tick(now) {
             match tree.node(raw) {
-                Ok(node) => {
-                    if let Err(e) = crate::scene::apply_paint(&mut tree, node, &writes) {
-                        errors.push(format!("motion: {e}"));
-                    }
-                }
+                Ok(node) => match apply_writes(&mut tree, node, writes) {
+                    Ok(applied) => layout |= applied.layout,
+                    Err(e) => errors.push(format!("motion: {e}")),
+                },
                 Err(_) => state.motion.forget(raw),
             }
         }
@@ -640,6 +740,7 @@ impl NativeLayout {
             .collect();
         Ok(NativeMotionTick {
             active: state.motion.active(),
+            layout,
             finished: Uint32Array::new(finished),
             errors,
         })

@@ -1,6 +1,6 @@
-//! CSS transitions and animations on a node's paint.
+//! CSS transitions and animations on a node's paint and layout.
 //!
-//! A restyle hands each node's new paint writes to `Motion::restyle`, which
+//! A restyle hands each node's new paint and layout writes to `Motion::restyle`, which
 //! applies them at once, or, for a field the node transitions, starts a run
 //! from the value last shown. `@keyframes` named by `animation` become
 //! tracks of stops. `Motion::tick` samples every run and animation at the
@@ -16,9 +16,8 @@ mod timing;
 use blend::{blend, same, vector};
 use blinc_abi::css::Atom;
 use blinc_abi::css::cascade::Cascade;
-use blinc_abi::css::paint::PaintWrite;
 use blinc_abi::css::quantity::PaintUnits;
-use field::Field;
+pub(crate) use field::{Field, Value, Write};
 pub(crate) use spec::Spec;
 use spec::{Animation, Direction};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -35,8 +34,8 @@ pub(crate) struct Context<'a> {
 /// A transition of one field.
 struct Run {
     field: Field,
-    from: PaintWrite,
-    to: PaintWrite,
+    from: Write,
+    to: Write,
     duration: f64,
     delay: f64,
     timing: Timing,
@@ -50,7 +49,7 @@ struct Run {
 /// The progress a second a run going from `from` to `to` starts at, keeping
 /// `previous`'s velocity along the new direction; none when the field has no
 /// straight line to measure along.
-fn carried(previous: &Run, from: &PaintWrite, to: &PaintWrite) -> Option<f64> {
+fn carried(previous: &Run, from: &Write, to: &Write) -> Option<f64> {
     let (a, b) = (vector(&previous.from)?, vector(&previous.to)?);
     let (f, t) = (vector(from)?, vector(to)?);
     if a.len() != b.len() || f.len() != t.len() || a.len() != f.len() {
@@ -70,7 +69,7 @@ fn carried(previous: &Run, from: &PaintWrite, to: &PaintWrite) -> Option<f64> {
 /// One field's values through a `@keyframes` block, by offset.
 struct Track {
     field: Field,
-    stops: Vec<(f64, PaintWrite, Option<Timing>)>,
+    stops: Vec<(f64, Write, Option<Timing>)>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -152,7 +151,7 @@ impl Anim {
 }
 
 impl Track {
-    fn sample(&self, p: f64, timing: &Timing) -> PaintWrite {
+    fn sample(&self, p: f64, timing: &Timing) -> Write {
         let last = self.stops.len() - 1;
         let i = self.stops.iter().rposition(|s| s.0 <= p).unwrap_or(0);
         if i >= last {
@@ -167,7 +166,7 @@ impl Track {
 
 /// The tracks of a block's stops. A field a block leaves out at 0 or 1 starts or ends at
 /// what the cascade gives it.
-fn tracks(stops: &[keyframes::Stop], base: &HashMap<Field, PaintWrite>) -> Vec<Track> {
+fn tracks(stops: &[keyframes::Stop], base: &HashMap<Field, Write>) -> Vec<Track> {
     let mut fields: Vec<Field> = Vec::new();
     for write in stops.iter().flat_map(|s| &s.writes) {
         let field = Field::of(write);
@@ -178,7 +177,7 @@ fn tracks(stops: &[keyframes::Stop], base: &HashMap<Field, PaintWrite>) -> Vec<T
     fields
         .into_iter()
         .map(|field| {
-            let mut points: Vec<(f64, PaintWrite, Option<Timing>)> = Vec::new();
+            let mut points: Vec<(f64, Write, Option<Timing>)> = Vec::new();
             for stop in stops {
                 for write in stop.writes.iter().filter(|w| Field::of(w) == field) {
                     // A later declaration at one offset replaces the earlier.
@@ -211,9 +210,9 @@ fn tracks(stops: &[keyframes::Stop], base: &HashMap<Field, PaintWrite>) -> Vec<T
 struct NodeMotion {
     spec: Spec,
     /// What the cascade last asked of each field.
-    base: HashMap<Field, PaintWrite>,
+    base: HashMap<Field, Write>,
     /// What each field was last given, partway through a run included.
-    shown: HashMap<Field, PaintWrite>,
+    shown: HashMap<Field, Write>,
     runs: Vec<Run>,
     anims: Vec<Anim>,
 }
@@ -234,12 +233,20 @@ impl NodeMotion {
     }
 
     /// The cascade's writes: at once, or as runs for the fields this node transitions.
-    fn route(&mut self, writes: Vec<PaintWrite>, fresh: bool) -> Vec<PaintWrite> {
+    fn route(&mut self, writes: Vec<Write>, fresh: bool) -> Vec<Write> {
         let mut now = Vec::new();
         for write in writes {
             let field = Field::of(&write);
             self.base.insert(field, write.clone());
             if self.anims.iter().any(|a| a.holds(field)) {
+                continue;
+            }
+            // Written again unchanged, as a restyle writes all of a node's layout: the run goes on.
+            if self
+                .runs
+                .iter()
+                .any(|r| r.field == field && same(&r.to, &write))
+            {
                 continue;
             }
             let transition = self
@@ -295,7 +302,7 @@ impl NodeMotion {
 
     /// A changed `transition` or `animation`: what it dropped ends, and the fields it
     /// held fall back to the cascade's value.
-    fn respec(&mut self, spec: Spec) -> Vec<PaintWrite> {
+    fn respec(&mut self, spec: Spec) -> Vec<Write> {
         let mut now = Vec::new();
         let mut released = Vec::new();
         self.anims.retain(|a| {
@@ -337,6 +344,18 @@ impl NodeMotion {
         now
     }
 
+    /// Whether it transitions a layout property, or an animation of it moves one.
+    fn drives_layout(&self) -> bool {
+        let layout = |f: &Field| matches!(f, Field::Layout(_));
+        self.spec.transitions.iter().any(|t| match t.property {
+            spec::Property::All => true,
+            spec::Property::Named(_) => t.fields.iter().any(layout),
+        }) || self
+            .anims
+            .iter()
+            .any(|a| a.tracks.iter().any(|t| layout(&t.field)))
+    }
+
     fn start_animations(&mut self, context: &Context, problems: &mut Vec<String>) {
         for spec in self.spec.animations.clone() {
             if self.anims.iter().any(|a| a.spec.name == spec.name) {
@@ -368,8 +387,8 @@ impl NodeMotion {
     }
 
     /// The writes for this frame.
-    fn step(&mut self, now: f64) -> Vec<PaintWrite> {
-        let mut out: BTreeMap<Field, PaintWrite> = BTreeMap::new();
+    fn step(&mut self, now: f64) -> Vec<Write> {
+        let mut out: BTreeMap<Field, Write> = BTreeMap::new();
         let mut runs = std::mem::take(&mut self.runs);
         runs.retain_mut(|run| {
             let start = *run.start.get_or_insert(now);
@@ -474,8 +493,8 @@ pub(crate) struct Motion {
     active: HashSet<u64>,
     /// Nodes whose last run or animation ended since this was last taken.
     finished: Vec<u64>,
-    /// Nodes that gained motion after their first style, which the cascade has yet to
-    /// write in full: their animations wait for `rebase`.
+    /// Nodes new to motion whose values it has not all seen: one that gained motion
+    /// after its first style, or that moves layout. Their animations wait for `rebase`.
     unbased: Vec<u64>,
     /// Whether the theme changed since the animations that read variables last read it.
     rethemed: bool,
@@ -490,11 +509,11 @@ impl Motion {
         &mut self,
         raw: u64,
         spec: Option<Spec>,
-        writes: Vec<PaintWrite>,
+        writes: Vec<Write>,
         complete: bool,
         context: &Context,
         problems: &mut Vec<String>,
-    ) -> Vec<PaintWrite> {
+    ) -> Vec<Write> {
         let mut deferred = false;
         let now = match spec {
             None => match self.nodes.get_mut(&raw) {
@@ -528,10 +547,13 @@ impl Motion {
                 now.extend(node.route(writes, fresh));
                 // Its values changed, which its animations' variables may read.
                 node.reread(context, problems);
+                // Unless this is its first style, motion has not seen all its paint; and its
+                // layout went straight to the tree before motion knew it.
                 if fresh && !complete {
                     deferred = true;
                 } else {
                     node.start_animations(context, problems);
+                    deferred = fresh && node.drives_layout();
                 }
                 now
             }
@@ -548,7 +570,7 @@ impl Motion {
     }
 
     /// The writes for the frame at `now` milliseconds, by node.
-    pub(crate) fn tick(&mut self, now: f64) -> Vec<(u64, Vec<PaintWrite>)> {
+    pub(crate) fn tick(&mut self, now: f64) -> Vec<(u64, Vec<Write>)> {
         let mut out = Vec::new();
         let nodes: Vec<u64> = self.active.iter().copied().collect();
         for raw in nodes {
@@ -614,12 +636,12 @@ impl Motion {
         std::mem::take(&mut self.unbased)
     }
 
-    /// All of a node's paint, which it already shows: what the cascade gives each field,
-    /// for the animations that start from or fall back to it.
+    /// All of a node's paint and layout, which it already shows: what the cascade gives
+    /// each field, for the transitions and animations that start from or fall back to it.
     pub(crate) fn rebase(
         &mut self,
         raw: u64,
-        writes: &[PaintWrite],
+        writes: &[Write],
         context: &Context,
         problems: &mut Vec<String>,
     ) {
@@ -631,10 +653,20 @@ impl Motion {
             node.base.insert(field, write.clone());
             node.shown.insert(field, write.clone());
         }
+        // Animations not yet under way start again from the values now known.
+        node.anims.retain(|a| a.start.is_some());
         node.start_animations(context, problems);
         if node.ticking() {
             self.active.insert(raw);
         }
+    }
+
+    /// Whether `raw`'s layout writes go through motion: it transitions a
+    /// layout property or animates, or a layout run is in flight.
+    pub(crate) fn moves_layout(&self, raw: u64) -> bool {
+        self.nodes.get(&raw).is_some_and(|n| {
+            n.spec.moves_layout() || n.runs.iter().any(|r| matches!(r.field, Field::Layout(_)))
+        })
     }
 
     /// Whether `raw` has a transition or animation declared, or ones in flight.
@@ -666,7 +698,7 @@ impl Motion {
 }
 
 /// A node that no longer has motion: what was in flight lands on the cascade's value.
-fn settle(node: NodeMotion, mut writes: Vec<PaintWrite>) -> Vec<PaintWrite> {
+fn settle(node: NodeMotion, mut writes: Vec<Write>) -> Vec<Write> {
     let given: HashSet<Field> = writes.iter().map(Field::of).collect();
     let mut driven: Vec<Field> = node.runs.iter().map(|r| r.field).collect();
     driven.extend(
@@ -676,7 +708,7 @@ fn settle(node: NodeMotion, mut writes: Vec<PaintWrite>) -> Vec<PaintWrite> {
     );
     driven.sort();
     driven.dedup();
-    let mut now: Vec<PaintWrite> = driven
+    let mut now: Vec<Write> = driven
         .into_iter()
         .filter(|f| !given.contains(f))
         .map(|f| {

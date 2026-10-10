@@ -1,4 +1,6 @@
 use super::*;
+use blinc_abi::css::layout::id;
+use blinc_abi::css::paint::PaintWrite;
 use blinc_abi::css::parse;
 
 const NODE: u64 = 7;
@@ -13,9 +15,9 @@ fn spec(declared: &[(&str, &str)]) -> Spec {
     Spec::read(declared.iter().copied()).0
 }
 
-fn opacity(write: &PaintWrite) -> f32 {
+fn opacity(write: &Write) -> f32 {
     match write {
-        PaintWrite::Opacity(o) => *o,
+        Write::Paint(PaintWrite::Opacity(o)) => *o,
         other => panic!("not an opacity: {other:?}"),
     }
 }
@@ -25,7 +27,7 @@ fn opacity_at(motion: &mut Motion, now: f64) -> Option<f32> {
     let frame = motion.tick(now);
     let writes = &frame.iter().find(|(raw, _)| *raw == NODE)?.1;
     writes.iter().find_map(|w| match w {
-        PaintWrite::Opacity(o) => Some(*o),
+        Write::Paint(PaintWrite::Opacity(o)) => Some(*o),
         _ => None,
     })
 }
@@ -35,13 +37,14 @@ fn restyle(
     cascade: &Cascade,
     spec: Option<Spec>,
     writes: Vec<PaintWrite>,
-) -> Vec<PaintWrite> {
+) -> Vec<Write> {
     let context = Context {
         cascade,
         units: PaintUnits::default(),
         values: &[],
     };
     let mut problems = Vec::new();
+    let writes = writes.into_iter().map(Write::Paint).collect();
     let now = motion.restyle(NODE, spec, writes, true, &context, &mut problems);
     assert!(problems.is_empty(), "{problems:?}");
     now
@@ -118,7 +121,7 @@ fn a_field_with_no_transition_applies_at_once() {
         vec![PaintWrite::OutlineWidth(3.0), PaintWrite::Opacity(0.2)],
     );
     assert_eq!(now.len(), 1);
-    assert!(matches!(now[0], PaintWrite::OutlineWidth(w) if w == 3.0));
+    assert!(matches!(now[0], Write::Paint(PaintWrite::OutlineWidth(w)) if w == 3.0));
 }
 
 #[test]
@@ -326,7 +329,7 @@ fn a_keyframe_can_carry_its_own_timing() {
 #[test]
 fn animation_problems_are_reported_once() {
     let mut motion = Motion::default();
-    let cascade = cascade("@keyframes odd { to { width: 10px; opacity: 0 } }");
+    let cascade = cascade("@keyframes odd { to { cursor: pointer; opacity: 0 } }");
     let context = Context {
         cascade: &cascade,
         units: PaintUnits::default(),
@@ -342,7 +345,7 @@ fn animation_problems_are_reported_once() {
         &mut problems,
     );
     assert_eq!(problems.len(), 2, "{problems:?}");
-    assert!(problems[0].contains("width"), "{problems:?}");
+    assert!(problems[0].contains("cursor"), "{problems:?}");
     assert!(problems[1].contains("nope"), "{problems:?}");
     assert_eq!(motion.unreported(problems.clone()).len(), 2);
     assert!(motion.unreported(problems).is_empty());
@@ -378,7 +381,12 @@ fn a_node_that_gains_motion_late_takes_its_base_from_the_rebase() {
     );
     assert_eq!(motion.take_unbased(), [NODE]);
     assert!(!motion.active(), "nothing starts without its base");
-    motion.rebase(NODE, &[PaintWrite::Opacity(0.8)], &context, &mut problems);
+    motion.rebase(
+        NODE,
+        &[Write::Paint(PaintWrite::Opacity(0.8))],
+        &context,
+        &mut problems,
+    );
     assert!(problems.is_empty(), "{problems:?}");
     assert!(motion.active());
     near(opacity_at(&mut motion, 0.0), 0.0);
@@ -425,7 +433,7 @@ fn offset_at(motion: &mut Motion, now: f64) -> Option<f32> {
     let frame = motion.tick(now);
     let writes = &frame.iter().find(|(raw, _)| *raw == NODE)?.1;
     writes.iter().find_map(|w| match w {
-        PaintWrite::OutlineOffset(o) => Some(*o),
+        Write::Paint(PaintWrite::OutlineOffset(o)) => Some(*o),
         _ => None,
     })
 }
@@ -531,4 +539,168 @@ fn an_eased_transition_turned_back_heads_back_at_once() {
         offset_at(&mut motion, 132.0).unwrap() < turned,
         "it heads back at once"
     );
+}
+
+fn px(id: i32, v: f32) -> Write {
+    Write::Layout(id, Value::Number(v))
+}
+
+/// The layout value `node` is given for router id `id` at `now`.
+fn layout_at(motion: &mut Motion, id: i32, now: f64) -> Option<Value> {
+    let frame = motion.tick(now);
+    let writes = &frame.iter().find(|(raw, _)| *raw == NODE)?.1;
+    writes.iter().find_map(|w| match w {
+        Write::Layout(i, v) if *i == id => Some(v.clone()),
+        _ => None,
+    })
+}
+
+fn route(
+    motion: &mut Motion,
+    cascade: &Cascade,
+    spec: Option<Spec>,
+    writes: Vec<Write>,
+) -> Vec<Write> {
+    let context = Context {
+        cascade,
+        units: PaintUnits::default(),
+        values: &[],
+    };
+    let mut problems = Vec::new();
+    let now = motion.restyle(NODE, spec, writes, true, &context, &mut problems);
+    assert!(problems.is_empty(), "{problems:?}");
+    now
+}
+
+#[test]
+fn a_layout_length_transitions_and_its_target_written_again_leaves_it_running() {
+    let (mut motion, cascade) = (Motion::default(), cascade(""));
+    let wide = spec(&[("transition", "width 100ms linear")]);
+    assert_eq!(
+        route(
+            &mut motion,
+            &cascade,
+            Some(wide),
+            vec![px(id::WIDTH, 100.0)]
+        )
+        .len(),
+        1
+    );
+    assert!(motion.moves_layout(NODE));
+    assert!(route(&mut motion, &cascade, None, vec![px(id::WIDTH, 200.0)]).is_empty());
+    assert_eq!(
+        layout_at(&mut motion, id::WIDTH, 0.0),
+        Some(Value::Number(100.0))
+    );
+    assert_eq!(
+        layout_at(&mut motion, id::WIDTH, 50.0),
+        Some(Value::Number(150.0))
+    );
+    // A restyle for any reason writes all of a node's layout again.
+    let again = route(
+        &mut motion,
+        &cascade,
+        None,
+        vec![px(id::WIDTH, 200.0), px(id::HEIGHT, 30.0)],
+    );
+    assert_eq!(
+        again.len(),
+        1,
+        "the height applies; the width's run is left alone"
+    );
+    assert_eq!(
+        layout_at(&mut motion, id::WIDTH, 75.0),
+        Some(Value::Number(175.0))
+    );
+    assert_eq!(
+        layout_at(&mut motion, id::WIDTH, 100.0),
+        Some(Value::Number(200.0))
+    );
+    assert!(!motion.active());
+}
+
+#[test]
+fn a_length_that_changes_unit_flips_halfway() {
+    let (mut motion, cascade) = (Motion::default(), cascade(""));
+    let wide = spec(&[("transition", "width 100ms linear")]);
+    route(
+        &mut motion,
+        &cascade,
+        Some(wide),
+        vec![px(id::WIDTH, 100.0)],
+    );
+    route(
+        &mut motion,
+        &cascade,
+        None,
+        vec![px(id::WIDTH_PERCENT, 0.5)],
+    );
+    motion.tick(0.0);
+    assert_eq!(
+        layout_at(&mut motion, id::WIDTH, 40.0),
+        Some(Value::Number(100.0))
+    );
+    assert_eq!(
+        layout_at(&mut motion, id::WIDTH_PERCENT, 60.0),
+        Some(Value::Number(0.5))
+    );
+}
+
+#[test]
+fn keyframes_move_layout() {
+    let (mut motion, cascade) = (
+        Motion::default(),
+        cascade("@keyframes open { from { height: 0 } to { height: 40px } }"),
+    );
+    route(
+        &mut motion,
+        &cascade,
+        Some(spec(&[("animation", "open 100ms linear")])),
+        vec![px(id::HEIGHT, 40.0)],
+    );
+    assert!(motion.moves_layout(NODE));
+    assert_eq!(
+        layout_at(&mut motion, id::HEIGHT, 0.0),
+        Some(Value::Number(0.0))
+    );
+    assert_eq!(
+        layout_at(&mut motion, id::HEIGHT, 25.0),
+        Some(Value::Number(10.0))
+    );
+    assert_eq!(
+        layout_at(&mut motion, id::HEIGHT, 100.0),
+        Some(Value::Number(40.0))
+    );
+}
+
+#[test]
+fn a_node_new_to_motion_that_moves_layout_transitions_from_its_real_size() {
+    let (mut motion, cascade) = (Motion::default(), cascade(""));
+    let wide = spec(&[("transition", "width 100ms linear")]);
+    // Its layout reached the tree before motion knew it: none comes to motion.
+    route(&mut motion, &cascade, Some(wide), vec![]);
+    assert_eq!(
+        motion.take_unbased(),
+        [NODE],
+        "so it asks for the cascade's values"
+    );
+    let context = Context {
+        cascade: &cascade,
+        units: PaintUnits::default(),
+        values: &[],
+    };
+    motion.rebase(NODE, &[px(id::WIDTH, 40.0)], &context, &mut Vec::new());
+    route(&mut motion, &cascade, None, vec![px(id::WIDTH, 240.0)]);
+    assert_eq!(
+        layout_at(&mut motion, id::WIDTH, 0.0),
+        Some(Value::Number(40.0))
+    );
+    assert_eq!(
+        layout_at(&mut motion, id::WIDTH, 25.0),
+        Some(Value::Number(90.0))
+    );
+    // A paint-only node needs no rebase.
+    let mut paint = Motion::default();
+    route(&mut paint, &cascade, Some(spec(LINEAR)), vec![]);
+    assert!(paint.take_unbased().is_empty());
 }
