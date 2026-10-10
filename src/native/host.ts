@@ -162,6 +162,17 @@ const directFields: Readonly<Record<string, readonly (keyof PaintStyle)[]>> = {
   transform: ['transform'],
 };
 
+/** States the host keeps from input; the rest an element is given. */
+const OWN_STATES: ReadonlySet<string> = new Set([
+  'hover',
+  'active',
+  'focus',
+  'focus-visible',
+  'focus-within',
+  'disabled',
+  'enabled',
+]);
+
 /** A node of the host tree: an element or a text node. */
 export abstract class HostNode extends HostEventTarget {
   readonly host: Host;
@@ -348,6 +359,19 @@ export class HostElement extends HostNode {
       this.#attributes.set('class', this.classList.value);
       host.styleChanged(this);
     });
+  }
+  /**
+   * Give or take a state the host does not track itself, so `:checked`,
+   * `:indeterminate`, `:user-invalid` and the like match: a component sets
+   * what its control is. Pointer and focus states, `disabled` and `enabled`
+   * come from input and are refused here.
+   */
+  setState(name: string, on: boolean): void {
+    this.host.setElementState(this, name, on);
+  }
+  /** Whether `setState` gave the element `name`. */
+  hasState(name: string): boolean {
+    return this.host.elementHasState(this, name);
   }
   /**
    * Resolves when this element's transitions and animations have ended, or
@@ -655,6 +679,8 @@ export class Host {
   readonly #paintOverrides = new Map<HostElement, PaintStyle>();
   readonly #styleErrorListeners = new Set<(errors: readonly string[]) => void>();
   readonly #stateBits: ReadonlyMap<string, number>;
+  /** States elements were given with `setState`. */
+  readonly #givenStates = new WeakMap<HostElement, Set<string>>();
   #width = 0;
   #height = 0;
   #computed = false;
@@ -841,9 +867,39 @@ export class Host {
     }
     this.#styleDirty.clear();
   }
+  /** @internal HostElement.setState. */
+  setElementState(element: HostElement, name: string, on: boolean): void {
+    if (OWN_STATES.has(name) || !this.#stateBits.has(name)) {
+      const given = this.layout.stateNames.filter((n) => !OWN_STATES.has(n));
+      throw new Error(`"${name}" is not a state an element is given: ${given.join(', ')}`);
+    }
+    let states = this.#givenStates.get(element);
+    if (on === (states?.has(name) ?? false)) {
+      return;
+    }
+    if (!states) {
+      states = new Set();
+      this.#givenStates.set(element, states);
+    }
+    if (on) {
+      states.add(name);
+    } else {
+      states.delete(name);
+    }
+    if (!element.destroyed) {
+      element.layoutNode.queueStates(this.#bits(element, this.input.stateOf(element)));
+    }
+  }
+  /** @internal HostElement.hasState. */
+  elementHasState(element: HostElement, name: string): boolean {
+    return this.#givenStates.get(element)?.has(name) ?? false;
+  }
   #bits(element: HostElement, state: Readonly<InteractionState>): number {
     const bit = (name: string) => this.#stateBits.get(name) ?? 0;
     let bits = 0;
+    for (const name of this.#givenStates.get(element) ?? []) {
+      bits |= bit(name);
+    }
     const states: [boolean, string][] = [
       [state.hover, 'hover'],
       [state.active, 'active'],

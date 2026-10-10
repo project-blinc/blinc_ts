@@ -731,7 +731,10 @@ host.mount(windowHost, { scope });
   - State: `element.interaction` holds hover, active, focus, focus-visible,
     focus-within and disabled, and `input.onInteraction` reports each change,
     as the CSS cascade needs for its pseudo-classes. Disabling the focused
-    element blurs it.
+    element blurs it. The states the host does not track (`checked`,
+    `indeterminate`, `placeholder-shown`, `valid`, `invalid`, `user-valid`,
+    `user-invalid`, …) are given by the component that knows them:
+    `element.setState('checked', true)` makes `:checked` match.
   - Cursor: the `cursor` property of the element under the pointer, or its
     nearest ancestor that sets one, is `input.cursor`; a mounted host shows it
     in the window.
