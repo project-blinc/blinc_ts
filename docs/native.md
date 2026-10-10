@@ -630,6 +630,15 @@ false when it was cancelled (a submitter that is not a submit button of the form
 checkbox and radio back as its `checked` attribute says and each range as its `value`
 does, as if the user had not touched them.
 
+**Tables.** Every row of a `table`, its own and those in `thead`, `tbody` and `tfoot`, is a
+grid of the same columns, so cells line up down the table: as many as the widest row has
+counting each cell's `colspan`, or as the table's `col`s and `colgroup`s stand for, if more.
+A column is an equal share of the width unless its `col` gives it one: `width="120"` (pixels),
+`width="25%"` or `width="2*"` (twice a share), a `col`'s `span` and a `colgroup`'s `span`
+without `col`s standing for that many. A cell's `colspan` spans columns. Rows and cells that
+come or go, and `colspan`, `span` and `width` that change, lay the columns out again before
+the next frame. `rowspan` is not supported.
+
 **Selects.** A `select` shows the label of its chosen option (its `label` attribute, else
 its text) with an owned `.value` and `.chevron`, and keeps its `option`s, and the ones in
 an `optgroup`, in the tree, hidden, for a framework to own. A click, Enter or Space opens

@@ -144,7 +144,7 @@ dt { font-weight: 600; }
 dd { margin: 0 0 6px 24px; color: var(--text-secondary); }
 hr { height: 1px; flex-shrink: 0; align-self: stretch; margin: 8px 0; background: var(--border); }
 
-/* Tables: each row shares its width equally among its cells, so columns line up. */
+/* Tables: every row is a grid of the table's columns, set by the host, so they line up. */
 table {
   border: 1px solid var(--border);
   border-radius: var(--radius-default);
@@ -152,9 +152,9 @@ table {
 }
 caption { padding: 8px 12px; font-weight: 600; border-bottom: 1px solid var(--border); }
 thead, tfoot { background: var(--surface); }
-tr { flex-direction: row; }
+tr { display: grid; }
 tr + tr, thead + tbody, tbody + tbody, tbody + tfoot, thead + tfoot { border-top: 1px solid var(--border); }
-th, td { flex: 1 1 0; min-width: 0; padding: 8px 12px; }
+th, td { min-width: 0; padding: 8px 12px; }
 th { font-weight: 600; }
 col, colgroup { display: none; }
 

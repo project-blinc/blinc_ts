@@ -14,6 +14,7 @@ import { Dialogs } from './dialogs.js';
 import { Forms } from './forms.js';
 import { Inputs } from './inputs.js';
 import { Selects } from './selects.js';
+import { Tables } from './tables.js';
 import { ImageFit } from './generated/scene.js';
 import type { StyleSheet } from './layout.js';
 
@@ -70,6 +71,8 @@ export class Behaviours {
   readonly dialogs: Dialogs;
   /** What selects do: their label, and their list of options. */
   readonly selects: Selects;
+  /** What tables do: their columns line up. */
+  readonly tables: Tables;
   /** Every `img`, and those whose image or fit may need putting right. */
   readonly #pictures = new Map<HostElement, Picture>();
   readonly #pictureDirty = new Set<HostElement>();
@@ -90,6 +93,7 @@ export class Behaviours {
     this.forms = new Forms(host);
     this.dialogs = new Dialogs(host);
     this.selects = new Selects(host);
+    this.tables = new Tables(host);
   }
 
   /** Once the host has its root. */
@@ -401,6 +405,8 @@ export class Behaviours {
   /** A child came or went under `parent`. */
   childrenChanged(parent: HostNode | null, child?: HostNode): void {
     this.selects.changed(parent);
+    this.tables.changed(parent);
+    this.tables.changed(child ?? null);
     // A control put into a disabled fieldset is disabled by it.
     if (
       parent instanceof ElementClass &&
@@ -425,6 +431,7 @@ export class Behaviours {
     this.inputs.attributeChanged(element, name);
     this.dialogs.attributeChanged(element, name);
     this.selects.changed(element);
+    this.tables.attributeChanged(element, name);
     if (element.tag === 'progress' || element.tag === 'meter') {
       this.#sync(element);
     }
@@ -466,6 +473,7 @@ export class Behaviours {
     if (node instanceof ElementClass) {
       this.dialogs.forget(node);
       this.selects.forget(node);
+      this.tables.forget(node);
       const picture = this.#pictures.get(node);
       if (picture) {
         picture.use?.release();
@@ -484,6 +492,7 @@ export class Behaviours {
   /** Before the tick's writes go: put right what changed. */
   flush(): void {
     this.selects.flush();
+    this.tables.flush();
     if (this.#pictureDirty.size > 0) {
       const dirty = [...this.#pictureDirty];
       this.#pictureDirty.clear();
