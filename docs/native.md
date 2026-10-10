@@ -484,7 +484,7 @@ links, buttons, labels, fieldsets, text fields, checkboxes, radios, ranges,
 progress bars, meters, selects and their options, dialogs, backdrops and
 `details`. Everything it uses is a theme variable, so a theme change restyles
 it, and it only declares what has an effect. Margins are half a browser's
-because flex siblings do not collapse them, and lists have no markers yet.
+because flex siblings do not collapse them.
 
 Every change it shows eases on the theme's motion tokens: hover and press
 colours over `--duration-fast` and `--ease-state`, a focus ring growing out
@@ -494,6 +494,30 @@ away on `--ease-sheet`. A control's states come from `element.setState`, and
 its parts are children the component supplies: a checkbox's `.check` and
 `.dash`, a radio's `.dot`, a range's `.fill`, `.thumb` and `.rest`, a progress
 bar's `.bar`, a summary's `.marker` and a select's `.chevron`.
+
+## Built-in element behaviours
+
+Some elements do something a browser's own code does for them, which CSS does
+not say. They live in `host.behaviours` and work on any host.
+
+What a behaviour needs inside an element, a list item's marker, is an owned
+element: `host.ownedElement(parent, tag, classes)` makes an element in the
+native tree and the cascade, so a stylesheet styles it by its classes, that is
+not among `parent.childNodes`. A framework that owns an element's children,
+and replaces them whenever it renders, never sees it and never removes it. No
+structural selector counts it, and it goes when its parent does.
+
+**Lists.** Each `li` of a `ul`, `ol` or `menu` has a marker, an owned
+`div.marker` that the user-agent sheet styles in the item's left padding: a
+`disc`, `circle` or `square` by depth, or a number. `ol` counts from 1, from
+`start`, or down with `reversed`; `type` (`1`, `a`, `A`, `i`, `I`) and the
+`list-style-type` property (`none`, `disc`, `circle`, `square`, `decimal`,
+`decimal-leading-zero`, `lower-alpha`, `upper-alpha`, `lower-roman`,
+`upper-roman`) choose the style, on the list or on one item, and `value`
+restarts the count at an item. They are kept right as items come, go and move,
+as attributes and styles change, and through whatever a framework does to an
+item's children. `host.behaviours.markerOf(li)` reads what a marker shows
+(`1.`, `iv.`, `disc`), or null for none.
 
 ## Inline text flow
 

@@ -61,7 +61,7 @@ const css = `
   line-height: var(--leading-normal, 1.5);
 }
 
-${containers} { flex-direction: column; }
+${containers}, li { flex-direction: column; }
 ${flows} { flex-direction: row; flex-wrap: wrap; align-items: baseline; }
 p, h1, h2, h3, h4, h5, h6, dt, dd, legend, figcaption, caption { max-width: 100%; min-width: 0; }
 
@@ -115,7 +115,25 @@ figcaption { font-size: 0.9em; color: var(--text-secondary); }
 
 /* Lists and descriptions; a list inside an item sits under the item's text. */
 ul, ol, dl { gap: 2px; margin: 0.5em 0; }
-li { flex-direction: row; align-items: flex-start; }
+li { position: relative; padding-left: 32px; }
+li > .marker {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 32px;
+  padding-right: 8px;
+  flex-direction: row;
+  justify-content: flex-end;
+  color: var(--text-secondary);
+}
+li > .marker:not(.number) { padding-top: 0.6em; }
+li > .marker > .bullet { width: 0.35em; height: 0.35em; flex-shrink: 0; }
+li > .marker.disc > .bullet { border-radius: var(--radius-full); background: var(--text-secondary); }
+li > .marker.circle > .bullet {
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--text-secondary);
+}
+li > .marker.square > .bullet { width: 0.3em; height: 0.3em; background: var(--text-secondary); }
 li ul, li ol { margin: 2px 0 0 0; }
 dt { font-weight: 600; }
 dd { margin: 0 0 6px 24px; color: var(--text-secondary); }

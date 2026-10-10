@@ -30,6 +30,7 @@ import type { AffineTransform, Color, PaintStyle, TextStyle } from './scene.js';
 import type { ShapeTokens } from '../theme/shape.js';
 import { ScrollThumb, words } from './scrollbar.js';
 import { InlineFlows } from './inline-flow.js';
+import { Behaviours } from './behaviours.js';
 import type { NativeBindings } from './index.js';
 import type { NativeWindowHost, WindowSceneOptions } from './window.js';
 import type { InteractionState } from './input.js';
@@ -137,6 +138,7 @@ const otherProperties: ReadonlySet<string> = new Set([
   'scrollbar-width',
   'scrollbar-visibility',
   'text-align',
+  'list-style-type',
   ...Object.keys(shapeProperties),
 ]);
 
@@ -451,6 +453,7 @@ export class HostElement extends HostNode {
     }
     this.host.styleChanged(this);
     this.host.input.attributeChanged(this, name);
+    this.host.behaviours.attributeChanged(this, name);
   }
   removeAttribute(name: string): void {
     if (name === 'class') {
@@ -461,6 +464,7 @@ export class HostElement extends HostNode {
     this.#attributes.delete(name);
     this.host.styleChanged(this);
     this.host.input.attributeChanged(this, name);
+    this.host.behaviours.attributeChanged(this, name);
   }
   #applyStyleText(text: string): void {
     const names: string[] = [];
@@ -604,6 +608,8 @@ export class HostElement extends HostNode {
     }
     this.host.inlineFlows?.touch(before);
     this.host.inlineFlows?.touch(this);
+    this.host.behaviours.childrenChanged(before, child);
+    this.host.behaviours.childrenChanged(this, child);
     return child;
   }
   appendChild<T extends HostNode>(child: T): T {
@@ -616,6 +622,7 @@ export class HostElement extends HostNode {
     child.layoutNode.queueDetach();
     this.unlink(child);
     this.host.inlineFlows?.touch(this);
+    this.host.behaviours.childrenChanged(this, child);
     return child;
   }
   /** @internal Unlink in JavaScript only; the native edit was already made. */
@@ -739,16 +746,23 @@ export class Host {
 
   /** Inline flows, where the host has the addon to measure them with. */
   readonly inlineFlows: InlineFlows | undefined;
+  /** What built-in elements do: list markers, links, labels and the like. */
+  readonly behaviours: Behaviours;
+  /** Elements the host made for another to hold, which frameworks do not see among its children. */
+  readonly #owned = new WeakMap<HostElement, HostElement[]>();
+  readonly #anonymous = new WeakSet<HostElement>();
 
   constructor(layout: Layout, scope?: Scope, native?: NativeBindings) {
     this.layout = layout;
     this.inlineFlows = native ? new InlineFlows(this, native) : undefined;
+    this.behaviours = new Behaviours(this);
     this.#stateBits = new Map(layout.stateNames.map((name, i) => [name, 1 << i]));
     this.root = this.#register(new HostElement(this, layout.createNode(), 'root'));
     this.styleChanged(this.root);
     this.root.layoutNode.setLayoutProperty('width', '100%');
     this.root.layoutNode.setLayoutProperty('height', '100%');
     layout.beforeFlush(() => {
+      this.behaviours.flush();
       this.#queueElements();
       this.#queueText();
     });
@@ -779,6 +793,30 @@ export class Host {
     const element = this.#register(new HostElement(this, this.layout.createNode(), tag));
     // Described to the cascade now, so type and structural selectors reach it with no class set.
     this.styleChanged(element);
+    return element;
+  }
+  /**
+   * An element the host makes for `parent` to hold, as list items hold their
+   * markers: in the native tree and the cascade, so CSS styles it, but not
+   * among `childNodes`, so a framework that owns its children never sees it.
+   * Counted by no structural selector. It goes when `parent` does, or with
+   * `destroy`.
+   */
+  ownedElement(
+    parent: HostElement,
+    tag: string,
+    classes: readonly string[] = [],
+    before: HostNode | null = null,
+  ): HostElement {
+    const element = this.createElement(tag);
+    this.#anonymous.add(element);
+    for (const name of classes) {
+      element.classList.add(name);
+    }
+    const list = this.#owned.get(parent) ?? [];
+    list.push(element);
+    this.#owned.set(parent, list);
+    parent.layoutNode.queueInsertBefore(element.layoutNode, before?.layoutNode ?? null);
     return element;
   }
   createTextNode(data: string): HostText {
@@ -913,7 +951,7 @@ export class Host {
         classes,
         attributes: attributePairs,
         inline: inlinePairs,
-        anonymous: false,
+        anonymous: this.#anonymous.has(node),
       });
     }
     this.#styleDirty.clear();
@@ -1040,6 +1078,7 @@ export class Host {
         this.#scrollbar(node, now);
       }
       this.inlineFlows?.restyled(node);
+      this.behaviours.restyled(node);
       for (const name of ['overflow', 'overflow-x', 'overflow-y']) {
         if (now.get(name) !== before.get(name)) {
           this.#overflow(node, name, now.get(name) ?? null);
@@ -1441,6 +1480,13 @@ export class Host {
     }
     // What a flow made for it goes first, while it is still where it was.
     this.inlineFlows?.forget(node);
+    this.behaviours.forget(node);
+    if (node instanceof HostElement) {
+      for (const owned of this.#owned.get(node) ?? []) {
+        this.destroyNode(owned);
+      }
+      this.#owned.delete(node);
+    }
     node.parentNode?.unlink(node);
     const forget = (current: HostNode) => {
       if (current instanceof HostElement) {
