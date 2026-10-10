@@ -238,7 +238,7 @@ test('the user-agent sheet reads only variables a theme defines', () => {
 
 test('the user-agent sheet declares nothing the host drops', () => {
   // These parse without an error and then do nothing.
-  const dropped = /(?:^|[;{\s])(clip-path|text-decoration|text-align)\s*:/gm;
+  const dropped = /(?:^|[;{\s])(text-overflow|line-clamp|-webkit-line-clamp)\s*:/gm;
   assert.deepEqual(
     [...userAgentCss().matchAll(dropped)].map((m) => m[1]),
     [],

@@ -290,6 +290,15 @@ means the same in a stylesheet, an inline `style` and a compiled sheet:
   background colour is painted over it. A node with no background of its own is
   filled with the filtered backdrop; a gradient or `glass` background keeps its
   own look. `opacity()` and `drop-shadow()` are reported.
+- `text-decoration` (and `-line`, `-style`, `-color`, `-thickness`, with
+  `text-underline-offset`) draws `underline`, `overline` and `line-through`,
+  `solid`, `double`, `dotted` or `dashed`, under every line of the node's text
+  and of the text inside it. As CSS has it, a descendant's decoration is drawn
+  beside its ancestors' and `none` undoes none of them; the colour is the
+  text's own unless given, and a thickness or an offset the font sets is used
+  when none is. `wavy`, `blink` and the error lines are reported. A later
+  shorthand resets the longhands before it. The user-agent sheet underlines
+  `a`, `u` and `ins`, strikes `s` and `del`, and dots `abbr[title]`.
 
 - `border` and `border-top`, `-right`, `-bottom` and `-left` take a width
   (`thin`, `medium`, `thick` or a length), a style and a colour in any order.
@@ -318,8 +327,8 @@ and layout properties: colours, `opacity`, `border-radius`, `outline-width`
 and `outline-offset`, `box-shadow`, `transform`, `filter` and same-shaped
 gradients blend, and so do `clip-path` shapes of one kind (same number of
 points for a polygon), a zero length taking the other end's unit, and
-`overflow-fade`, edge by edge, and `backdrop-filter`, its blur and its colour
-filters; `visibility`, masks, other gradients and clips that do not line up flip
+`overflow-fade`, edge by edge, `backdrop-filter`, its blur and its colour
+filters, and `text-decoration`'s colour, thickness and offset; `visibility`, masks, other gradients and clips that do not line up flip
 at the midpoint.
 Colours blend premultiplied, transforms by translation, rotation (the short
 way round), scale and skew, and shadow lists layer by layer. Lengths such as

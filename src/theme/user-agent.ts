@@ -91,6 +91,9 @@ code, kbd {
 }
 kbd { border: 1px solid var(--border); }
 mark { background: var(--warning-bg); }
+u, ins { text-decoration: underline; }
+s, del { text-decoration: line-through; }
+abbr[title] { text-decoration: underline dotted; }
 
 /* Preformatted text and quotations. */
 pre {
@@ -163,6 +166,7 @@ input:is([type="checkbox"], [type="radio"], [type="range"]):focus-visible { outl
 /* Links. */
 a {
   color: var(--text-link);
+  text-decoration: underline;
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: opacity ${STATE}, outline-width ${RING};

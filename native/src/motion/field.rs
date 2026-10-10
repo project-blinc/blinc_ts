@@ -70,6 +70,7 @@ pub(crate) enum Field {
     ClipPath,
     OverflowFade,
     BackdropFilter,
+    TextDecoration,
     /// A layout property, by its router id; a length's percentage id is its pixel id's slot.
     Layout(i32),
     /// Where a layout animation draws it.
@@ -154,6 +155,7 @@ impl Field {
             PaintWrite::ClipPath(_) => Field::ClipPath,
             PaintWrite::OverflowFade(_) => Field::OverflowFade,
             PaintWrite::BackdropFilter(_) => Field::BackdropFilter,
+            PaintWrite::TextDecoration(_) => Field::TextDecoration,
         }
     }
 
@@ -187,6 +189,7 @@ impl Field {
             Field::ClipPath => PaintWrite::ClipPath(None),
             Field::OverflowFade => PaintWrite::OverflowFade([0.0; 4]),
             Field::BackdropFilter => PaintWrite::BackdropFilter(BACKDROP_IDENTITY),
+            Field::TextDecoration => PaintWrite::TextDecoration(None),
             Field::Layout(slot) => return Write::Layout(slot, Value::Unset),
             Field::Visual => return Write::Visual(None),
         })
@@ -199,7 +202,7 @@ impl Field {
     }
 
     /// The paint slots `all` names, besides every layout one.
-    pub(crate) const ALL: [Field; 20] = [
+    pub(crate) const ALL: [Field; 21] = [
         Field::Background,
         Field::TextColor,
         Field::Opacity,
@@ -220,6 +223,7 @@ impl Field {
         Field::ClipPath,
         Field::OverflowFade,
         Field::BackdropFilter,
+        Field::TextDecoration,
     ];
 }
 
@@ -252,6 +256,12 @@ pub(crate) fn fields_of(property: &str) -> Vec<Field> {
         "mask-image" | "-webkit-mask-image" => &[Field::Mask],
         "clip-path" => &[Field::ClipPath],
         "overflow-fade" => &[Field::OverflowFade],
+        "text-decoration"
+        | "text-decoration-line"
+        | "text-decoration-style"
+        | "text-decoration-color"
+        | "text-decoration-thickness"
+        | "text-underline-offset" => &[Field::TextDecoration],
         // Its blur is the fill of the background, which moves with it.
         "backdrop-filter" => &[Field::BackdropFilter, Field::Background],
         _ => &[],

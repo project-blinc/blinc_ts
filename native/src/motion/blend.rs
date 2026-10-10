@@ -8,6 +8,7 @@ use super::field::{Value, Write, non_negative, slot};
 use blinc_abi::css::clip_path::Clip;
 use blinc_abi::css::filter::Filter;
 use blinc_abi::css::paint::{Background, PaintWrite};
+use blinc_abi::css::text_decoration::TextDecoration;
 use blinc_abi::scene::blinc_core::layer::{Affine2D, BlurStyle, Gradient, GradientStop};
 use blinc_abi::scene::blinc_core::{self, ClipLength, ClipPath, Color, Shadow};
 
@@ -213,6 +214,32 @@ fn unblurred(fill: &Background) -> BlurStyle {
         },
         ..BlurStyle::default()
     }
+}
+
+/// Two decorations of the same lines and style, blended by colour, thickness and offset; which
+/// line is drawn, and how, is not a quantity.
+fn decoration(a: &TextDecoration, b: &TextDecoration, t: f64) -> Option<TextDecoration> {
+    if a.lines != b.lines || a.style != b.style {
+        return None;
+    }
+    // A thickness or an offset the font sets is not a number to blend from.
+    let number = |x: Option<f32>, y: Option<f32>| match (x, y) {
+        (Some(x), Some(y)) => Some(Some(lerp(x, y, t))),
+        (None, None) => Some(None),
+        _ => None,
+    };
+    Some(TextDecoration {
+        color: match (a.color, b.color) {
+            (None, None) => None,
+            (x, y) => match (x, y) {
+                (Some(x), Some(y)) => Some(color(x, y, t)),
+                _ => return None,
+            },
+        },
+        thickness: number(a.thickness, b.thickness)?,
+        offset: number(a.offset, b.offset)?,
+        ..*a
+    })
 }
 
 /// A clip length blended with another of its unit; a zero takes the other's, and
@@ -563,6 +590,11 @@ fn blend_paint(a: &PaintWrite, b: &PaintWrite, t: f64) -> PaintWrite {
         (W::BackdropFilter(x), W::BackdropFilter(y)) => {
             W::BackdropFilter(std::array::from_fn(|i| lerp(x[i], y[i], t)))
         }
+        (W::TextDecoration(x), W::TextDecoration(y)) => W::TextDecoration(
+            x.zip(*y)
+                .and_then(|(x, y)| decoration(&x, &y, t))
+                .or_else(|| *flip(x, y, t)),
+        ),
         (W::ClipPath(x), W::ClipPath(y)) => W::ClipPath(
             x.as_ref()
                 .zip(y.as_ref())
@@ -954,6 +986,66 @@ mod tests {
         assert!(
             matches!(mid, PaintWrite::BackdropFilter(f) if f == [1.25, 1.0, 0.5, 0.0, 0.0, 1.0, 0.0])
         );
+    }
+
+    #[test]
+    fn text_decorations_of_one_kind_blend_colour_thickness_and_offset() {
+        use blinc_abi::css::text_decoration::{Style, UNDERLINE};
+        let line = |color: Option<Color>, thickness: Option<f32>, lines: u8| {
+            PaintWrite::TextDecoration(Some(TextDecoration {
+                lines,
+                style: Style::Solid,
+                color,
+                thickness,
+                offset: None,
+            }))
+        };
+        let red = Color::rgba(1.0, 0.0, 0.0, 1.0);
+        let blue = Color::rgba(0.0, 0.0, 1.0, 1.0);
+        match blend_paint(
+            &line(Some(red), Some(2.0), UNDERLINE),
+            &line(Some(blue), Some(6.0), UNDERLINE),
+            0.5,
+        ) {
+            PaintWrite::TextDecoration(Some(d)) => {
+                assert_eq!(d.thickness, Some(4.0));
+                assert_eq!(d.color.map(|c| (c.r, c.b)), Some((0.5, 0.5)));
+            }
+            other => panic!("{other:?}"),
+        }
+        // Another line, or the font's own thickness against a number, flips at the midpoint.
+        for (a, b) in [
+            (line(None, None, UNDERLINE), line(None, None, 2)),
+            (
+                line(None, Some(1.0), UNDERLINE),
+                line(None, None, UNDERLINE),
+            ),
+            (
+                line(Some(red), None, UNDERLINE),
+                line(None, None, UNDERLINE),
+            ),
+        ] {
+            let at = |t| match blend_paint(&a, &b, t) {
+                PaintWrite::TextDecoration(Some(d)) => (d.lines, d.thickness, d.color),
+                other => panic!("{other:?}"),
+            };
+            let (from, to) = (at(0.4), at(0.6));
+            assert!(
+                matches!(&a, PaintWrite::TextDecoration(Some(d)) if (d.lines, d.thickness, d.color) == from)
+            );
+            assert!(
+                matches!(&b, PaintWrite::TextDecoration(Some(d)) if (d.lines, d.thickness, d.color) == to)
+            );
+        }
+        // None against a decoration is a flip too.
+        assert!(matches!(
+            blend_paint(
+                &PaintWrite::TextDecoration(None),
+                &line(None, None, UNDERLINE),
+                0.8
+            ),
+            PaintWrite::TextDecoration(Some(_))
+        ));
     }
 
     #[test]
