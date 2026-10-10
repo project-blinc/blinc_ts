@@ -495,6 +495,34 @@ its parts are children the component supplies: a checkbox's `.check` and
 `.dash`, a radio's `.dot`, a range's `.fill`, `.thumb` and `.rest`, a progress
 bar's `.bar`, a summary's `.marker` and a select's `.chevron`.
 
+## Scrolling and scroll thumbs
+
+An element with `overflow: auto` or `scroll` scrolls: the wheel scrolls the
+nearest container that can, and `element.scrollTo(x, y)` and
+`element.scrollBy(dx, dy)` move it, kept within its content, dispatching
+`scroll`. `scrollTop`, `scrollLeft`, `scrollWidth`, `scrollHeight`,
+`clientWidth` and `clientHeight` read where it is and how far its content
+reaches. `element.scrollIntoView({ block, inline })` scrolls the containers
+around an element, nearest first, by the least that shows it (`nearest`, the
+default), or to the `start`, `center` or `end` of each view.
+
+A container whose content overflows draws a thumb along each axis that does,
+as long as the visible part is of the whole and as far along as the scroll is
+of the distance it can go. Three properties set it, on the container:
+
+- `scrollbar-color: <thumb> [<track>]` is the thumb's colour. The track is
+  not drawn. The user-agent sheet gives containers a mix of the theme's
+  `--text-tertiary`; with no value a neutral grey shows on light and dark.
+- `scrollbar-width: none` draws no thumb. A transparent colour does too.
+- `scrollbar-visibility` is when it shows: `always` (the default), `auto`,
+  while scrolling and for a moment after, fading out over a quarter of a
+  second; `hover`, while the pointer is over the container; or `hidden`.
+
+The fade is the host's own timer, not CSS, so it asks for the frames it needs
+and nothing more: a window draws nothing while a thumb merely stays.
+`LayoutNode.setScroll(x, y, thumb)` takes the thumb's colour as red, green,
+blue and alpha, from 0 to 1, when a scene is driven without a host.
+
 ## Top layer and placement
 
 `TopLayer.of(host).open(content, options)` (`blinc_ts/native/top-layer`) puts

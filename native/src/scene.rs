@@ -737,8 +737,22 @@ impl NativeLayoutNode {
             .map_err(error)
     }
     #[napi]
-    pub fn set_scroll(&self, x: f64, y: f64) -> Result<()> {
+    pub fn set_scroll(&self, x: f64, y: f64, thumb: Option<Vec<f64>>) -> Result<()> {
         self.owner.check()?;
+        let thumb = match thumb {
+            Some(v) => {
+                if v.len() != 4 {
+                    return Err(error("Expected four thumb values"));
+                }
+                [
+                    number(v[0])?.clamp(0.0, 1.0),
+                    number(v[1])?.clamp(0.0, 1.0),
+                    number(v[2])?.clamp(0.0, 1.0),
+                    number(v[3])?.clamp(0.0, 1.0),
+                ]
+            }
+            None => [0.0; 4],
+        };
         self.owner.styles.borrow_mut().motion.view_changed();
         self.owner
             .tree
@@ -748,7 +762,7 @@ impl NativeLayoutNode {
                 Some(blinc_abi::tree::Scroll {
                     x: number(x)?,
                     y: number(y)?,
-                    thumb: [0.0; 4],
+                    thumb,
                 }),
             )
             .map_err(error)

@@ -268,7 +268,8 @@ impl NativeLayout {
                     self.owner.styles.borrow_mut().motion.view_changed();
                     let node = r.node(&tree)?;
                     let [x, y] = [r.number()?, r.number()?];
-                    if !x.is_finite() || !y.is_finite() {
+                    let thumb = [r.number()?, r.number()?, r.number()?, r.number()?];
+                    if !x.is_finite() || !y.is_finite() || !thumb.iter().all(|v| v.is_finite()) {
                         return Err(error("Expected a finite number"));
                     }
                     tree.set_scroll(
@@ -276,7 +277,7 @@ impl NativeLayout {
                         Some(blinc_abi::tree::Scroll {
                             x: x as f32,
                             y: y as f32,
-                            thumb: [0.0; 4],
+                            thumb: thumb.map(|v| v.clamp(0.0, 1.0) as f32),
                         }),
                     )
                     .map_err(error)?;

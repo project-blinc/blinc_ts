@@ -431,6 +431,13 @@ pub fn css_is_paint_property(name: String) -> bool {
     is_paint_property(&name)
 }
 
+/// A CSS colour as red, green, blue and alpha, 0 to 1, read as a sheet reads it; none when it is not one.
+#[napi]
+pub fn css_parse_color(text: String) -> Option<Vec<f64>> {
+    let c = blinc_abi::css::color::parse(&text, None).ok()?;
+    Some(vec![c.r as f64, c.g as f64, c.b as f64, c.a as f64])
+}
+
 #[napi]
 impl NativeLayout {
     /// Add a sheet from compiled bytes or CSS text, last or at position `at`.

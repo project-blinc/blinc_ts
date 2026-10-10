@@ -316,6 +316,37 @@ try {
       settle();
       assert.equal(advance(100), false, 'and stops');
 
+      // A scroll container's thumb takes the theme's quiet text colour: made red here, so nothing
+      // else could be mistaken for it, in either scheme.
+      state.override({ colors: { textTertiary: [1, 0, 0, 1] } });
+      for (const scheme of ['light', 'dark']) {
+        state.setScheme(scheme);
+        const scroller = el(
+          host,
+          'div',
+          [el(host, 'div', [], 'width: 20px; height: 400px; flex-shrink: 0')],
+          'position: absolute; left: 250px; top: 10px; width: 60px; height: 100px; overflow: auto; flex-direction: column',
+        );
+        host.root.appendChild(scroller);
+        settle();
+        const frame = await capture(host);
+        const [sx, sy, sw] = scroller.bounds();
+        const ground = pixel(frame, sx + 10, sy + 50);
+        const thumb = pixel(frame, sx + sw - 4, sy + 10);
+        // 55% of red over the page, as the sheet mixes it.
+        const expected = [
+          Math.round(255 * 0.55 + ground[0] * 0.45),
+          Math.round(ground[1] * 0.45),
+          Math.round(ground[2] * 0.45),
+          255,
+        ];
+        assert.ok(
+          near(thumb, expected, 8),
+          `${scheme}: the thumb follows the theme: ${thumb}, wanted ${expected}`,
+        );
+        host.root.removeChild(scroller);
+      }
+      state.setScheme('light');
       assert.deepEqual(errors, [], 'no declaration was refused');
       state.dispose();
     } finally {

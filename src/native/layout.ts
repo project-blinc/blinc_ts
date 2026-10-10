@@ -195,7 +195,7 @@ export interface NativeLayoutNode {
   setNotch(values: readonly number[] | null): void;
   setPointerEvents(enabled: boolean): void;
   setResource(slot: number | null, canvas: boolean): void;
-  setScroll(x: number, y: number): void;
+  setScroll(x: number, y: number, thumb?: readonly number[]): void;
   setStyle(style: NativeLayoutStyle): void;
   setChildren(children: readonly NativeLayoutNode[]): void;
   insertBefore(child: NativeLayoutNode, before: NativeLayoutNode | null | undefined): void;
@@ -305,6 +305,7 @@ export interface Restyled {
 export interface NativeCss {
   cssIsLayoutProperty(name: string): boolean;
   cssIsPaintProperty(name: string): boolean;
+  cssParseColor(text: string): number[] | null;
   cssStates(): string[];
 }
 
@@ -596,6 +597,10 @@ export class Layout {
   repaint(node: LayoutNode): void {
     this.#native.cssRepaint(LayoutNode.unwrap(node, this));
     this.#markStyled();
+  }
+  /** A CSS colour as red, green, blue and alpha from 0 to 1, read as a sheet reads it; null when it is not one. */
+  parseColor(text: string): [number, number, number, number] | null {
+    return this.#css.cssParseColor(text) as [number, number, number, number] | null;
   }
   /** Whether `name` is a property the paint router writes. */
   isPaintProperty(name: string): boolean {
@@ -938,9 +943,10 @@ export class LayoutNode implements QueuedNode {
     this.#native.setResource(slot, canvas);
     this.#layout.changed('paint');
   }
-  setScroll(x: number, y: number): void {
+  /** Scroll the node's content to (x, y); `thumb` is the scroll thumb's red, green, blue and alpha, none by default. */
+  setScroll(x: number, y: number, thumb?: readonly [number, number, number, number]): void {
     this.#layout.flush();
-    this.#native.setScroll(x, y);
+    this.#native.setScroll(x, y, thumb);
     this.#layout.changed('paint');
   }
 
@@ -980,12 +986,16 @@ export class LayoutNode implements QueuedNode {
   queueText(content: string, style: TextStyle = {}): void {
     this.#layout.queue().text(this, content, style);
   }
-  /** @internal Queue a scroll offset for the end of the tick. */
-  queueScroll(x: number, y: number): void {
-    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+  /** @internal Queue a scroll offset, and its thumb's colour, for the end of the tick. */
+  queueScroll(
+    x: number,
+    y: number,
+    thumb: readonly [number, number, number, number] = [0, 0, 0, 0],
+  ): void {
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !thumb.every(Number.isFinite)) {
       throw new RangeError('Expected a finite number');
     }
-    this.#layout.queue().scroll(this, x, y);
+    this.#layout.queue().scroll(this, x, y, thumb);
   }
   /** @internal Queue an insertion; the caller has checked it makes no cycle. */
   queueInsertBefore(child: LayoutNode, before: LayoutNode | null): void {

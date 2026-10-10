@@ -65,6 +65,9 @@ ${containers} { flex-direction: column; }
 ${flows} { flex-direction: row; flex-wrap: wrap; align-items: baseline; }
 p, h1, h2, h3, h4, h5, h6, dt, dd, legend, figcaption, caption { max-width: 100%; min-width: 0; }
 
+/* A scroll container's thumb, in the theme's quiet text colour. */
+${containers}, listbox, textarea { scrollbar-color: color-mix(in srgb, var(--text-tertiary) 55%, transparent) transparent; }
+
 /* Text. */
 h1, h2, h3, h4, h5, h6 { font-weight: 700; }
 h1 { font-size: 2em; margin: 0.34em 0; }

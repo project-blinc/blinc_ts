@@ -90,6 +90,7 @@ interface Addon {
   measureText: NativeText['measureText'];
   cssIsLayoutProperty(name: string): boolean;
   cssIsPaintProperty(name: string): boolean;
+  cssParseColor(text: string): number[] | null;
   cssStates(): string[];
   compileCss: CompileCss;
   layoutInline: NativeText['layoutInline'];

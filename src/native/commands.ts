@@ -57,7 +57,13 @@ type Command =
   | { op: typeof DETACH | typeof REMOVE; node: QueuedNode }
   | { op: typeof TEXT; node: QueuedNode; content: string; style: TextStyle }
   | { op: typeof PAINT; node: QueuedNode; paint: QueuedPaint }
-  | { op: typeof SCROLL; node: QueuedNode; x: number; y: number }
+  | {
+      op: typeof SCROLL;
+      node: QueuedNode;
+      x: number;
+      y: number;
+      thumb: readonly [number, number, number, number];
+    }
   | { op: typeof ELEMENT; node: QueuedNode; element: QueuedElement }
   | { op: typeof STATES; node: QueuedNode; bits: number }
   | { op: typeof CSS_PROPERTY; node: QueuedNode; name: string; value: string | null };
@@ -136,15 +142,21 @@ export class CommandQueue {
     }
     this.#paint.set(node, this.#commands.push({ op: PAINT, node, paint: { ...paint } }) - 1);
   }
-  scroll(node: QueuedNode, x: number, y: number): void {
+  scroll(
+    node: QueuedNode,
+    x: number,
+    y: number,
+    thumb: readonly [number, number, number, number],
+  ): void {
     const index = this.#scroll.get(node);
     const command = index === undefined ? undefined : this.#commands[index];
     if (command?.op === SCROLL) {
       command.x = x;
       command.y = y;
+      command.thumb = thumb;
       return;
     }
-    this.#scroll.set(node, this.#commands.push({ op: SCROLL, node, x, y }) - 1);
+    this.#scroll.set(node, this.#commands.push({ op: SCROLL, node, x, y, thumb }) - 1);
   }
   /** The node's element for the cascade; a later one replaces it. */
   element(node: QueuedNode, element: QueuedElement): void {
@@ -290,7 +302,7 @@ export class CommandQueue {
         case SCROLL:
           words.push(SCROLL);
           node(command.node);
-          numbers.push(command.x, command.y);
+          numbers.push(command.x, command.y, ...command.thumb);
           break;
         case ELEMENT: {
           const e = command.element;

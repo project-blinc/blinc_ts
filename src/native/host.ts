@@ -28,6 +28,7 @@ import { MemoryClipboard, SystemClipboard, type Clipboard } from './clipboard.js
 import type { Computed, Disposable, ReactiveContext, Signal } from './reactive.js';
 import type { AffineTransform, Color, PaintStyle, TextStyle } from './scene.js';
 import type { ShapeTokens } from '../theme/shape.js';
+import { ScrollThumb, words } from './scrollbar.js';
 import type { NativeBindings } from './index.js';
 import type { NativeWindowHost, WindowSceneOptions } from './window.js';
 import type { InteractionState } from './input.js';
@@ -121,10 +122,19 @@ const shapeProperties: Readonly<Record<string, keyof ShapeTokens>> = {
   'smoothing-threshold': 'smoothingThreshold',
 };
 
+/** Where `scrollIntoView` puts an element in its container's view along each axis. */
+export interface ScrollIntoViewOptions {
+  block?: 'start' | 'center' | 'end' | 'nearest';
+  inline?: 'start' | 'center' | 'end' | 'nearest';
+}
+
 /** Properties the host reads itself beyond paint, text and layout. */
 const otherProperties: ReadonlySet<string> = new Set([
   'cursor',
   'pointer-events',
+  'scrollbar-color',
+  'scrollbar-width',
+  'scrollbar-visibility',
   ...Object.keys(shapeProperties),
 ]);
 
@@ -637,6 +647,32 @@ export class HostElement extends HostNode {
   get scrollTop(): number {
     return this.host.scrollOf(this)[1];
   }
+  /** How far this element's content reaches, which its scroll position can show: at least its own size. */
+  get scrollWidth(): number {
+    return Math.max(this.layoutNode.contentSize()[0], this.clientWidth);
+  }
+  get scrollHeight(): number {
+    return Math.max(this.layoutNode.contentSize()[1], this.clientHeight);
+  }
+  /** The size of this element's box, which is as much of its content as shows at once. */
+  get clientWidth(): number {
+    return this.bounds()[2];
+  }
+  get clientHeight(): number {
+    return this.bounds()[3];
+  }
+  /** Scroll this element's content by (dx, dy), kept within its content, dispatching `scroll`. */
+  scrollBy(dx: number, dy: number): void {
+    this.host.scrollBy(this, dx, dy);
+  }
+  /**
+   * Scroll the containers around this element until it shows, nearest first:
+   * by the least that brings it into view, or to a `start`, `center` or `end`
+   * of the container's view.
+   */
+  scrollIntoView(options: ScrollIntoViewOptions = {}): void {
+    this.host.scrollIntoView(this, options);
+  }
   /** Scroll this element's content to (x, y), unclamped, dispatching `scroll`. */
   scrollTo(x: number, y: number): void {
     this.host.scrollTo(this, x, y);
@@ -710,6 +746,7 @@ export class Host {
     this.input.onInteraction((element, state) => {
       if (!element.destroyed) {
         element.layoutNode.queueStates(this.#bits(element, state));
+        this.#scrolls.get(element)?.thumb.hovered(state.hover);
       }
     });
     layout.onChange((change) => {
@@ -984,6 +1021,13 @@ export class Host {
       if (events !== before.get('pointer-events')) {
         node.layoutNode.setPointerEvents(events?.trim() !== 'none');
       }
+      if (
+        ['scrollbar-color', 'scrollbar-width', 'scrollbar-visibility'].some(
+          (name) => now.get(name) !== before.get(name),
+        )
+      ) {
+        this.#scrollbar(node, now);
+      }
       for (const name of ['overflow', 'overflow-x', 'overflow-y']) {
         if (now.get(name) !== before.get(name)) {
           this.#overflow(node, name, now.get(name) ?? null);
@@ -1124,18 +1168,48 @@ export class Host {
     }
   }
 
-  /** Whether `element` scrolls along x and y: `overflow` set to scroll or auto. */
-  #scrolls = new Map<HostElement, { axes: [boolean, boolean]; x: number; y: number }>();
+  /** Whether `element` scrolls along x and y: `overflow` set to scroll or auto, where it is, and its thumb. */
+  #scrolls = new Map<
+    HostElement,
+    { axes: [boolean, boolean]; x: number; y: number; thumb: ScrollThumb }
+  >();
+  #scrollEntry(element: HostElement) {
+    let entry = this.#scrolls.get(element);
+    if (!entry) {
+      const thumb = new ScrollThumb((colour) => {
+        if (!element.destroyed) {
+          element.layoutNode.queueScroll(entry!.x, entry!.y, colour);
+        }
+      });
+      entry = { axes: [false, false], x: 0, y: 0, thumb };
+      this.#scrolls.set(element, entry);
+    }
+    return entry;
+  }
   #overflow(element: HostElement, name: string, value: PropertyValue): void {
     const scrolls = value === 'scroll' || value === 'auto';
-    const entry = this.#scrolls.get(element) ?? { axes: [false, false], x: 0, y: 0 };
+    const entry = this.#scrollEntry(element);
     if (name !== 'overflow-y') {
       entry.axes[0] = scrolls;
     }
     if (name !== 'overflow-x') {
       entry.axes[1] = scrolls;
     }
-    this.#scrolls.set(element, entry);
+    // The engine draws a thumb for a container it has a scroll record of.
+    element.layoutNode.queueScroll(entry.x, entry.y, entry.thumb.current);
+  }
+  /** `scrollbar-color`, `scrollbar-width` and `scrollbar-visibility`, as `element`'s declarations now have them. */
+  #scrollbar(element: HostElement, declared: ReadonlyMap<string, string>): void {
+    const colour = words(declared.get('scrollbar-color') ?? '')[0];
+    const parsed = colour && colour !== 'auto' ? this.layout.parseColor(colour) : null;
+    const visibility = declared.get('scrollbar-visibility')?.trim();
+    this.#scrollEntry(element).thumb.restyle(
+      parsed,
+      declared.get('scrollbar-width')?.trim() === 'none',
+      visibility === 'auto' || visibility === 'hover' || visibility === 'hidden'
+        ? visibility
+        : 'always',
+    );
   }
   /** @internal The `cursor` property `element` sets, if any. */
   cursorOf(element: HostElement): string | undefined {
@@ -1145,6 +1219,10 @@ export class Host {
   scrollOf(element: HostElement): [number, number] {
     const entry = this.#scrolls.get(element);
     return entry ? [entry.x, entry.y] : [0, 0];
+  }
+  /** @internal Whether `element` scrolls along x and y. */
+  scrollAxes(element: HostElement): readonly [boolean, boolean] {
+    return this.#scrolls.get(element)?.axes ?? [false, false];
   }
   /**
    * @internal Scroll `element` by (dx, dy) within its content, if it is a
@@ -1166,13 +1244,71 @@ export class Host {
     }
     return rest;
   }
+  /** @internal HostElement.scrollIntoView. */
+  scrollIntoView(element: HostElement, options: ScrollIntoViewOptions): void {
+    const align = [options.inline ?? 'nearest', options.block ?? 'nearest'] as const;
+    const [ex, ey, ew, eh] = this.boundsOf(element);
+    for (let container = element.parentNode; container; container = container.parentNode) {
+      const axes = this.scrollAxes(container);
+      if (!axes[0] && !axes[1]) {
+        continue;
+      }
+      // Where the element is in the container's view: its layout place from the container's, less
+      // what the container and those between it and the element have scrolled, which move it
+      // without moving its layout.
+      let moved = [0, 0];
+      for (
+        let step: HostElement | null = element.parentNode;
+        step;
+        step = step === container ? null : step.parentNode
+      ) {
+        const [sx, sy] = this.scrollOf(step);
+        moved = [moved[0]! + sx, moved[1]! + sy];
+      }
+      const [cx, cy, cw, ch] = this.boundsOf(container);
+      const at = [ex - cx - moved[0]!, ey - cy - moved[1]!];
+      const size = [ew, eh];
+      const view = [cw, ch];
+      const delta = [0, 0];
+      for (const axis of [0, 1]) {
+        if (!axes[axis]) {
+          continue;
+        }
+        const start = at[axis]!;
+        const end = start + size[axis]!;
+        switch (align[axis]) {
+          case 'start':
+            delta[axis] = start;
+            break;
+          case 'end':
+            delta[axis] = end - view[axis]!;
+            break;
+          case 'center':
+            delta[axis] = start + size[axis]! / 2 - view[axis]! / 2;
+            break;
+          case 'nearest':
+          case undefined:
+            // The least that shows it; one bigger than the view lines up its start.
+            delta[axis] =
+              start < 0 || size[axis]! > view[axis]!
+                ? start
+                : end > view[axis]!
+                  ? end - view[axis]!
+                  : 0;
+        }
+      }
+      if (delta[0] !== 0 || delta[1] !== 0) {
+        this.scrollBy(container, delta[0]!, delta[1]!);
+      }
+    }
+  }
   /** @internal Scroll `element` to (x, y) and dispatch `scroll` to it. */
   scrollTo(element: HostElement, x: number, y: number): void {
-    const entry = this.#scrolls.get(element) ?? { axes: [false, false], x: 0, y: 0 };
+    const entry = this.#scrollEntry(element);
     entry.x = x;
     entry.y = y;
-    this.#scrolls.set(element, entry);
-    element.layoutNode.queueScroll(x, y);
+    element.layoutNode.queueScroll(x, y, entry.thumb.current);
+    entry.thumb.scrolled();
     element.dispatchEvent(new HostEvent('scroll'));
   }
 
@@ -1286,6 +1422,7 @@ export class Host {
         current.disposeBindings();
         this.#paintOverrides.delete(current);
         this.#cursors.delete(current);
+        this.#scrolls.get(current)?.thumb.dispose();
         this.#scrolls.delete(current);
         this.input.forget(current);
       } else if (current instanceof HostText) {
