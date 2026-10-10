@@ -67,6 +67,9 @@ ${containers}, li { flex-direction: column; }
 ${flows} { flex-direction: row; flex-wrap: wrap; align-items: baseline; }
 p, h1, h2, h3, h4, h5, h6, dt, dd, legend, figcaption, caption { max-width: 100%; min-width: 0; }
 
+/* An element that is hidden takes no room. */
+[hidden] { display: none; }
+
 /* A scroll container's thumb, in the theme's quiet text colour. */
 ${containers}, listbox, textarea { scrollbar-color: color-mix(in srgb, var(--text-tertiary) 55%, transparent) transparent; }
 

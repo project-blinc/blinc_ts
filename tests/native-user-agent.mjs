@@ -449,6 +449,28 @@ try {
       host.dispose();
     }
   }
+  {
+    // An element with the hidden attribute takes no room, and takes it again without.
+    const host = Host.create(native);
+    try {
+      host.onStyleErrors(() => {});
+      const first = el(host, 'p', ['One']);
+      const second = el(host, 'p', ['Two']);
+      host.root.appendChild(el(host, 'div', [first, second]));
+      addUserAgent(host.layout);
+      host.compute(W, H);
+      const before = second.bounds()[1];
+      first.setAttribute('hidden', '');
+      host.compute(W, H);
+      assert.equal(first.bounds()[3], 0, 'hidden, it has no height');
+      assert.ok(second.bounds()[1] < before, 'and what follows moves up');
+      first.removeAttribute('hidden');
+      host.compute(W, H);
+      assert.equal(second.bounds()[1], before, 'shown again, it is as it was');
+    } finally {
+      host.dispose();
+    }
+  }
 } finally {
   context.dispose();
   target.dispose();
