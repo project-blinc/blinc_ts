@@ -284,6 +284,12 @@ means the same in a stylesheet, an inline `style` and a compiled sheet:
   sides, and fades what a clipping node (`overflow` hidden, scroll or auto)
   holds to nothing over that distance at the matching edge. Percentages are
   reported.
+- `backdrop-filter` takes `none`, or `blur()` with the colour filters
+  (`brightness()`, `contrast()`, `grayscale()`, `hue-rotate()`, `invert()`,
+  `saturate()` and `sepia()`), applied to what is behind the box before its
+  background colour is painted over it. A node with no background of its own is
+  filled with the filtered backdrop; a gradient or `glass` background keeps its
+  own look. `opacity()` and `drop-shadow()` are reported.
 
 - `border` and `border-top`, `-right`, `-bottom` and `-left` take a width
   (`thin`, `medium`, `thick` or a length), a style and a colour in any order.
@@ -312,8 +318,9 @@ and layout properties: colours, `opacity`, `border-radius`, `outline-width`
 and `outline-offset`, `box-shadow`, `transform`, `filter` and same-shaped
 gradients blend, and so do `clip-path` shapes of one kind (same number of
 points for a polygon), a zero length taking the other end's unit, and
-`overflow-fade`, edge by edge; `visibility`, masks, other gradients and clips
-that do not line up flip at the midpoint.
+`overflow-fade`, edge by edge, and `backdrop-filter`, its blur and its colour
+filters; `visibility`, masks, other gradients and clips that do not line up flip
+at the midpoint.
 Colours blend premultiplied, transforms by translation, rotation (the short
 way round), scale and skew, and shadow lists layer by layer. Lengths such as
 `width`, `padding`, `margin`, `gap`, `top` or `flex-basis` blend when both

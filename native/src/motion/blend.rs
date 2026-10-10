@@ -8,7 +8,7 @@ use super::field::{Value, Write, non_negative, slot};
 use blinc_abi::css::clip_path::Clip;
 use blinc_abi::css::filter::Filter;
 use blinc_abi::css::paint::{Background, PaintWrite};
-use blinc_abi::scene::blinc_core::layer::{Affine2D, Gradient, GradientStop};
+use blinc_abi::scene::blinc_core::layer::{Affine2D, BlurStyle, Gradient, GradientStop};
 use blinc_abi::scene::blinc_core::{self, ClipLength, ClipPath, Color, Shadow};
 
 fn lerp(a: f32, b: f32, t: f64) -> f32 {
@@ -182,7 +182,36 @@ fn background(a: &Background, b: &Background, t: f64) -> Background {
         (Background::Gradient(x), Background::Gradient(y)) => gradient(x, y, t)
             .map(Background::Gradient)
             .unwrap_or_else(|| flip(a, b, t).clone()),
+        (Background::Blur(x), Background::Blur(y)) => Background::Blur(blur(x, y, t)),
+        // A fill against a blurred one is that fill with no blur.
+        (Background::Solid(_) | Background::None, Background::Blur(y)) => {
+            Background::Blur(blur(&unblurred(a), y, t))
+        }
+        (Background::Blur(x), Background::Solid(_) | Background::None) => {
+            Background::Blur(blur(x, &unblurred(b), t))
+        }
         _ => flip(a, b, t).clone(),
+    }
+}
+
+fn blur(a: &BlurStyle, b: &BlurStyle, t: f64) -> BlurStyle {
+    BlurStyle {
+        radius: lerp(a.radius, b.radius, t).max(0.0),
+        tint: optional(a.tint, b.tint, t),
+        opacity: lerp(a.opacity, b.opacity, t),
+        quality: a.quality,
+    }
+}
+
+/// A plain fill as a blur of no radius.
+fn unblurred(fill: &Background) -> BlurStyle {
+    BlurStyle {
+        radius: 0.0,
+        tint: match fill {
+            Background::Solid(c) => Some(*c),
+            _ => None,
+        },
+        ..BlurStyle::default()
     }
 }
 
@@ -531,6 +560,9 @@ fn blend_paint(a: &PaintWrite, b: &PaintWrite, t: f64) -> PaintWrite {
         (W::OverflowFade(x), W::OverflowFade(y)) => {
             W::OverflowFade(std::array::from_fn(|i| lerp(x[i], y[i], t)))
         }
+        (W::BackdropFilter(x), W::BackdropFilter(y)) => {
+            W::BackdropFilter(std::array::from_fn(|i| lerp(x[i], y[i], t)))
+        }
         (W::ClipPath(x), W::ClipPath(y)) => W::ClipPath(
             x.as_ref()
                 .zip(y.as_ref())
@@ -561,6 +593,7 @@ fn vector_paint(write: &PaintWrite) -> Option<Vec<f32>> {
     Some(match write {
         W::Opacity(v) | W::OutlineWidth(v) | W::OutlineOffset(v) => vec![*v],
         W::BorderRadius(r) | W::OverflowFade(r) => r.to_vec(),
+        W::BackdropFilter(f) => f.to_vec(),
         W::Background(Background::None) => vec![0.0; 4],
         W::Background(Background::Solid(c)) => rgba(*c).to_vec(),
         W::TextColor(Some(c))
@@ -607,6 +640,7 @@ fn same_paint(a: &PaintWrite, b: &PaintWrite) -> bool {
         (W::BorderRadius(x), W::BorderRadius(y)) | (W::OverflowFade(x), W::OverflowFade(y)) => {
             x == y
         }
+        (W::BackdropFilter(x), W::BackdropFilter(y)) => x == y,
         (W::TextColor(x), W::TextColor(y))
         | (W::BorderColor(x), W::BorderColor(y))
         | (W::OutlineColor(x), W::OutlineColor(y)) => x == y,
@@ -877,6 +911,49 @@ mod tests {
             0.5,
         );
         assert!(matches!(mid, PaintWrite::OverflowFade(f) if f == [10.0, 10.0, 0.0, 20.0]));
+    }
+
+    #[test]
+    fn blurred_backdrops_blend_their_radius_and_tint() {
+        let blurred = |radius, tint| {
+            Background::Blur(BlurStyle {
+                radius,
+                tint,
+                ..BlurStyle::default()
+            })
+        };
+        let white = Color::rgba(1.0, 1.0, 1.0, 0.5);
+        match background(
+            &blurred(0.0, Some(white)),
+            &blurred(20.0, Some(white)),
+            0.25,
+        ) {
+            Background::Blur(b) => {
+                assert_eq!(b.radius, 5.0);
+                assert!((b.tint.unwrap().a - 0.5).abs() < 1e-6);
+            }
+            other => panic!("{other:?}"),
+        }
+        // A plain fill against a blurred one starts unblurred, with the same tint.
+        match background(&Background::Solid(white), &blurred(20.0, Some(white)), 0.5) {
+            Background::Blur(b) => assert_eq!(b.radius, 10.0),
+            other => panic!("{other:?}"),
+        }
+        match background(&blurred(20.0, None), &Background::None, 0.75) {
+            Background::Blur(b) => {
+                assert_eq!(b.radius, 5.0);
+                assert!(b.tint.is_none());
+            }
+            other => panic!("{other:?}"),
+        }
+        let mid = blend_paint(
+            &PaintWrite::BackdropFilter([1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0]),
+            &PaintWrite::BackdropFilter([1.5, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0]),
+            0.5,
+        );
+        assert!(
+            matches!(mid, PaintWrite::BackdropFilter(f) if f == [1.25, 1.0, 0.5, 0.0, 0.0, 1.0, 0.0])
+        );
     }
 
     #[test]

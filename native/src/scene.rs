@@ -4,6 +4,7 @@ use crate::{
     layout::{LayoutStyle, NativeLayout, NativeLayoutNode},
     scene_values::ImageFit,
 };
+use blinc_abi::css::filter::BACKDROP_IDENTITY;
 use blinc_abi::css::paint::{Background, PaintWrite};
 use blinc_abi::css::transform::IDENTITY;
 use blinc_abi::{
@@ -380,6 +381,7 @@ pub(crate) fn apply_paint(
     let mut props = tree.properties(node)?;
     let mut glass = None;
     let mut even_odd = None;
+    let mut backdrop = None;
     for write in writes {
         match write {
             PaintWrite::Background(background) => {
@@ -390,6 +392,7 @@ pub(crate) fn apply_paint(
                     Background::Solid(c) => scene::blinc_core::Brush::Solid(*c),
                     Background::Gradient(g) => scene::blinc_core::Brush::Gradient(g.clone()),
                     Background::Glass(style, _) => scene::blinc_core::Brush::Glass(*style),
+                    Background::Blur(style) => scene::blinc_core::Brush::Blur(*style),
                 });
                 glass = Some(match background {
                     Background::Glass(_, effects) => Some(*effects),
@@ -467,6 +470,9 @@ pub(crate) fn apply_paint(
             PaintWrite::Mask(g) => {
                 props.mask_image = g.clone().map(scene::blinc_core::MaskImage::Gradient);
             }
+            PaintWrite::BackdropFilter(f) => {
+                backdrop = Some((*f != BACKDROP_IDENTITY).then_some(*f));
+            }
             PaintWrite::OverflowFade([top, right, bottom, left]) => {
                 props.overflow_fade = scene::blinc_core::OverflowFade {
                     top: *top,
@@ -487,6 +493,9 @@ pub(crate) fn apply_paint(
     }
     if let Some(rule) = even_odd {
         tree.set_clip_even_odd(node, rule)?;
+    }
+    if let Some(filters) = backdrop {
+        tree.set_backdrop_filters(node, filters)?;
     }
     Ok(())
 }

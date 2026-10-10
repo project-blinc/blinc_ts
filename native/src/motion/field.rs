@@ -3,7 +3,7 @@
 //! layout property, set through the property router.
 
 use blinc_abi::context::PropValue;
-use blinc_abi::css::filter::Filter;
+use blinc_abi::css::filter::{BACKDROP_IDENTITY, Filter};
 use blinc_abi::css::layout::{Units, id, layout_writes};
 use blinc_abi::css::paint::{Background, PaintWrite};
 use blinc_abi::css::transform::IDENTITY;
@@ -69,6 +69,7 @@ pub(crate) enum Field {
     Mask,
     ClipPath,
     OverflowFade,
+    BackdropFilter,
     /// A layout property, by its router id; a length's percentage id is its pixel id's slot.
     Layout(i32),
     /// Where a layout animation draws it.
@@ -152,6 +153,7 @@ impl Field {
             PaintWrite::Mask(_) => Field::Mask,
             PaintWrite::ClipPath(_) => Field::ClipPath,
             PaintWrite::OverflowFade(_) => Field::OverflowFade,
+            PaintWrite::BackdropFilter(_) => Field::BackdropFilter,
         }
     }
 
@@ -184,6 +186,7 @@ impl Field {
             Field::Mask => PaintWrite::Mask(None),
             Field::ClipPath => PaintWrite::ClipPath(None),
             Field::OverflowFade => PaintWrite::OverflowFade([0.0; 4]),
+            Field::BackdropFilter => PaintWrite::BackdropFilter(BACKDROP_IDENTITY),
             Field::Layout(slot) => return Write::Layout(slot, Value::Unset),
             Field::Visual => return Write::Visual(None),
         })
@@ -196,7 +199,7 @@ impl Field {
     }
 
     /// The paint slots `all` names, besides every layout one.
-    pub(crate) const ALL: [Field; 19] = [
+    pub(crate) const ALL: [Field; 20] = [
         Field::Background,
         Field::TextColor,
         Field::Opacity,
@@ -216,6 +219,7 @@ impl Field {
         Field::Mask,
         Field::ClipPath,
         Field::OverflowFade,
+        Field::BackdropFilter,
     ];
 }
 
@@ -248,6 +252,8 @@ pub(crate) fn fields_of(property: &str) -> Vec<Field> {
         "mask-image" | "-webkit-mask-image" => &[Field::Mask],
         "clip-path" => &[Field::ClipPath],
         "overflow-fade" => &[Field::OverflowFade],
+        // Its blur is the fill of the background, which moves with it.
+        "backdrop-filter" => &[Field::BackdropFilter, Field::Background],
         _ => &[],
     };
     if !paint.is_empty() {
