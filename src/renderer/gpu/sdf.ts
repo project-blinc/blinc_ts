@@ -338,9 +338,15 @@ export const notchEdge = tgpu
         result = smax(distance, -hollow, std.max(m.w, 0.001));
       } else if (m.x < 2.5) {
         const rb = (halfW * halfW + h * h) / std.max(2 * h, 0.001);
+        // Inside the body the cap stays within the piece's width, so a deeper reach does not square
+        // off the body's corners; out past the base the circle may be wider than the base is.
+        let side = std.abs(q.x - cx) - halfW;
+        if (q.y < 0) {
+          side = -100000;
+        }
         const cap = std.max(
           std.max(std.length(std.sub(q, d.vec2f(cx, rb - h))) - rb, q.y - into),
-          std.abs(q.x - cx) - halfW,
+          side,
         );
         result = smin(distance, cap, std.max(m.w, 0.001));
       } else if (m.x < 3.5) {

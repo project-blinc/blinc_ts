@@ -76,6 +76,7 @@ try {
       'box-shadow: inset 0 0 0 14px #0000ff',
     ],
     ['innerDropdown', concaveTop(16, 8), 'box-shadow: inset 0 0 0 12px #0000ff'],
+    ['tallBulge', notch({ bottom: notchEdge.bulge(30, 40, 4) }), ''],
   ];
   shapes.forEach(([name, shape, style], i) => {
     const box = host.createElement('div');
@@ -134,6 +135,12 @@ try {
   ground('slot', 68, 15);
   white('slot', 75, 15);
   white('slot', 60, 40);
+
+  // A tall bulge is a circular segment wider than its base: 17 below the base its circle is 45 across
+  // against the base's 30, so a point 18 out from the centre is in it and one 30 out is not.
+  white('tallBulge', 78, 57);
+  ground('tallBulge', 90, 57);
+  white('tallBulge', 60, 70);
 
   // A bulge rises out of the bottom edge.
   white('bulge', 60, 74);
