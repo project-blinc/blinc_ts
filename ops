@@ -1,1 +1,1 @@
-{"author":{"id":"a51b5961cc6de343a64125d8eb6a0f965aa434020b9c46ed932a1bbf143eb532"},"ops":[{"type":3,"timestamp":1791625424,"nonce":"2MZJ8uoUdWEPdtEzxcWKeekRvbQ=","message":"Landed in cb7549f, on blinc_abi 7059ebf (Cascade::resolve_vars). Running animations whose keyframes use var() read them again on a theme change or when the element's values change.","files":null}]}
+{"author":{"id":"a51b5961cc6de343a64125d8eb6a0f965aa434020b9c46ed932a1bbf143eb532"},"ops":[{"type":4,"timestamp":1791625424,"nonce":"l7EAkSkwQir/lnhtJP6NewKabtk=","status":2}]}
