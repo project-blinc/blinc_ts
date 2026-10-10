@@ -1196,6 +1196,28 @@ TypeScript's `react-jsx` transform and a Vue custom renderer built on
 `createRenderer` from `@vue/runtime-core`. Both render the same scene, and
 `npm run test:adapters` checks that their trees, pixels and event order match.
 
+The JSX runtime (`adapters/jsx`) builds a description once, where it is placed, with no
+virtual DOM; what changes later is declared, as a source: a signal, a computed value, or a
+function of them. `mount(host, view, { context, parent?, scope? })` builds a view that updates
+and returns the function that ends it; `render(host, view, parent?)` builds one that cannot,
+and a source in it is an error. A prop that is a source follows it (`class`, an attribute,
+`style` as a whole or any property of a style object), `null`, `undefined` and `false` take an
+attribute away and `true` sets it empty, except under `aria-` and `data-`, where a boolean is
+its word. A child that is a source is a region between two comment placeholders: text is
+rewritten in place, and anything else is built anew, the last built ended and its nodes
+removed, in a scope of its own. Comments and empty text are anonymous to structural selectors,
+so a placeholder is never a `:first-child`.
+
+Components run under an owner: `signal`, `computed`, `memo`, `effect` and `onCleanup` (from
+`#jsx/owner`) belong to the region that holds the component and end when it rebuilds or ends.
+A computed value reruns what depends on it each time it is recomputed, where `memo` tells it
+only when the value changes. `#jsx/flow` has `Show` (`when`, `fallback`; a function child is
+given the value and builds again when it changes), `Switch` and `Match`, `For` (`each`, and
+`children(item, index)`, built once for an item and moved, not rebuilt, as the list changes,
+found by identity) and `createContext`, whose `Provider` gives a value to what is built under
+it and `useContext` reads it. A region made while another is updating is built when that one
+has finished.
+
 ## GPU canvases
 
 A canvas inserts synchronous custom drawing into the scene's paint order. It

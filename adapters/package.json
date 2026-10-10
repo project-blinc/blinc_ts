@@ -6,11 +6,13 @@
   "description": "Reference framework adapters on the blinc_ts host interface: a JSX runtime and a Vue custom renderer.",
   "imports": {
     "#jsx/jsx-runtime": "./dist/jsx/jsx-runtime.js",
-    "#jsx/jsx-dev-runtime": "./dist/jsx/jsx-runtime.js"
+    "#jsx/jsx-dev-runtime": "./dist/jsx/jsx-runtime.js",
+    "#jsx/flow": "./dist/jsx/flow.js",
+    "#jsx/owner": "./dist/jsx/owner.js"
   },
   "scripts": {
     "build": "tsc -p .",
-    "test": "npm run build && node test/adapters.mjs && node test/base-ui-theme.mjs"
+    "test": "npm run build && node test/adapters.mjs && node test/jsx-reactive.mjs && node test/base-ui-theme.mjs"
   },
   "dependencies": {
     "blinc_ts": "file:.."
