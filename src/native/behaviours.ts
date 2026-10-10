@@ -10,6 +10,7 @@ import { HostEvent, HostPointerEvent } from './events.js';
 import type { Host, HostElement, HostNode, HostText } from './host.js';
 import { HostElement as ElementClass } from './host.js';
 import type { ImageEntry } from './host-images.js';
+import { Forms } from './forms.js';
 import { Inputs } from './inputs.js';
 import { ImageFit } from './generated/scene.js';
 import type { StyleSheet } from './layout.js';
@@ -61,6 +62,8 @@ export class Behaviours {
   readonly host: Host;
   /** What the `input` elements do: checking, radio sets and ranges. */
   readonly inputs: Inputs;
+  /** What forms hold, and what their buttons do. */
+  readonly forms: Forms;
   /** Every `img`, and those whose image or fit may need putting right. */
   readonly #pictures = new Map<HostElement, Picture>();
   readonly #pictureDirty = new Set<HostElement>();
@@ -78,6 +81,7 @@ export class Behaviours {
   constructor(host: Host) {
     this.host = host;
     this.inputs = new Inputs(host);
+    this.forms = new Forms(host);
   }
 
   /** Once the host has its root. */
@@ -256,6 +260,9 @@ export class Behaviours {
         return;
       }
       if (n.tag === 'input' && this.inputs.clicked(n)) {
+        return;
+      }
+      if (n.tag === 'button' && this.forms.clicked(n)) {
         return;
       }
       if (n.tag === 'label') {

@@ -94,6 +94,23 @@ export class Inputs {
     }
   }
 
+  /** Put an input back as it began: its `checked` or `value` attribute, as if the user had not touched it. */
+  reset(element: HostElement): void {
+    const control = this.#controls.get(element);
+    if (!control?.kind) {
+      return;
+    }
+    control.dirty = false;
+    control.value = null;
+    control.announced = null;
+    if (control.kind === 'range') {
+      this.#render(element, control);
+      return;
+    }
+    this.setIndeterminate(element, false);
+    this.#setChecked(element, control, element.hasAttribute('checked'));
+  }
+
   forget(node: HostNode): void {
     if (node instanceof ElementClass) {
       this.#controls.delete(node);

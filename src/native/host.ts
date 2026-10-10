@@ -408,6 +408,26 @@ export class HostElement extends HostNode {
   override get composedParent(): HostElement | null {
     return this.parentNode ?? this.#owner;
   }
+  /** The form a control belongs to: the one its `form` attribute names, else the one around it. */
+  get form(): HostElement | null {
+    return this.host.behaviours.forms.ownerOf(this);
+  }
+  /** A form's controls, in tree order, including those elsewhere that name it with `form`. */
+  get elements(): HostElement[] {
+    return this.host.behaviours.forms.elements(this);
+  }
+  /** What a form holds, as `FormData`: named inputs not disabled, a box or radio only if checked. */
+  formData(): FormData {
+    return this.host.behaviours.forms.formData(this);
+  }
+  /** Fire a form's `submit` event as `submitter`, a submit button of it, asks; false when cancelled. */
+  requestSubmit(submitter: HostElement | null = null): boolean {
+    return this.host.behaviours.forms.requestSubmit(this, submitter);
+  }
+  /** Put a form's controls back as they began, unless its `reset` event is cancelled. */
+  reset(): boolean {
+    return this.host.behaviours.forms.reset(this);
+  }
   /** Whether a checkbox or a radio is checked; setting it fires no event, as a script's does. */
   get checked(): boolean {
     return this.host.behaviours.inputs.checked(this);

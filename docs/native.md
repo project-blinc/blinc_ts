@@ -616,6 +616,20 @@ End go to the ends, each an `input` and a `change`. A value is on the step count
 from `min` and never past the last whole step. `element.value` and
 `element.valueAsNumber` read and set it. A disabled range takes no press and no key.
 
+**Forms.** A `form`'s controls are `input`, `button`, `select` and `textarea` under it, or
+anywhere that names it with `form="id"`, listed by `form.elements` in tree order;
+`control.form` is the form a control belongs to. `form.formData()` is a `FormData` of
+the named `input`s that are not disabled, a checkbox or radio only when checked (its
+`value`, else `on`) and a range always. A `button` is a submit button unless its `type`
+is `reset` or `button`: a click, or Enter or Space on it focused, fires the form's
+`submit` event (bubbling, cancelable, with `event.submitter`) or its `reset` event, and
+a disabled button does neither. Nothing is sent anywhere; the `submit` event is where an
+app takes the form. `form.requestSubmit(submitter?)` fires it from a script and returns
+false when it was cancelled (a submitter that is not a submit button of the form is a
+`TypeError`), and `form.reset()` fires `reset` and, unless that was cancelled, puts each
+checkbox and radio back as its `checked` attribute says and each range as its `value`
+does, as if the user had not touched them.
+
 **Owned parts and the pointer.** A part the host owns is under its owner for events,
 hover, press and click: a click on a `details` chevron or a range's thumb reaches the
 `summary` or the `input`, and the owner is `:hover` while the pointer is over a part.
