@@ -29,6 +29,7 @@ pub(crate) fn parse_timing(text: &str) -> Option<Timing> {
 pub(crate) use spec::Spec;
 use spec::{Animation, Direction};
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::Arc;
 use timing::Timing;
 
 /// What a restyle reads keyframes, their variables and units from.
@@ -216,7 +217,8 @@ fn tracks(stops: &[keyframes::Stop], base: &HashMap<Field, Write>) -> Vec<Track>
 }
 
 struct NodeMotion {
-    spec: Spec,
+    /// Shared with every node that declares the same, and with the restyle's cache.
+    spec: Arc<Spec>,
     /// What the cascade last asked of each field.
     base: HashMap<Field, Write>,
     /// What each field was last given, partway through a run included.
@@ -310,7 +312,7 @@ impl NodeMotion {
 
     /// A changed `transition` or `animation`: what it dropped ends, and the fields it
     /// held fall back to the cascade's value.
-    fn respec(&mut self, spec: Spec) -> Vec<Write> {
+    fn respec(&mut self, spec: Arc<Spec>) -> Vec<Write> {
         let mut now = Vec::new();
         let mut released = Vec::new();
         self.anims.retain(|a| {
@@ -518,7 +520,7 @@ impl Motion {
     pub(crate) fn restyle(
         &mut self,
         raw: u64,
-        spec: Option<Spec>,
+        spec: Option<Arc<Spec>>,
         writes: Vec<Write>,
         complete: bool,
         context: &Context,
@@ -543,13 +545,13 @@ impl Motion {
             Some(spec) => {
                 let fresh = !self.nodes.contains_key(&raw);
                 let node = self.nodes.entry(raw).or_insert_with(|| NodeMotion {
-                    spec: Spec::default(),
+                    spec: Arc::default(),
                     base: HashMap::new(),
                     shown: HashMap::new(),
                     runs: Vec::new(),
                     anims: Vec::new(),
                 });
-                let mut now = if node.spec == spec {
+                let mut now = if Arc::ptr_eq(&node.spec, &spec) || node.spec == spec {
                     Vec::new()
                 } else {
                     node.respec(spec)

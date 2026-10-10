@@ -11,8 +11,8 @@ fn cascade(css: &str) -> Cascade {
     cascade
 }
 
-fn spec(declared: &[(&str, &str)]) -> Spec {
-    Spec::read(declared.iter().copied()).0
+fn spec(declared: &[(&str, &str)]) -> std::sync::Arc<Spec> {
+    std::sync::Arc::new(Spec::read(declared.iter().copied()).0)
 }
 
 fn opacity(write: &Write) -> f32 {
@@ -35,7 +35,7 @@ fn opacity_at(motion: &mut Motion, now: f64) -> Option<f32> {
 fn restyle(
     motion: &mut Motion,
     cascade: &Cascade,
-    spec: Option<Spec>,
+    spec: Option<std::sync::Arc<Spec>>,
     writes: Vec<PaintWrite>,
 ) -> Vec<Write> {
     let context = Context {
@@ -558,7 +558,7 @@ fn layout_at(motion: &mut Motion, id: i32, now: f64) -> Option<Value> {
 fn route(
     motion: &mut Motion,
     cascade: &Cascade,
-    spec: Option<Spec>,
+    spec: Option<std::sync::Arc<Spec>>,
     writes: Vec<Write>,
 ) -> Vec<Write> {
     let context = Context {

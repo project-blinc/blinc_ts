@@ -16,6 +16,7 @@ use napi::bindgen_prelude::{Either, Uint8Array, Uint32Array};
 use napi::{Error, Result, Status};
 use napi_derive::napi;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 fn error(message: impl Into<String>) -> Error {
     Error::new(Status::InvalidArg, message.into())
@@ -34,6 +35,8 @@ pub(crate) struct StyleState {
     sent: HashMap<u64, Vec<(Atom, String)>>,
     /// Transitions and animations in flight.
     pub(crate) motion: Motion,
+    /// Motion declarations read, by a hash of their text, which most elements share.
+    specs: HashMap<u64, (Vec<(Atom, String)>, Arc<Spec>, Vec<String>)>,
     environment: MediaEnvironment,
     root_font_size: f64,
 }
@@ -48,6 +51,7 @@ impl Default for StyleState {
             resolved: HashMap::new(),
             sent: HashMap::new(),
             motion: Motion::default(),
+            specs: HashMap::new(),
             environment: MediaEnvironment {
                 width: 0.0,
                 height: 0.0,
@@ -549,7 +553,7 @@ impl NativeLayout {
         );
         let (mut nodes, mut counts, mut names, mut values) =
             (Vec::new(), Vec::new(), Vec::new(), Vec::new());
-        let mut specs: HashMap<u64, (Spec, bool)> = HashMap::new();
+        let mut specs: HashMap<u64, (Arc<Spec>, bool)> = HashMap::new();
         let mut problems = Vec::new();
         for &raw in &state.elements {
             let Ok(node) = tree.node(raw) else { continue };
@@ -571,13 +575,36 @@ impl NativeLayout {
                 name.starts_with("transition") || name.starts_with("animation")
             };
             if state.motion.has(raw) || computed.resolved.iter().any(|(k, _)| motion(k)) {
-                let (spec, found) = Spec::read(
-                    computed
-                        .resolved
-                        .iter()
-                        .map(|(k, v)| (cascade.str(*k), v.as_str())),
-                );
-                problems.extend(found);
+                let declared = || computed.resolved.iter().filter(|(k, _)| motion(k));
+                let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                for (k, v) in declared() {
+                    std::hash::Hash::hash(&k.0, &mut hasher);
+                    std::hash::Hash::hash(v, &mut hasher);
+                }
+                let key = std::hash::Hasher::finish(&hasher);
+                let hit = state
+                    .specs
+                    .get(&key)
+                    .filter(|(text, ..)| text.iter().eq(declared()));
+                let spec = match hit {
+                    Some((_, spec, found)) => {
+                        problems.extend(found.iter().cloned());
+                        spec.clone()
+                    }
+                    None => {
+                        let (spec, found) =
+                            Spec::read(declared().map(|(k, v)| (cascade.str(*k), v.as_str())));
+                        let spec = Arc::new(spec);
+                        problems.extend(found.iter().cloned());
+                        if state.specs.len() >= 4096 {
+                            state.specs.clear();
+                        }
+                        state
+                            .specs
+                            .insert(key, (declared().cloned().collect(), spec.clone(), found));
+                        spec
+                    }
+                };
                 specs.insert(raw, (spec, first));
             }
             // What the host still reads: text and the like, not what was applied here.
@@ -607,7 +634,7 @@ impl NativeLayout {
         errors.extend(state.motion.unreported(problems));
         // A node's paint, and the layout held back, go through motion, which applies them now
         // or later; so does a changed transition or animation on a node whose paint did not change.
-        let mut jobs: Vec<(Node, Option<(Spec, bool)>, Vec<Write>)> = state
+        let mut jobs: Vec<(Node, Option<(Arc<Spec>, bool)>, Vec<Write>)> = state
             .styles
             .take_paint()
             .into_iter()
