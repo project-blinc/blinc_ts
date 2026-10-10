@@ -21,6 +21,7 @@ import {
   themeVariables,
 } from '../dist/theme/index.js';
 import { classes, utilityClasses, utilityCss } from '../dist/theme/utilities.js';
+import { userAgentCss } from '../dist/theme/user-agent.js';
 
 test('the reference smoothing resolves to a fractional corner n', () => {
   const hybrid = shapeTokens(0.4, 3.3, 12);
@@ -179,4 +180,25 @@ test('utility classes are generated from the token names', () => {
   assert.match(css, /^\.tracking-wide \{ letter-spacing: var\(--tracking-wide\); \}$/m);
   assert.match(css, /^\.corner-round-locked \{ corner-shape: round locked; \}$/m);
   assert.equal(classes('p-4', false, 'bg-surface', undefined), 'p-4 bg-surface');
+});
+
+test('the user-agent sheet reads only variables a theme defines', () => {
+  const css = userAgentCss();
+  const used = new Set([...css.matchAll(/var\((--[a-z0-9-]+)[,)]/g)].map((m) => m[1]));
+  assert.ok(used.size > 10, 'it is themed');
+  for (const theme of [neutralTheme.light, neutralTheme.dark]) {
+    const defined = themeVariables(theme);
+    for (const name of used) {
+      assert.ok(name in defined, `${theme.scheme}: ${name} is not a theme variable`);
+    }
+  }
+});
+
+test('the user-agent sheet declares nothing the host drops', () => {
+  // These parse without an error and then do nothing.
+  const dropped = /(?:^|[;{\s])(transition|animation|clip-path|text-decoration|text-align)\s*:/gm;
+  assert.deepEqual(
+    [...userAgentCss().matchAll(dropped)].map((m) => m[1]),
+    [],
+  );
 });

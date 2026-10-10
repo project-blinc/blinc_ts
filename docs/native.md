@@ -398,6 +398,27 @@ step, such as `p-0.5`), radii (`rounded`, `rounded-lg`), shadows (`shadow`,
 one is a type error, and `utilityCss()` returns the sheet as text for a build
 step.
 
+### User-agent styles
+
+Built-in elements are flex rows with no look of their own, so a `div` lays its
+children side by side and an `h1` is body text. `blinc_ts/theme/user-agent`
+gives them defaults, as a browser's stylesheet gives HTML elements theirs:
+
+```ts
+import { addUserAgent } from 'blinc_ts/theme/user-agent';
+
+addUserAgent(host.layout); // first among the sheets, so every other rule wins
+```
+
+It sets the window's ground, ink and type from the theme, stacks the flow
+containers (`div`, `section`, `ul`, `form`, `pre`, …) in columns, sets the
+text elements (`p`, `h1` to `h6`, `code`, `kbd`, `mark`, `a`) in a wrapping
+baseline row at the browser's relative sizes, and styles `pre`, `blockquote`,
+`hr`, `a`, `button`, `label` and `fieldset`. Everything it uses is a theme
+variable, so a theme change restyles it, and it only declares what the host
+applies. Margins are half a browser's because flex siblings do not collapse
+them, and lists have no markers yet.
+
 ## Measuring text and inline runs
 
 `measureText(text, style, wrapWidth?)` lays text out as the renderer draws
