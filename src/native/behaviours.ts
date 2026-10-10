@@ -16,6 +16,7 @@ import { Inputs } from './inputs.js';
 import { Selects } from './selects.js';
 import { Tables } from './tables.js';
 import { TextFields } from './text-fields.js';
+import { Validity } from './validity.js';
 import { ImageFit } from './generated/scene.js';
 import type { StyleSheet } from './layout.js';
 
@@ -76,6 +77,8 @@ export class Behaviours {
   readonly tables: Tables;
   /** What text inputs and textareas do: they are edited in place. */
   readonly textFields: TextFields;
+  /** Whether controls hold what they must: `:invalid`, `checkValidity`, and a form's check on submit. */
+  readonly validity: Validity;
   /** Every `img`, and those whose image or fit may need putting right. */
   readonly #pictures = new Map<HostElement, Picture>();
   readonly #pictureDirty = new Set<HostElement>();
@@ -98,6 +101,7 @@ export class Behaviours {
     this.selects = new Selects(host);
     this.tables = new Tables(host);
     this.textFields = new TextFields(host);
+    this.validity = new Validity(host);
   }
 
   /** Once the host has its root. */
@@ -106,6 +110,7 @@ export class Behaviours {
     this.dialogs.attach();
     this.selects.attach();
     this.textFields.attach();
+    this.validity.attach();
     // A click that nothing handled does what the element under it means: follow a link,
     // operate a label's control, open or close a details.
     this.host.root.addEventListener('click', (event) => {
@@ -120,6 +125,7 @@ export class Behaviours {
     this.inputs.created(element);
     this.selects.created(element);
     this.textFields.created(element);
+    this.validity.changed(element);
     switch (element.tag) {
       case 'summary':
         this.host.ownedElement(element, 'div', ['marker']);
@@ -414,6 +420,14 @@ export class Behaviours {
     this.tables.changed(parent);
     this.tables.changed(child ?? null);
     this.textFields.childrenChanged(parent);
+    this.validity.subtreeChanged(child ?? null);
+    // A select's options, or a textarea's text, are what its constraints read.
+    for (let n: HostNode | null = parent; n instanceof ElementClass; n = n.parentNode) {
+      if (n.tag === 'select' || n.tag === 'textarea') {
+        this.validity.changed(n);
+        break;
+      }
+    }
     // A control put into a disabled fieldset is disabled by it.
     if (
       parent instanceof ElementClass &&
@@ -440,6 +454,10 @@ export class Behaviours {
     this.selects.changed(element);
     this.tables.attributeChanged(element, name);
     this.textFields.attributeChanged(element, name);
+    this.validity.changed(element);
+    if (element.tag === 'fieldset' && name === 'disabled') {
+      this.validity.subtreeChanged(element);
+    }
     if (element.tag === 'progress' || element.tag === 'meter') {
       this.#sync(element);
     }
@@ -483,6 +501,7 @@ export class Behaviours {
       this.selects.forget(node);
       this.tables.forget(node);
       this.textFields.forget(node);
+      this.validity.forget(node);
       const picture = this.#pictures.get(node);
       if (picture) {
         picture.use?.release();
@@ -508,6 +527,7 @@ export class Behaviours {
     this.selects.flush();
     this.tables.flush();
     this.textFields.flush();
+    this.validity.flush();
     if (this.#pictureDirty.size > 0) {
       const dirty = [...this.#pictureDirty];
       this.#pictureDirty.clear();

@@ -96,8 +96,9 @@ export class Forms {
   }
 
   /**
-   * Submit `form` as `submitter` asks: the `submit` event, which a listener may cancel. Nothing
-   * is sent anywhere. False when it was cancelled.
+   * Submit `form` as `submitter` asks: its controls are checked unless it is `novalidate` (when
+   * one is not valid the form is not submitted), then the `submit` event, which a listener may
+   * cancel. Nothing is sent anywhere. False when it was not submitted.
    */
   requestSubmit(form: HostElement, submitter: HostElement | null = null): boolean {
     if (form.tag !== 'form') {
@@ -112,6 +113,9 @@ export class Forms {
       )
     ) {
       throw new TypeError('The submitter is not a submit button of this form');
+    }
+    if (!this.host.behaviours.validity.allowsSubmit(form, submitter)) {
+      return false;
     }
     const allowed = form.dispatchEvent(new HostSubmitEvent(submitter));
     if (allowed) {
@@ -133,6 +137,7 @@ export class Forms {
       this.host.behaviours.inputs.reset(control);
       this.host.behaviours.selects.reset(control);
       this.host.behaviours.textFields.reset(control);
+      this.host.behaviours.validity.reset(control);
     }
     return true;
   }

@@ -360,6 +360,7 @@ select > :is(option, optgroup) { display: none; }
 select:hover { border-color: var(--border-hover); }
 select:active { transform: scale(0.98); }
 select[open] { border-color: var(--border-focus); }
+select:user-invalid { border-color: var(--border-error); outline-color: var(--focus-ring-error); }
 select:disabled { opacity: 0.5; transform: none; cursor: default; }
 select[data-placeholder] { color: var(--text-tertiary); }
 select > .chevron { color: var(--text-secondary); transition: transform var(--duration-normal) var(--ease-state); }

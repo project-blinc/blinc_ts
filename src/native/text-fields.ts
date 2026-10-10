@@ -282,8 +282,6 @@ export class TextFields {
     if (!field.dirty) {
       e.setValue(this.#default(field));
     }
-    el.setState('required', el.hasAttribute('required'));
-    el.setState('optional', !el.hasAttribute('required'));
     this.#touch(field);
   }
 

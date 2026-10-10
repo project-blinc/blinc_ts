@@ -660,8 +660,32 @@ only the characters a number is written with, the up and down arrows and its own
 (`.step-up` and `.step-down`) move it by `step` within `min` and `max`, an empty one
 starting from zero or the minimum, and `valueAsNumber` is NaN when it is empty or not one.
 A named field is in `form.formData()`. The caret's place is not yet published to the input
-method for its candidate window, and there is no validity yet (`required`, `pattern`,
-`:valid` and `:invalid`).
+method for its candidate window.
+
+**Validity.** A text field, a checkbox, a radio and a select are checked for their
+constraints unless they are disabled (alone or by a fieldset) or, for a text field,
+`readonly`; no other `input` is, and `required` means nothing to it. `required` needs a text
+value, a ticked box, a chosen radio in the set (those of one `name` under one form) or a
+non-empty select value. A text value is also checked against `type` (`email`: one `@`
+and no spaces; `url`: a scheme and a rest), `pattern` (matching the whole value; one that
+is not an expression constrains nothing), `minlength` (only once the user has typed in the
+field) and `maxlength`; a `number` against `min`, `max` and `step` counted from `min`, or
+zero. `control.validity` has the flags of `ValidityState` (`valueMissing`, `typeMismatch`,
+`patternMismatch`, `tooLong`, `tooShort`, `rangeUnderflow`, `rangeOverflow`, `stepMismatch`,
+`badInput`, `customError`, `valid`), `validationMessage` says the first as a browser does,
+`willValidate` whether it is checked, and `setCustomValidity(message)` makes it invalid until
+an empty one is set. `checkValidity()` fires a non-bubbling, cancelable `invalid` event at each
+control that is not valid and returns whether all were; `reportValidity()` also marks them as
+the user's and focuses the first. Both work on a form for all of its controls.
+
+CSS reads `:valid` and `:invalid` as the constraints say (neither on a control that is not
+checked), `:required` and `:optional`, and `:user-valid` and `:user-invalid`, which follow once
+the user has changed a control and left it, chosen a box, radio or option, or a submit failed.
+A form is checked when it is submitted, by a button or `requestSubmit()`, unless it has
+`novalidate` or the submitter has `formnovalidate`: when a control is not valid, each shows as
+the user's, the first takes focus, and no `submit` event fires. `reset()` clears what the user
+has touched. Setting `value`, `checked` or `selectedIndex` from a script is not the user's
+doing, so it updates `:valid` and `:invalid` but not the user states.
 
 **Tables.** Every row of a `table`, its own and those in `thead`, `tbody` and `tfoot`, is a
 grid of the same columns, so cells line up down the table: as many as the widest row has

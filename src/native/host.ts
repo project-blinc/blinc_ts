@@ -32,6 +32,7 @@ import { ScrollThumb, words } from './scrollbar.js';
 import { InlineFlows } from './inline-flow.js';
 import { HostImages } from './host-images.js';
 import { Behaviours } from './behaviours.js';
+import type { ValidityFlags } from './validity.js';
 import type { NativeBindings } from './index.js';
 import type { NativeWindowHost, WindowSceneOptions } from './window.js';
 import type { InteractionState } from './input.js';
@@ -462,12 +463,37 @@ export class HostElement extends HostNode {
   reset(): boolean {
     return this.host.behaviours.forms.reset(this);
   }
+  /** Whether a control is checked for its constraints: enabled, not read-only, and one the user fills in. */
+  get willValidate(): boolean {
+    return this.host.behaviours.validity.willValidate(this);
+  }
+  /** What a control's constraints say of it: `valid`, `valueMissing`, `patternMismatch` and the rest. */
+  get validity(): ValidityFlags {
+    return this.host.behaviours.validity.validity(this);
+  }
+  /** Why a control is invalid, as a browser says it; empty when it is valid. */
+  get validationMessage(): string {
+    return this.host.behaviours.validity.validationMessage(this);
+  }
+  /** Make a control invalid with `message` until a script sets an empty one. */
+  setCustomValidity(message: string): void {
+    this.host.behaviours.validity.setCustomValidity(this, message);
+  }
+  /** Whether a control, or every control of a form, is valid; each that is not fires `invalid`. */
+  checkValidity(): boolean {
+    return this.host.behaviours.validity.checkValidity(this);
+  }
+  /** As `checkValidity`, and the first control that is not valid takes focus and shows as `:user-invalid`. */
+  reportValidity(): boolean {
+    return this.host.behaviours.validity.reportValidity(this);
+  }
   /** Whether a checkbox or a radio is checked; setting it fires no event, as a script's does. */
   get checked(): boolean {
     return this.host.behaviours.inputs.checked(this);
   }
   set checked(on: boolean) {
     this.host.behaviours.inputs.setChecked(this, on);
+    this.host.behaviours.validity.changed(this);
   }
   /** A checkbox in neither state until it is clicked: `:indeterminate`. */
   get indeterminate(): boolean {
@@ -492,6 +518,7 @@ export class HostElement extends HostNode {
     } else {
       inputs.setValue(this, text);
     }
+    this.host.behaviours.validity.changed(this);
   }
   /** A text field's: where the selection starts and ends, as UTF-16 indices. */
   get selectionStart(): number {
@@ -513,6 +540,7 @@ export class HostElement extends HostNode {
   }
   set selectedIndex(index: number) {
     this.host.behaviours.selects.setSelectedIndex(this, index);
+    this.host.behaviours.validity.changed(this);
   }
   /** A select's options, in order, those in an `optgroup` too. */
   get options(): HostElement[] {

@@ -229,7 +229,7 @@ export class Inputs {
 
   #setChecked(element: HostElement, control: Control, on: boolean): void {
     if (control.kind === 'radio' && on) {
-      for (const other of this.#group(element)) {
+      for (const other of this.group(element)) {
         const state = this.#controls.get(other);
         if (other !== element && state?.checked) {
           state.checked = false;
@@ -244,7 +244,7 @@ export class Inputs {
   }
 
   /** The radios `element` is set with: those of its name under its form, or in the tree. */
-  #group(element: HostElement): HostElement[] {
+  group(element: HostElement): HostElement[] {
     const name = element.getAttribute('name');
     if (!name) {
       return [element];
@@ -325,7 +325,7 @@ export class Inputs {
     if (step === 0) {
       return;
     }
-    const set = this.#group(target).filter((r) => !this.host.input.isDisabled(r));
+    const set = this.group(target).filter((r) => !this.host.input.isDisabled(r));
     const at = set.indexOf(target);
     const next = set[(at + step + set.length) % set.length];
     event.preventDefault();
