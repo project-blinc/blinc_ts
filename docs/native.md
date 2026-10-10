@@ -495,6 +495,58 @@ its parts are children the component supplies: a checkbox's `.check` and
 `.dash`, a radio's `.dot`, a range's `.fill`, `.thumb` and `.rest`, a progress
 bar's `.bar`, a summary's `.marker` and a select's `.chevron`.
 
+## Top layer and placement
+
+`TopLayer.of(host).open(content, options)` (`blinc_ts/native/top-layer`) puts
+an element above everything else, as HTML's top layer does for a popover, a
+menu, a select's list, a tooltip or a modal dialog. The entry goes last under
+the root, absolutely positioned, so it is drawn over the rest, hit first and
+clipped by no element. Beside the content is a `backdrop` element as large as
+the root: clear, or dimmed for a `modal` (the sheet's `backdrop` rule, or a
+`backdrop` colour you give).
+
+```ts
+import { TopLayer } from 'blinc_ts/native/top-layer';
+import { placement } from 'blinc_ts/native/placement';
+
+const entry = TopLayer.of(host).open(menu, {
+  placement: placement.beside(button, 'bottom', { gap: 4 }),
+  onClose: () => button.focus(),
+});
+await entry.close(); // resolves once its exit animation has played
+```
+
+A press on the backdrop, outside the content, closes a dismissible entry (the
+default), and so does Escape; the topmost entry takes it, and one that is not
+dismissible keeps Escape from those beneath. `modal` keeps Tab inside the
+content, moves focus into it, and focus goes back to what had it as it closes
+(`restoreFocus: false` to keep it where it is). `passThrough` makes an entry
+take no presses at all, a tooltip's; `modeless` has no backdrop, so the page
+keeps its presses while the content takes its own, a hover card's.
+
+Closing puts `closing` on the backdrop and the content so a stylesheet can
+animate them away, as the user-agent sheet does for `dialog` and `listbox`,
+and presses pass through while they play. The content is kept, to open again.
+
+Placements, in layout units against the root: `placement.center()`;
+`below(anchor)`, at least as wide as it and above it where there is no room
+below, for a select's list; `beside(anchor, side, { align, gap, offset })`;
+`edge(side)`, pinned along an edge of the root and stretched, for a sheet;
+`at(x, y)`, flipped left and up where it would run past an edge, for a
+context menu. An anchor is a box, or an element whose bounds are read each
+time it is placed. A box goes on its side when it fits there and on the
+opposite side when it does not and that has more room, and is kept inside the
+root. The side it ended on is `data-side` on the content, and `entry.placed`
+has its `left`, `top`, `side` and `arrow`, where the anchor's middle falls
+along the box.
+
+An anchored entry is placed again after each layout, so it follows its
+content's size and its anchor's place, with layout run again before the frame
+is drawn. That is `layout.onLaidOut(listener)`: a listener that moves or
+resizes something returns true, and layout runs again, up to four more times.
+The geometry alone is `place(placement, contentSize, viewportSize)` in
+`blinc_ts/native/placement`, which needs no window.
+
 ## Measuring text and inline runs
 
 `measureText(text, style, wrapWidth?)` lays text out as the renderer draws

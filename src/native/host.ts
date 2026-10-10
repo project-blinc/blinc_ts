@@ -1058,10 +1058,20 @@ export class Host {
     this.flush();
     this.#width = width;
     this.#height = height;
-    this.layout.compute(this.root.layoutNode, width, height);
+    this.#laying = true;
+    try {
+      this.layout.compute(this.root.layoutNode, width, height);
+    } finally {
+      this.#laying = false;
+    }
     this.#computed = true;
   }
+  /** Whether a layout pass is running, whose listeners read the bounds it just made. */
+  #laying = false;
   #ensureLayout(): void {
+    if (this.#laying) {
+      return;
+    }
     this.flush();
     if (!this.#computed) {
       this.compute(this.#width, this.#height);

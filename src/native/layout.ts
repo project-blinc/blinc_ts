@@ -308,6 +308,9 @@ export interface NativeCss {
   cssStates(): string[];
 }
 
+/** How many times layout runs again for what `onLaidOut` listeners moved. */
+const LAYOUT_PASSES = 4;
+
 /** An owned native tree. A mounted root's Scope can release it during HMR. */
 export class Layout {
   readonly #native: NativeLayout;
@@ -318,6 +321,7 @@ export class Layout {
   readonly #atoms = new Map<string, number>();
   readonly #layoutNames = new Map<string, boolean>();
   readonly #restyleListeners = new Set<(restyled: Restyled) => void>();
+  readonly #laidOutListeners = new Set<() => boolean | void>();
   #styled = false;
   /** Whether a tick may have something to do: false lets frames skip the native call. */
   #motion = false;
@@ -547,17 +551,43 @@ export class Layout {
     return this.#native.hitTest(LayoutNode.unwrap(root, this), x, y);
   }
 
+  /**
+   * Run `listener` after each layout pass, with bounds readable. One that
+   * moves or resizes something returns true, and layout runs again for it,
+   * a few passes at most: what is placed from the size of its content, as a
+   * popover against its anchor, settles before the frame is drawn.
+   */
+  onLaidOut(listener: () => boolean | void, scope?: Scope): () => void {
+    this.#laidOutListeners.add(listener);
+    const remove = () => {
+      this.#laidOutListeners.delete(listener);
+    };
+    scope?.onCleanup(remove);
+    return remove;
+  }
+
   compute(root: LayoutNode, width: number, height: number): void {
-    this.flush();
-    if (this.#styled) {
-      this.#setEnvironment(width, height);
-      this.restyle(root);
+    for (let pass = 0; ; pass++) {
       this.flush();
+      if (this.#styled) {
+        this.#setEnvironment(width, height);
+        this.restyle(root);
+        this.flush();
+      }
+      this.#hitRevision++;
+      // Always laid out; a layout animation may have started a move.
+      const moved = this.#native.compute(LayoutNode.unwrap(root, this), width, height);
+      this.#motion ||= moved;
+      let again = false;
+      if (this.#laidOutListeners.size > 0 && pass < LAYOUT_PASSES) {
+        for (const listener of [...this.#laidOutListeners]) {
+          again = listener() === true || again;
+        }
+      }
+      if (!again) {
+        return;
+      }
     }
-    this.#hitRevision++;
-    // Always laid out; a layout animation may have started a move.
-    const moved = this.#native.compute(LayoutNode.unwrap(root, this), width, height);
-    this.#motion ||= moved;
   }
 
   // --- CSS, run by the native engine ---
