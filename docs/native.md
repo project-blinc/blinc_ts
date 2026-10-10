@@ -630,6 +630,20 @@ false when it was cancelled (a submitter that is not a submit button of the form
 checkbox and radio back as its `checked` attribute says and each range as its `value`
 does, as if the user had not touched them.
 
+**Dialogs.** A `dialog` is open while it has `open`. `dialog.show()` opens it where it
+is. `dialog.showModal()` opens it in the top layer, centred over a dimmed backdrop, with
+focus moved into it, Tab kept inside it, and focus given back to what had it as it
+closes; the dialog goes back to its place among its siblings once its closing animation
+has played (`[closing]` is on it meanwhile). Escape asks a modal to close: a `cancel`
+event, which a listener may cancel to keep it open, then `close`. A press on the backdrop
+does so only for `closedby="any"`, and `closedby="none"` ignores Escape too, as HTML's
+does. `dialog.close(value)` and `dialog.requestClose(value)` (the second is the Escape
+path, cancelable) set `returnValue`; so does a `form` whose `method` is `dialog`, when it
+is submitted and the event is not cancelled, with its submitter's `value`. Anything that
+takes `open` away closes it and fires `close`, once. `dialog.open` is the attribute. While
+it is a modal the dialog is a child of the top layer; opening one already open is an
+error.
+
 **Owned parts and the pointer.** A part the host owns is under its owner for events,
 hover, press and click: a click on a `details` chevron or a range's thumb reaches the
 `summary` or the `input`, and the owner is `:hover` while the pointer is over a part.

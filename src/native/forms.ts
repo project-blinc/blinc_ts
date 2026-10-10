@@ -102,7 +102,12 @@ export class Forms {
     ) {
       throw new TypeError('The submitter is not a submit button of this form');
     }
-    return form.dispatchEvent(new HostSubmitEvent(submitter));
+    const allowed = form.dispatchEvent(new HostSubmitEvent(submitter));
+    if (allowed) {
+      // A form of method dialog closes the dialog it is in.
+      this.host.behaviours.dialogs.submitted(form, submitter);
+    }
+    return allowed;
   }
 
   /** Put every control back as it began, unless a listener cancels the `reset` event. */

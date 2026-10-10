@@ -408,6 +408,40 @@ export class HostElement extends HostNode {
   override get composedParent(): HostElement | null {
     return this.parentNode ?? this.#owner;
   }
+  /** Whether a `dialog` or a `details` is open: its `open` attribute. */
+  get open(): boolean {
+    return this.hasAttribute('open');
+  }
+  set open(on: boolean) {
+    if (on) {
+      this.setAttribute('open', '');
+    } else {
+      this.removeAttribute('open');
+    }
+  }
+  /** A dialog's: open it where it is. */
+  show(): void {
+    this.host.behaviours.dialogs.show(this);
+  }
+  /** A dialog's: open it in the top layer over a dimmed backdrop, with focus kept inside it. */
+  showModal(): void {
+    this.host.behaviours.dialogs.showModal(this);
+  }
+  /** A dialog's: close it, saying why in `returnValue`. */
+  close(returnValue?: string): void {
+    this.host.behaviours.dialogs.close(this, returnValue);
+  }
+  /** A dialog's: ask it to close, which a `cancel` listener may refuse. */
+  requestClose(returnValue?: string): void {
+    this.host.behaviours.dialogs.requestClose(this, returnValue);
+  }
+  /** A dialog's: what closing it last said. */
+  get returnValue(): string {
+    return this.host.behaviours.dialogs.returnValue(this);
+  }
+  set returnValue(value: string) {
+    this.host.behaviours.dialogs.setReturnValue(this, value);
+  }
   /** The form a control belongs to: the one its `form` attribute names, else the one around it. */
   get form(): HostElement | null {
     return this.host.behaviours.forms.ownerOf(this);

@@ -10,6 +10,7 @@ import { HostEvent, HostPointerEvent } from './events.js';
 import type { Host, HostElement, HostNode, HostText } from './host.js';
 import { HostElement as ElementClass } from './host.js';
 import type { ImageEntry } from './host-images.js';
+import { Dialogs } from './dialogs.js';
 import { Forms } from './forms.js';
 import { Inputs } from './inputs.js';
 import { ImageFit } from './generated/scene.js';
@@ -64,6 +65,8 @@ export class Behaviours {
   readonly inputs: Inputs;
   /** What forms hold, and what their buttons do. */
   readonly forms: Forms;
+  /** What dialogs do: open, close and answer Escape. */
+  readonly dialogs: Dialogs;
   /** Every `img`, and those whose image or fit may need putting right. */
   readonly #pictures = new Map<HostElement, Picture>();
   readonly #pictureDirty = new Set<HostElement>();
@@ -82,11 +85,13 @@ export class Behaviours {
     this.host = host;
     this.inputs = new Inputs(host);
     this.forms = new Forms(host);
+    this.dialogs = new Dialogs(host);
   }
 
   /** Once the host has its root. */
   attach(): void {
     this.inputs.attach();
+    this.dialogs.attach();
     // A click that nothing handled does what the element under it means: follow a link,
     // operate a label's control, open or close a details.
     this.host.root.addEventListener('click', (event) => {
@@ -411,6 +416,7 @@ export class Behaviours {
 
   attributeChanged(element: HostElement, name: string): void {
     this.inputs.attributeChanged(element, name);
+    this.dialogs.attributeChanged(element, name);
     if (element.tag === 'progress' || element.tag === 'meter') {
       this.#sync(element);
     }
@@ -450,6 +456,7 @@ export class Behaviours {
   forget(node: HostNode): void {
     this.inputs.forget(node);
     if (node instanceof ElementClass) {
+      this.dialogs.forget(node);
       const picture = this.#pictures.get(node);
       if (picture) {
         picture.use?.release();
