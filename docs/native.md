@@ -1218,6 +1218,8 @@ found by identity) and `createContext`, whose `Provider` gives a value to what i
 it and `useContext` reads it. A region made while another is updating is built when that one
 has finished.
 
+[Base UI parts](base-ui.md) are a worked example of components on it.
+
 ## GPU canvases
 
 A canvas inserts synchronous custom drawing into the scene's paint order. It

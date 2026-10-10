@@ -12,7 +12,7 @@ import type { Scope } from 'blinc_ts/hmr';
 import type { Host, HostElement, HostNode } from 'blinc_ts/native/host';
 import { Fragment, build, removeBetween } from './build.js';
 import type { Child, Component, JsxNode } from './build.js';
-import { Owner, runWithOwner } from './owner.js';
+import { Owner, provideHost, runWithOwner } from './owner.js';
 
 export { Fragment };
 export type { Child, Component, JsxNode };
@@ -30,6 +30,7 @@ export const jsxDEV = jsx;
 export function render(host: Host, child: Child, parent: HostElement = host.root): HostNode[] {
   const made: HostNode[] = [];
   const owner = new Owner(null);
+  provideHost(owner, host);
   runWithOwner(owner, () =>
     build(
       host,
@@ -61,6 +62,7 @@ export interface MountOptions {
 export function mount(host: Host, view: Child, options: MountOptions): () => void {
   const parent = options.parent ?? host.root;
   const owner = new Owner(options.context);
+  provideHost(owner, host);
   const start = parent.appendChild(host.createComment('<'));
   const end = parent.appendChild(host.createComment('>'));
   let mounted = true;

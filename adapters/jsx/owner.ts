@@ -5,6 +5,7 @@
  */
 import { Computed, Signal, type ReactiveContext } from 'blinc_ts/native';
 import { Scope } from 'blinc_ts/hmr';
+import type { Host } from 'blinc_ts/native/host';
 
 export class Owner {
   readonly context: ReactiveContext | null;
@@ -148,6 +149,22 @@ export function batch<T>(run: () => T): T {
 /** Read without depending on what is read. */
 export function untrack<T>(run: () => T): T {
   return owner('untrack').reactive().untrack(run);
+}
+
+const HOST = Symbol('host');
+
+/** The host the view is mounted in, for what has to reach past the tree: the top layer, a window. */
+export function useHost(): Host {
+  const found = owner('useHost').lookup(HOST);
+  if (!found) {
+    throw new Error('useHost: the view was not built by mount() or render()');
+  }
+  return found.value as Host;
+}
+
+/** @internal Give `owner` the host, for `useHost`. */
+export function provideHost(of: Owner, host: Host): void {
+  of.provide(HOST, host);
 }
 
 /** A value a view provides to what is under it, and what asks for it. */
