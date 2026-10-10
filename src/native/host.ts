@@ -25,7 +25,7 @@ import { Input, WHEEL_LINE } from './input.js';
 import type { HitCache, Layout, LayoutNode, Restyled } from './layout.js';
 import { MemoryClipboard, SystemClipboard, type Clipboard } from './clipboard.js';
 import type { Computed, Disposable, ReactiveContext, Signal } from './reactive.js';
-import type { Color, CornerRadii, PaintShadow, PaintStyle, TextStyle } from './scene.js';
+import type { AffineTransform, Color, PaintStyle, TextStyle } from './scene.js';
 import type { ShapeTokens } from '../theme/shape.js';
 import type { NativeBindings } from './index.js';
 import type { NativeWindowHost, WindowSceneOptions } from './window.js';
@@ -100,69 +100,6 @@ function px(value: string | number): number {
   return n;
 }
 
-const named: Readonly<Record<string, number>> = {
-  black: 0x000000,
-  white: 0xffffff,
-  red: 0xff0000,
-  green: 0x008000,
-  blue: 0x0000ff,
-  gray: 0x808080,
-  grey: 0x808080,
-  yellow: 0xffff00,
-  orange: 0xffa500,
-  purple: 0x800080,
-};
-/** A CSS color: `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb()`, `rgba()`, a few names, or channels. */
-export function parseColor(value: string | Color): Color {
-  if (typeof value !== 'string') {
-    return value;
-  }
-  const text = value.trim().toLowerCase();
-  if (text === 'transparent') {
-    return [0, 0, 0, 0];
-  }
-  const name = named[text];
-  if (name !== undefined) {
-    return [(name >> 16) / 255, ((name >> 8) & 255) / 255, (name & 255) / 255, 1];
-  }
-  const hex = /^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/.exec(text)?.[1];
-  if (hex) {
-    const full = hex.length <= 4 ? [...hex].map((c) => c + c).join('') : hex;
-    const channels = full.match(/../g)!.map((pair) => parseInt(pair, 16) / 255);
-    return [channels[0]!, channels[1]!, channels[2]!, channels[3] ?? 1];
-  }
-  const fn = /^rgba?\(([^)]*)\)$/.exec(text)?.[1];
-  if (fn) {
-    const parts = fn.split(/[\s,/]+/).filter(Boolean);
-    if (parts.length === 3 || parts.length === 4) {
-      const channel = (part: string, max: number) =>
-        part.endsWith('%') ? Number(part.slice(0, -1)) / 100 : Number(part) / max;
-      const color = [
-        channel(parts[0]!, 255),
-        channel(parts[1]!, 255),
-        channel(parts[2]!, 255),
-        parts[3] === undefined ? 1 : channel(parts[3], 1),
-      ];
-      if (color.every((c) => Number.isFinite(c) && c >= 0 && c <= 1)) {
-        return color as unknown as Color;
-      }
-    }
-  }
-  throw new TypeError(`Unsupported color: ${value}`);
-}
-
-function radii(value: PropertyValue): CornerRadii {
-  if (typeof value === 'number') {
-    return [value, value, value, value];
-  }
-  if (typeof value !== 'string') {
-    throw new TypeError('border-radius takes pixels');
-  }
-  const parts = value.trim().split(/\s+/).map(px);
-  const [a, b = a, c = a, d = b] = parts as [number, number?, number?, number?];
-  return [a, b, c, d];
-}
-
 /** Properties whose numbers are plain numbers; a number for any other is pixels. */
 const unitless: ReadonlySet<string> = new Set([
   'opacity',
@@ -184,123 +121,44 @@ const shapeProperties: Readonly<Record<string, keyof ShapeTokens>> = {
 };
 
 /** Properties the host reads itself beyond paint, text and layout. */
-const otherProperties: ReadonlySet<string> = new Set(['cursor', ...Object.keys(shapeProperties)]);
+const otherProperties: ReadonlySet<string> = new Set([
+  'cursor',
+  'pointer-events',
+  ...Object.keys(shapeProperties),
+]);
 
-/** `value` split at top-level `separator`s, outside parentheses. */
-function splitTop(value: string, separator: RegExp): string[] {
-  const parts: string[] = [];
-  let depth = 0;
-  let start = 0;
-  for (let i = 0; i < value.length; i++) {
-    const c = value[i]!;
-    if (c === '(') {
-      depth++;
-    } else if (c === ')') {
-      depth--;
-    } else if (depth === 0 && separator.test(c)) {
-      parts.push(value.slice(start, i));
-      start = i + 1;
-    }
-  }
-  parts.push(value.slice(start));
-  return parts.map((part) => part.trim()).filter(Boolean);
-}
-
-const cornerKeywords: Readonly<Record<string, number>> = {
-  round: 1,
-  squircle: 2,
-  bevel: 0,
-  scoop: -1,
-  notch: -100,
-  square: 100,
-};
 /**
- * `corner-shape`: one to four of `round`, `squircle`, `bevel`, `scoop`,
- * `notch`, `square` or `superellipse(n)`, top-left first, and `locked` to
- * keep them whatever the theme's smoothing.
+ * What a brush, a colour or a matrix given directly sets. Text values go
+ * through the cascade, which reads them natively; these cannot be written in
+ * CSS text.
  */
-function cornerShape(value: PropertyValue): PaintStyle {
-  if (value === null) {
-    return { cornerShape: [1, 1, 1, 1], cornerShapeLocked: false };
-  }
-  if (typeof value !== 'string') {
-    throw new TypeError('corner-shape takes keywords or superellipse(n)');
-  }
-  const words = splitTop(value.toLowerCase(), /\s/);
-  const locked = words.includes('locked');
-  const shapes = words
-    .filter((word) => word !== 'locked')
-    .map((word) => {
-      const keyword = cornerKeywords[word];
-      if (keyword !== undefined) {
-        return keyword;
-      }
-      const n = /^superellipse\(([^)]*)\)$/.exec(word)?.[1];
-      const parsed = n === undefined ? NaN : Number(n.trim() === 'infinity' ? Infinity : n);
-      if (!Number.isFinite(parsed)) {
-        throw new TypeError(
-          `Expected round, squircle, bevel, scoop, notch, square or superellipse(n), not ${word}`,
-        );
-      }
-      return parsed;
-    });
-  if (shapes.length < 1 || shapes.length > 4) {
-    throw new TypeError('corner-shape takes one to four shapes');
-  }
-  const [a, b = a, c = a, d = b] = shapes as [number, number?, number?, number?];
-  return { cornerShape: [a, b, c, d], cornerShapeLocked: locked };
-}
-
-/** `box-shadow`: `none`, or layers of two to four lengths, a colour and `inset`. */
-function boxShadow(value: PropertyValue): PaintStyle {
-  if (value === null || value === 'none') {
-    return { shadows: [] };
-  }
-  if (typeof value !== 'string') {
-    throw new TypeError('box-shadow takes CSS text');
-  }
-  const shadows = splitTop(value, /,/).map((layer): PaintShadow => {
-    const lengths: number[] = [];
-    let color: Color = [0, 0, 0, 1];
-    let inset = false;
-    for (const word of splitTop(layer, /\s/)) {
-      if (word === 'inset') {
-        inset = true;
-        continue;
-      }
-      if (/^-?(\d+\.?\d*|\.\d+)(px)?$/.test(word)) {
-        lengths.push(px(word));
-      } else {
-        color = parseColor(word);
-      }
-    }
-    if (lengths.length < 2 || lengths.length > 4) {
-      throw new TypeError('a shadow takes two to four lengths');
-    }
-    const [x, y, blur = 0, spread = 0] = lengths as [number, number, number?, number?];
-    return { x, y, blur: Math.max(blur, 0), spread, color, ...(inset ? { inset } : {}) };
-  });
-  return { shadows };
-}
-
-/** Paint properties by CSS name. A null value clears the field. */
-const paintProperties: Readonly<Record<string, (value: PropertyValue) => PaintStyle>> = {
-  background: (v) => ({
-    background:
-      v instanceof Brush
-        ? v
-        : Brush.solid(v === null ? [0, 0, 0, 0] : parseColor(v as string | Color)),
-  }),
-  'background-color': (v) => paintProperties.background!(v),
-  color: (v) => ({ textColor: v === null ? [0, 0, 0, 1] : parseColor(v as string | Color) }),
-  opacity: (v) => ({ opacity: v === null ? 1 : Number(v) }),
-  'border-radius': (v) => ({ radius: v === null ? [0, 0, 0, 0] : radii(v) }),
-  'border-color': (v) => ({
-    borderColor: v === null ? [0, 0, 0, 0] : parseColor(v as string | Color),
-  }),
-  visibility: (v) => ({ visible: v !== 'hidden' }),
-  'corner-shape': cornerShape,
-  'box-shadow': boxShadow,
+const directPaint: Readonly<
+  Record<string, (value: Brush | Color | AffineTransform) => PaintStyle>
+> = {
+  background: (v) => ({ background: v instanceof Brush ? v : Brush.solid(v as Color) }),
+  'background-color': (v) => directPaint.background!(v),
+  'background-image': (v) => directPaint.background!(v),
+  color: (v) => ({ textColor: v as Color }),
+  'border-color': (v) => ({ borderColor: v as Color }),
+  'mask-image': (v) => ({ maskImage: v as Brush }),
+  transform: (v) => ({ transform: v as AffineTransform }),
+};
+/** What each paint field is when nothing sets it, for a direct value cleared. */
+const directReset: Readonly<Partial<Record<keyof PaintStyle, PaintStyle>>> = {
+  background: { background: Brush.solid([0, 0, 0, 0]) },
+  borderColor: { borderColor: [0, 0, 0, 0] },
+  maskImage: { maskImage: null },
+  transform: { transform: [1, 0, 0, 1, 0, 0] },
+};
+/** The paint fields each direct property sets, to take them back when it is cleared. */
+const directFields: Readonly<Record<string, readonly (keyof PaintStyle)[]>> = {
+  background: ['background'],
+  'background-color': ['background'],
+  'background-image': ['background'],
+  color: ['textColor'],
+  'border-color': ['borderColor'],
+  'mask-image': ['maskImage'],
+  transform: ['transform'],
 };
 
 /** A node of the host tree: an element or a text node. */
@@ -795,7 +653,10 @@ export class Host {
     if (!/^[a-z][a-z0-9-]*$/.test(tag)) {
       throw new Error(`Invalid element name: ${tag}`);
     }
-    return this.#register(new HostElement(this, this.layout.createNode(), tag));
+    const element = this.#register(new HostElement(this, this.layout.createNode(), tag));
+    // Described to the cascade now, so type and structural selectors reach it with no class set.
+    this.styleChanged(element);
+    return element;
   }
   createTextNode(data: string): HostText {
     const layoutNode = this.layout.createText(data, {}, data === '' ? { display: 'none' } : {});
@@ -827,17 +688,18 @@ export class Host {
   setProperty(element: HostElement, name: string, value: PropertyValue): void {
     this.assertOwn(element);
     if (value instanceof Brush || Array.isArray(value)) {
-      const paint = paintProperties[name];
+      const paint = directPaint[name];
       if (!paint) {
         throw new TypeError(`${name} does not take a brush or a color`);
       }
-      this.#paintOverrides.set(element, { ...this.#paintOverrides.get(element), ...paint(value) });
-      element.layoutNode.queuePaint(paint(value));
+      const patch = paint(value as Brush | Color | AffineTransform);
+      this.#paintOverrides.set(element, { ...this.#paintOverrides.get(element), ...patch });
+      element.layoutNode.queuePaint(patch);
       return;
     }
     if (
       !name.startsWith('--') &&
-      !paintProperties[name] &&
+      !this.layout.isPaintProperty(name) &&
       !textProperties[name] &&
       !otherProperties.has(name) &&
       !this.layout.isLayoutProperty(name)
@@ -845,13 +707,19 @@ export class Host {
       throw new Error(`Unknown property: ${name}`);
     }
     if (value === null || value === undefined) {
-      if (this.#paintOverrides.get(element)) {
-        const overrides = this.#paintOverrides.get(element)!;
-        const reset = paintProperties[name]?.(null);
-        if (reset) {
-          for (const key of Object.keys(reset)) {
-            delete overrides[key as keyof PaintStyle];
+      const overrides = this.#paintOverrides.get(element);
+      if (overrides) {
+        // What was set directly goes, and the cascade writes the node's paint over the reset.
+        const reset: { [K in keyof PaintStyle]?: PaintStyle[K] } = {};
+        for (const key of directFields[name] ?? []) {
+          if (key in overrides) {
+            delete overrides[key];
+            Object.assign(reset, directReset[key]);
           }
+        }
+        if (Object.keys(reset).length > 0) {
+          element.layoutNode.queuePaint(reset);
+          this.layout.repaint(element.layoutNode);
         }
       }
       element.setInline(name, null);
@@ -958,6 +826,14 @@ export class Host {
         listener(restyled.errors);
       }
     }
+    // The restyle wrote paint natively; what was set directly on a node stays over it.
+    for (const id of restyled.painted) {
+      const node = this.#nodes.get(id);
+      const overrides = node instanceof HostElement ? this.#paintOverrides.get(node) : undefined;
+      if (node instanceof HostElement && overrides && Object.keys(overrides).length > 0) {
+        node.layoutNode.queuePaint(overrides);
+      }
+    }
     for (const [id, declarations] of restyled.nodes) {
       const node = this.#nodes.get(id);
       if (!node || node.destroyed) {
@@ -981,16 +857,6 @@ export class Host {
         }
         this.#textStyles.set(node, style);
         this.#text.add(node);
-        const color = now.get('color');
-        if (color !== undefined) {
-          try {
-            node.layoutNode.queuePaint({ textColor: parseColor(color) });
-          } catch {
-            node.layoutNode.queuePaint({}, true);
-          }
-        } else if (before.has('color')) {
-          node.layoutNode.queuePaint({}, true);
-        }
         continue;
       }
       if (!(node instanceof HostElement)) {
@@ -998,26 +864,6 @@ export class Host {
       }
       if (node === this.root) {
         this.#rootShape(now);
-      }
-      let paint: PaintStyle = {};
-      for (const name of before.keys()) {
-        if (!now.has(name) && paintProperties[name]) {
-          paint = { ...paint, ...paintProperties[name](null) };
-        }
-      }
-      for (const [name, value] of now) {
-        const apply = paintProperties[name];
-        if (apply) {
-          try {
-            paint = { ...paint, ...apply(value) };
-          } catch (error) {
-            this.#reportOne(`${name}: ${value}: ${(error as Error).message}`);
-          }
-        }
-      }
-      paint = { ...paint, ...this.#paintOverrides.get(node) };
-      if (Object.keys(paint).length > 0) {
-        node.layoutNode.queuePaint(paint);
       }
       const cursor = now.get('cursor');
       if (cursor !== before.get('cursor')) {
@@ -1027,6 +873,10 @@ export class Host {
           this.#cursors.set(node, cursor.trim());
         }
         this.input.updateCursor();
+      }
+      const events = now.get('pointer-events');
+      if (events !== before.get('pointer-events')) {
+        node.layoutNode.setPointerEvents(events?.trim() !== 'none');
       }
       for (const name of ['overflow', 'overflow-x', 'overflow-y']) {
         if (now.get(name) !== before.get(name)) {

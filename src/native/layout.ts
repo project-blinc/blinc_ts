@@ -236,9 +236,11 @@ export interface NativeLayout extends BrushFactory {
   cssSetEnvironment(width: number, height: number, dark: boolean): void;
   cssSetRootFontSize(px: number): void;
   cssIntern(names: string[]): Uint32Array;
+  cssRepaint(node: NativeLayoutNode): void;
   cssRestyle(root: NativeLayoutNode): {
     errors: string[];
     restyled: number;
+    painted: Uint32Array;
     nodes: Uint32Array;
     counts: Uint32Array;
     names: string[];
@@ -266,12 +268,15 @@ export interface Restyled {
   readonly errors: readonly string[];
   /** How many nodes the restyle matched again. */
   readonly matched: number;
-  /** By node id: the paint and text declarations that apply to it now, `var()`s resolved. */
+  /** The nodes whose paint the restyle wrote, which a host may need to draw over. */
+  readonly painted: readonly bigint[];
+  /** By node id: the text and other declarations the host reads that apply to it now, `var()`s resolved. */
   readonly nodes: ReadonlyMap<bigint, readonly (readonly [property: string, value: string])[]>;
 }
 /** @internal Addon functions that need no layout context. */
 export interface NativeCss {
   cssIsLayoutProperty(name: string): boolean;
+  cssIsPaintProperty(name: string): boolean;
   cssStates(): string[];
 }
 
@@ -523,6 +528,21 @@ export class Layout {
 
   // --- CSS, run by the native engine ---
 
+  /** Have the next restyle write `node`'s paint from its declarations again. */
+  repaint(node: LayoutNode): void {
+    this.#native.cssRepaint(LayoutNode.unwrap(node, this));
+    this.#markStyled();
+  }
+  /** Whether `name` is a property the paint router writes. */
+  isPaintProperty(name: string): boolean {
+    let known = this.#paintNames.get(name);
+    if (known === undefined) {
+      known = this.#css.cssIsPaintProperty(name);
+      this.#paintNames.set(name, known);
+    }
+    return known;
+  }
+  readonly #paintNames = new Map<string, boolean>();
   /** The state pseudo-classes, in the order of their bits (see `LayoutNode.queueStates`). */
   get stateNames(): readonly string[] {
     return (this.#stateNames ??= this.#css.cssStates());
@@ -620,7 +640,11 @@ export class Layout {
       }
       nodes.set(id, declarations);
     }
-    const restyled: Restyled = { errors: r.errors, nodes, matched: r.restyled };
+    const painted: bigint[] = [];
+    for (let i = 0; i < r.painted.length; i += 2) {
+      painted.push(BigInt(r.painted[i]!) | (BigInt(r.painted[i + 1]!) << 32n));
+    }
+    const restyled: Restyled = { errors: r.errors, painted, nodes, matched: r.restyled };
     if (this.#restyleListeners.size === 0) {
       for (const error of r.errors) {
         console.warn(`CSS: ${error}`);

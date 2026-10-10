@@ -87,6 +87,7 @@ interface Addon {
   NativeLayout: new () => NativeLayout;
   measureText: NativeText['measureText'];
   cssIsLayoutProperty(name: string): boolean;
+  cssIsPaintProperty(name: string): boolean;
   cssStates(): string[];
   compileCss: CompileCss;
   layoutInline: NativeText['layoutInline'];

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { loadNative } from '../dist/native/index.js';
-import { Host, HostEvent, HostPointerEvent, HostText, parseColor } from '../dist/native/host.js';
+import { Host, HostEvent, HostPointerEvent, HostText } from '../dist/native/host.js';
 
 const native = loadNative();
 const host = Host.create(native);
@@ -99,9 +99,6 @@ try {
   );
   c.setProperty('width', null);
   offErrors();
-  assert.deepEqual(parseColor('#f008'), [1, 0, 0, 0x88 / 255]);
-  assert.deepEqual(parseColor('rgb(255 0 0 / 50%)'), [1, 0, 0, 0.5]);
-  assert.throws(() => parseColor('hsl(0, 1, 1)'), /Unsupported/);
   host.flush();
 
   // Event dispatch: capture from the root, the target, then bubbling.

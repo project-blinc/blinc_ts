@@ -4,6 +4,8 @@ use crate::{
     layout::{LayoutStyle, NativeLayout, NativeLayoutNode},
     scene_values::ImageFit,
 };
+use blinc_abi::css::paint::{Background, PaintWrite};
+use blinc_abi::css::transform::IDENTITY;
 use blinc_abi::{
     bitmap::Bitmap,
     display_list::{RECORD_FLOATS, Shapes},
@@ -363,6 +365,115 @@ impl PaintStyle<'_> {
         }
         Ok(p)
     }
+}
+/// A side colour that is not set: a NaN red, which painting reads as the shared border colour.
+fn unset_side_color() -> Color {
+    Color::rgba(f32::NAN, 0.0, 0.0, 0.0)
+}
+
+/// Apply the paint a restyle read from CSS to `node`: each write sets its
+/// field of the node's properties, and a glass background its effects.
+pub(crate) fn apply_paint(
+    tree: &mut blinc_abi::context::LayoutContext,
+    node: blinc_abi::context::Node,
+    writes: &[PaintWrite],
+) -> std::result::Result<(), &'static str> {
+    let mut props = tree.properties(node)?;
+    let mut glass = None;
+    for write in writes {
+        match write {
+            PaintWrite::Background(background) => {
+                props.background = Some(match background {
+                    Background::None => {
+                        scene::blinc_core::Brush::Solid(Color::rgba(0.0, 0.0, 0.0, 0.0))
+                    }
+                    Background::Solid(c) => scene::blinc_core::Brush::Solid(*c),
+                    Background::Gradient(g) => scene::blinc_core::Brush::Gradient(g.clone()),
+                    Background::Glass(style, _) => scene::blinc_core::Brush::Glass(*style),
+                });
+                glass = Some(match background {
+                    Background::Glass(_, effects) => Some(*effects),
+                    _ => None,
+                });
+            }
+            PaintWrite::TextColor(c) => props.text_color = c.map(|c| [c.r, c.g, c.b, c.a]),
+            PaintWrite::Opacity(o) => props.opacity = *o,
+            PaintWrite::Visible(v) => props.visible = *v,
+            PaintWrite::BorderRadius([a, b, c, d]) => {
+                props.border_radius = CornerRadius::new(*a, *b, *c, *d);
+                props.border_radius_explicit = true;
+            }
+            PaintWrite::CornerShape {
+                shapes: [a, b, c, d],
+                locked,
+            } => {
+                props.corner_shape = CornerShape::new(*a, *b, *c, *d);
+                props.corner_shape_locked = *locked;
+            }
+            PaintWrite::BorderColor(c) => {
+                props.border_color = *c;
+                // Every side takes the shared colour again.
+                let sides = &mut props.border_sides;
+                for side in [
+                    &mut sides.top,
+                    &mut sides.right,
+                    &mut sides.bottom,
+                    &mut sides.left,
+                ]
+                .into_iter()
+                .flatten()
+                {
+                    side.color = unset_side_color();
+                }
+            }
+            PaintWrite::BorderSideColor { side, color } => {
+                let sides = &mut props.border_sides;
+                let slot = match side {
+                    0 => &mut sides.top,
+                    1 => &mut sides.right,
+                    2 => &mut sides.bottom,
+                    _ => &mut sides.left,
+                };
+                blinc_abi::layout_props::border_side(slot).color =
+                    color.unwrap_or_else(unset_side_color);
+            }
+            PaintWrite::OutlineWidth(w) => props.outline_width = *w,
+            PaintWrite::OutlineColor(c) => props.outline_color = *c,
+            PaintWrite::OutlineOffset(o) => props.outline_offset = *o,
+            PaintWrite::Shadows { outer, inner } => {
+                props.shadow = outer.clone();
+                props.inner_shadow = inner.clone();
+            }
+            PaintWrite::Transform(t) => {
+                props.transform =
+                    (t.elements != IDENTITY.elements).then_some(Transform::Affine2D(*t));
+            }
+            PaintWrite::Filter(f) => {
+                if f.is_identity() {
+                    props.filter = None;
+                } else {
+                    let filter = props.filter.get_or_insert_with(Default::default);
+                    filter.brightness = f.brightness;
+                    filter.contrast = f.contrast;
+                    filter.grayscale = f.grayscale;
+                    filter.hue_rotate = f.hue_rotate;
+                    filter.invert = f.invert;
+                    filter.saturate = f.saturate;
+                    filter.sepia = f.sepia;
+                    filter.blur = f.blur;
+                    filter.drop_shadow = f.drop_shadow;
+                }
+            }
+            PaintWrite::Mask(g) => {
+                props.mask_image = g.clone().map(scene::blinc_core::MaskImage::Gradient);
+            }
+        }
+    }
+    tree.set_properties(node, props)?;
+    if let Some(effects) = glass {
+        tree.set_glass_effects(node, effects)?;
+    }
+    Ok(())
 }
 #[napi]
 impl NativeLayout {

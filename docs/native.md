@@ -247,9 +247,43 @@ disabled, enabled) and its properties, which are its inline declarations.
 Names cross to native code as atoms of the context's table. Text nodes are
 elements too, so they inherit color and font properties. Each layout restyles
 what changed, parents first: layout declarations apply through the property
-router, and paint, text, cursor and overflow come back to the host, which
-draws with them. Declarations that cannot be applied are reported to
-`host.onStyleErrors` listeners, or logged as warnings when there are none.
+router, paint declarations are read as typed values and written to the node's
+paint, and text, cursor, `pointer-events` and overflow come back to the host,
+which draws with them. A value that cannot be read is reported with its
+reason to `host.onStyleErrors` listeners, or logged as a warning when there
+are none, and the rest of its rule still applies. A property the cascade does
+not know is skipped without a report.
+
+### Paint declarations
+
+The paint properties are read by the same engine as the sheet, so a value
+means the same in a stylesheet, an inline `style` and a compiled sheet:
+
+- `background`, `background-color` and `background-image` take a colour,
+  `none`, `linear-gradient()` or `radial-gradient()` (a circle or ellipse
+  reaching the farthest corner), or `glass`, whose settings are `glass-blur`,
+  `glass-tint`, `glass-aberration`, `glass-bevel`, `glass-noise`,
+  `glass-mode` (`liquid` or `frosted`) and `glass-curvature` (`inset` or
+  `outset`). A `url()` background is reported as unsupported.
+- Colours are hex, CSS's named colours, `rgb()`, `hsl()`, `color-mix(in srgb, …)`,
+  `transparent` and `currentcolor`, which is the node's own `color`.
+- `color`, `opacity`, `visibility`, `border-radius` (px, `em`, `rem` and
+  viewport units, one to four values), `corner-shape`, `border-color`,
+  `box-shadow` (outer and `inset` layers), `transform` (2D functions, about the
+  node's centre), `filter` and `mask-image` (a gradient).
+
+- `border` and `border-top`, `-right`, `-bottom` and `-left` take a width
+  (`thin`, `medium`, `thick` or a length), a style and a colour in any order.
+  The width takes layout space, as CSS's box model does, and a style of `none`
+  or `hidden` takes it away; every other style draws solid. `border-width`,
+  `border-style` and `border-color` take one to four values, and
+  `border-top-color` and the like set one side. `outline`, `outline-width`,
+  `outline-color` and `outline-offset` draw a ring outside the border.
+
+A node that loses a declaration gets that field's default back. Paint set
+directly with `element.setProperty('background', brush)` stays over the
+cascade until it is cleared with `null`. `clip-path`, `transition` and
+`animation` are accepted and have no effect yet.
 
 `box-shadow` takes any mix of outer and `inset` layers, the first drawn on
 top. Inset layers are cast inside the padding box, over the background and

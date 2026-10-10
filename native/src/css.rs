@@ -7,6 +7,7 @@ use crate::layout::{NativeLayout, OwnedLayout};
 use blinc_abi::context::{LayoutContext, Node};
 use blinc_abi::css::cascade::{Element, SheetId, States};
 use blinc_abi::css::layout::{Units, is_layout_property, layout_writes};
+use blinc_abi::css::paint::is_paint_property;
 use blinc_abi::css::styled::Styles;
 use blinc_abi::css::{Atom, MediaEnvironment, Severity, compiled, parse};
 use napi::bindgen_prelude::{Either, Uint8Array, Uint32Array};
@@ -27,16 +28,21 @@ pub(crate) struct StyleState {
     elements: HashSet<u64>,
     /// Each element's resolved declarations as last seen, to hand back only what changed.
     resolved: HashMap<u64, Vec<(Atom, String)>>,
+    /// The declarations the host reads, as last handed to it.
+    sent: HashMap<u64, Vec<(Atom, String)>>,
     environment: MediaEnvironment,
     root_font_size: f64,
 }
 impl Default for StyleState {
     fn default() -> Self {
+        let mut styles = Styles::new();
+        styles.set_paint_output(true);
         Self {
-            styles: Styles::new(),
+            styles,
             sheets: Vec::new(),
             elements: HashSet::new(),
             resolved: HashMap::new(),
+            sent: HashMap::new(),
             environment: MediaEnvironment {
                 width: 0.0,
                 height: 0.0,
@@ -117,6 +123,7 @@ pub(crate) fn remove(
         styles.styles.forget(n);
         styles.elements.remove(&n.raw());
         styles.resolved.remove(&n.raw());
+        styles.sent.remove(&n.raw());
     }
     if let Some(parent) = parent {
         styles.styles.children_changed(parent);
@@ -188,7 +195,9 @@ pub struct NativeRestyle {
     pub errors: Vec<String>,
     /// How many nodes the restyle matched again.
     pub restyled: u32,
-    /// Nodes whose paint and text declarations changed: raw ids, low then high word.
+    /// Nodes whose paint was written natively: raw ids, low then high word.
+    pub painted: Uint32Array,
+    /// Nodes whose text and other host-read declarations changed: raw ids, low then high word.
     pub nodes: Uint32Array,
     /// How many declarations each of `nodes` has now, in `names` and `values`.
     pub counts: Uint32Array,
@@ -281,6 +290,12 @@ pub fn css_is_layout_property(name: String) -> bool {
     is_layout_property(&name)
 }
 
+/// Whether `name` is a property the paint router writes.
+#[napi]
+pub fn css_is_paint_property(name: String) -> bool {
+    is_paint_property(&name)
+}
+
 #[napi]
 impl NativeLayout {
     /// Add a sheet from compiled bytes or CSS text, last or at position `at`.
@@ -370,6 +385,13 @@ impl NativeLayout {
         state.styles.cascade_mut().set_root_font_size(px);
         Ok(())
     }
+    /// Have `node`'s paint written again by the next restyle.
+    #[napi]
+    pub fn css_repaint(&self, node: &crate::layout::NativeLayoutNode) -> Result<()> {
+        self.owner.check()?;
+        self.owner.styles.borrow_mut().styles.repaint(node.node);
+        Ok(())
+    }
     /// Atoms of the context's table for `names`, in order.
     #[napi]
     pub fn css_intern(&self, names: Vec<String>) -> Result<Uint32Array> {
@@ -388,7 +410,16 @@ impl NativeLayout {
         let mut tree = self.owner.tree.borrow_mut();
         let mut state = self.owner.styles.borrow_mut();
         let state = &mut *state;
-        let errors = state.styles.restyle(&mut tree, root.node);
+        let mut errors = state.styles.restyle(&mut tree, root.node);
+        let mut painted = Vec::new();
+        for (node, writes) in state.styles.take_paint() {
+            match crate::scene::apply_paint(&mut tree, node, &writes) {
+                Ok(()) => {
+                    painted.extend([(node.raw() & 0xffff_ffff) as u32, (node.raw() >> 32) as u32])
+                }
+                Err(e) => errors.push(format!("paint: {e}")),
+            }
+        }
         let (mut nodes, mut counts, mut names, mut values) =
             (Vec::new(), Vec::new(), Vec::new(), Vec::new());
         for &raw in &state.elements {
@@ -402,21 +433,34 @@ impl NativeLayout {
             }
             state.resolved.insert(raw, computed.resolved.clone());
             let cascade = state.styles.cascade();
-            let mut count = 0;
-            for (k, v) in &computed.resolved {
-                let name = cascade.str(*k);
-                if !is_layout_property(name) || HOST_READS.contains(&name) {
-                    names.push(name.to_string());
-                    values.push(v.clone());
-                    count += 1;
-                }
+            // What the host still reads: text and the like, not what was applied here.
+            let host: Vec<(Atom, String)> = computed
+                .resolved
+                .iter()
+                .filter(|(k, _)| {
+                    let name = cascade.str(*k);
+                    (!is_layout_property(name) && !is_paint_property(name))
+                        || HOST_READS.contains(&name)
+                })
+                .cloned()
+                .collect();
+            if state.sent.get(&raw).map(Vec::as_slice).unwrap_or(&[]) == host.as_slice() {
+                continue;
             }
+            let mut count = 0;
+            for (k, v) in &host {
+                names.push(cascade.str(*k).to_string());
+                values.push(v.clone());
+                count += 1;
+            }
+            state.sent.insert(raw, host);
             nodes.extend([(raw & 0xffff_ffff) as u32, (raw >> 32) as u32]);
             counts.push(count);
         }
         Ok(NativeRestyle {
             errors,
             restyled: state.styles.last_restyled() as u32,
+            painted: Uint32Array::new(painted),
             nodes: Uint32Array::new(nodes),
             counts: Uint32Array::new(counts),
             names,

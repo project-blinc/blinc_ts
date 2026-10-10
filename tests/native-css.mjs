@@ -181,6 +181,30 @@ try {
   const compiledBad = compileCss('.a {\n  width: 10px;\n}\n.b { color', { file: 'bad.css' });
   assert(compiledBad.diagnostics.some((d) => d.severity === 'error'));
 
+  // An element with no class, attribute or inline style is still matched by type, universal and
+  // structural selectors.
+  {
+    const bare = Host.create(native);
+    bare.layout.addStyleSheet(
+      'section { width: 50px } aside > b { width: 60px } i:first-child { width: 70px }',
+    );
+    const make = (tag, children = []) => {
+      const element = bare.createElement(tag);
+      children.forEach((child) => element.appendChild(child));
+      return element;
+    };
+    const section = make('section');
+    const inner = make('b');
+    const aside = make('aside', [inner]);
+    const first = make('i');
+    bare.root.appendChild(make('div', [section, aside, make('div', [first])]));
+    bare.compute(W, H);
+    assert.equal(section.bounds()[2], 50, 'a bare tag matches a type selector');
+    assert.equal(inner.bounds()[2], 60, 'and a child combinator');
+    assert.equal(first.bounds()[2], 70, 'and a structural pseudo-class');
+    bare.dispose();
+  }
+
   for (const host of [plain, styled, fromBytes, broken]) {
     host.dispose();
   }
@@ -188,5 +212,5 @@ try {
   target.dispose();
 }
 console.log(
-  'Native CSS: sheets match explicit properties, compiled bytes, states, theme, media and diagnostics passed',
+  'Native CSS: sheets match explicit properties, compiled bytes, states, theme, media, bare-element selectors and diagnostics passed',
 );
