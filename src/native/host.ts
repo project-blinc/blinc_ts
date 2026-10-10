@@ -1092,6 +1092,7 @@ export class Host {
     }
     if (
       !name.startsWith('--') &&
+      !/^(transition|animation)(-|$)/.test(name) &&
       !this.layout.isPaintProperty(name) &&
       !textProperties[name] &&
       !otherProperties.has(name) &&

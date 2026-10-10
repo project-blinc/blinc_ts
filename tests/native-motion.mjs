@@ -383,6 +383,31 @@ try {
   assert.ok(near(pixel(await capture(host), sx + 20, sy + 30), [144, 16, 16], 6), 'halfway dimmed');
   scroller.remove();
 
+  // A transition set as an inline property eases as one in a sheet does.
+  const eased = host.createElement('div');
+  eased.setAttribute(
+    'style',
+    'position: absolute; left: 20px; top: 270px; width: 40px; height: 40px; background: #ff0000',
+  );
+  eased.setProperty('transition', 'opacity 100ms linear');
+  host.root.appendChild(eased);
+  host.compute(W, H);
+  eased.setProperty('opacity', 0);
+  host.compute(W, H);
+  host.layout.tickMotion(5000);
+  host.layout.tickMotion(5050);
+  frame = await capture(host);
+  const halfway = at(frame, eased, 20, 20);
+  assert.ok(
+    halfway[0] > 0x50 && halfway[0] < 0xd0,
+    `an inline transition is half done: ${halfway}`,
+  );
+  host.layout.tickMotion(5200);
+  frame = await capture(host);
+  assert.ok(near(at(frame, eased, 20, 20), GROUND), 'and ends');
+  eased.setProperty('transition', null);
+  host.compute(W, H);
+
   // What motion cannot do is said once, not on every restyle.
   missing.classList.add('go');
   wide.classList.add('on');
