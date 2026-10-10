@@ -249,18 +249,20 @@ export const sdNotch = tgpu
     let distance = sdShapedRect(p, innerOrigin, innerSize, innerRadii, d.vec4f(1, 1, 1, 1));
     const innerRight = innerOrigin.x + innerSize.x;
     const innerBottom = innerOrigin.y + innerSize.y;
-    const k = 1.5;
-    const into = std.min(8, std.min(innerSize.x, innerSize.y) * 0.5);
+    const into = std.min(innerSize.x, innerSize.y) * 0.5;
+    // A flare reaches a little way into the body: further, and its far edge shows in the distance
+    // gradient that glass refracts along. A bulge or peak reaches all the way.
+    const flareInto = std.min(8, into);
     const room = std.max(size.y - topOffset - bottomOffset, 0);
     const sharp = d.vec4f(0, 0, 0, 0);
     const round = d.vec4f(1, 1, 1, 1);
     if (tlC) {
       const ry = std.min(r.x, room);
       const flare = std.max(
-        sdShapedRect(p, d.vec2f(0, innerOrigin.y), d.vec2f(left + into, ry), sharp, round),
+        sdShapedRect(p, d.vec2f(0, innerOrigin.y), d.vec2f(left + flareInto, ry), sharp, round),
         -sdEllipseAt(p, d.vec2f(0, innerOrigin.y + ry), d.vec2f(left, ry)),
       );
-      distance = smin(distance, flare, k);
+      distance = std.min(distance, flare);
     }
     if (trC) {
       const ry = std.min(r.y, room);
@@ -268,14 +270,14 @@ export const sdNotch = tgpu
       const flare = std.max(
         sdShapedRect(
           p,
-          d.vec2f(innerRight - into, innerOrigin.y),
-          d.vec2f(w + into, ry),
+          d.vec2f(innerRight - flareInto, innerOrigin.y),
+          d.vec2f(w + flareInto, ry),
           sharp,
           round,
         ),
         -sdEllipseAt(p, d.vec2f(size.x, innerOrigin.y + ry), d.vec2f(w, ry)),
       );
-      distance = smin(distance, flare, k);
+      distance = std.min(distance, flare);
     }
     if (brC) {
       const ry = std.min(r.z, room);
@@ -283,22 +285,22 @@ export const sdNotch = tgpu
       const flare = std.max(
         sdShapedRect(
           p,
-          d.vec2f(innerRight - into, innerBottom - ry),
-          d.vec2f(w + into, ry),
+          d.vec2f(innerRight - flareInto, innerBottom - ry),
+          d.vec2f(w + flareInto, ry),
           sharp,
           round,
         ),
         -sdEllipseAt(p, d.vec2f(size.x, innerBottom - ry), d.vec2f(w, ry)),
       );
-      distance = smin(distance, flare, k);
+      distance = std.min(distance, flare);
     }
     if (blC) {
       const ry = std.min(r.w, room);
       const flare = std.max(
-        sdShapedRect(p, d.vec2f(0, innerBottom - ry), d.vec2f(left + into, ry), sharp, round),
+        sdShapedRect(p, d.vec2f(0, innerBottom - ry), d.vec2f(left + flareInto, ry), sharp, round),
         -sdEllipseAt(p, d.vec2f(0, innerBottom - ry), d.vec2f(left, ry)),
       );
-      distance = smin(distance, flare, k);
+      distance = std.min(distance, flare);
     }
     distance = notchEdge(p, distance, size.x * 0.5, innerOrigin.y, top, 1, into);
     distance = notchEdge(p, distance, size.x * 0.5, innerBottom, bottom, -1, into);
@@ -336,7 +338,10 @@ export const notchEdge = tgpu
         result = smax(distance, -hollow, std.max(m.w, 0.001));
       } else if (m.x < 2.5) {
         const rb = (halfW * halfW + h * h) / std.max(2 * h, 0.001);
-        const cap = std.max(std.length(std.sub(q, d.vec2f(cx, rb - h))) - rb, q.y - into);
+        const cap = std.max(
+          std.max(std.length(std.sub(q, d.vec2f(cx, rb - h))) - rb, q.y - into),
+          std.abs(q.x - cx) - halfW,
+        );
         result = smin(distance, cap, std.max(m.w, 0.001));
       } else if (m.x < 3.5) {
         result = smax(
@@ -346,11 +351,11 @@ export const notchEdge = tgpu
         );
       } else {
         const spread = (halfW * (h + into)) / h;
-        result = smin(
-          distance,
+        const peak = std.max(
           sdTriangle(q, d.vec2f(cx - spread, into), d.vec2f(cx, -h), d.vec2f(cx + spread, into)),
-          1.5,
+          std.abs(q.x - cx) - halfW,
         );
+        result = smin(distance, peak, 1.5);
       }
     }
     return result;

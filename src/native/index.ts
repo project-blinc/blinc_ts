@@ -1,4 +1,6 @@
 export { Brush } from './brush.js';
+export { notch, notchEdge, concaveTop, encodeNotch } from './notch.js';
+export type { Notch, NotchEdge } from './notch.js';
 export type { BrushColor, GlassOptions } from './brush.js';
 import { ImageResource, type NativeImage } from './image.js';
 import { validateSceneSchema } from './scene.js';

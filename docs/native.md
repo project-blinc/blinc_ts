@@ -522,6 +522,31 @@ Full-render benchmarks remain in progress. CSS, themes
 and the component layer are separate work. See [shader authoring](shaders.md) for
 the TypeScript sources and their build path.
 
+### Notches
+
+A notch is a shape a rounded box cannot make, drawn in place of the node's
+box: four signed corner radii, where a negative one is a concave corner that
+curves out to the box's edge as a menu-bar dropdown meets its bar, and a
+modifier at the centre of the top and of the bottom edge.
+
+```ts
+import { concaveTop, notch, notchEdge } from 'blinc_ts/native';
+
+menu.setNotch(concaveTop(16, 8)); // flared top corners, round bottom ones
+tip.setNotch(notch({ bottom: notchEdge.peak(24, 12) })); // an arrow
+island.setNotch(notch({ top: notchEdge.scoop(40, 12, 6) }));
+menu.bindNotch(signal, context); // follows a signal or computed; null is a plain box
+```
+
+The edges are `scoop(width, depth, radius?)` and `cut(width, depth)`, which
+carve into the body, and `bulge(width, height, radius?)` and
+`peak(width, height)`, which rise out of the edge. Concave corners, bulges
+and peaks lie inside the box, so the body is inset by them and the node needs
+padding for its content. A scoop's bowl is a disk of the smaller of half its
+width and its depth, with a slot below that. Fills, borders and outer
+shadows follow the notch, and a radius animated through zero is continuous.
+Inset shadows follow it too, from the border's inner edge. A notch has no CSS property.
+
 ## Native scene windows
 
 `NativeWindowHost` keeps the window, surface and GPU device alive while scenes are

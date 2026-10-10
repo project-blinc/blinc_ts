@@ -14,6 +14,7 @@
  */
 import type { Scope } from '../hmr.js';
 import { Brush } from './brush.js';
+import type { Notch } from './notch.js';
 import {
   HostEvent,
   HostEventTarget,
@@ -483,6 +484,40 @@ export class HostElement extends HostNode {
       },
     };
     (this.#bindings ??= new Map()).set(name, binding);
+    return binding;
+  }
+
+  /** Draw the element as `notch`, or as a plain box when it is null. */
+  setNotch(notch: Notch | null): void {
+    this.host.assertOwn(this);
+    this.layoutNode.setNotch(notch);
+  }
+
+  /**
+   * Draw the element as the notch `source` holds, again each time it changes.
+   * It ends when the node is destroyed, the returned handle is disposed, or a
+   * notch is bound again; the element is a plain box after.
+   */
+  bindNotch(
+    source: Signal<Notch | null> | Computed<Notch | null>,
+    context: ReactiveContext,
+  ): Disposable {
+    this.#bindings?.get('notch')?.dispose();
+    const effect = context.effect(() => {
+      this.setNotch(source.get());
+    });
+    const binding: Disposable = {
+      dispose: () => {
+        effect.dispose();
+        if (this.#bindings?.get('notch') === binding) {
+          this.#bindings.delete('notch');
+          if (!this.destroyed) {
+            this.setNotch(null);
+          }
+        }
+      },
+    };
+    (this.#bindings ??= new Map()).set('notch', binding);
     return binding;
   }
 

@@ -679,6 +679,39 @@ impl NativeLayoutNode {
             .set_visual(self.node, visual)
             .map_err(error)
     }
+    /// Draw the node as a notch: its four corner radii, then its top and bottom
+    /// edges as kind, width, extent and radius. Null draws a plain box.
+    #[napi]
+    pub fn set_notch(&self, value: Option<Vec<f64>>) -> Result<()> {
+        self.owner.check()?;
+        let notch = match value {
+            None => None,
+            Some(v) => {
+                if v.len() != 12 {
+                    return Err(error("Expected twelve notch values"));
+                }
+                let mut values = [[0.0f32; 4]; 3];
+                for (i, x) in v.iter().enumerate() {
+                    values[i / 4][i % 4] = number(*x)?;
+                }
+                for edge in &values[1..] {
+                    let [kind, width, extent, radius] = *edge;
+                    if kind.fract() != 0.0 || !(0.0..=4.0).contains(&kind) {
+                        return Err(error("Expected a notch edge kind from 0 to 4"));
+                    }
+                    if width < 0.0 || extent < 0.0 || radius < 0.0 {
+                        return Err(error("A notch edge cannot be negative"));
+                    }
+                }
+                Some(values)
+            }
+        };
+        self.owner
+            .tree
+            .borrow_mut()
+            .set_notch(self.node, notch)
+            .map_err(error)
+    }
     #[napi]
     pub fn set_pointer_events(&self, enabled: bool) -> Result<()> {
         self.owner.check()?;

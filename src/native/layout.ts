@@ -1,3 +1,4 @@
+import { encodeNotch, type Notch } from './notch.js';
 import { Brush, type BrushFactory, type NativeBrush } from './brush.js';
 import type { ImageFit } from './generated/scene.js';
 import type {
@@ -190,6 +191,7 @@ export interface NativeLayoutNode {
   clearPaint(): void;
   setText(content: string, style: TextStyle): void;
   setVisual(bounds: VisualBounds | null): void;
+  setNotch(values: readonly number[] | null): void;
   setPointerEvents(enabled: boolean): void;
   setResource(slot: number | null, canvas: boolean): void;
   setScroll(x: number, y: number): void;
@@ -759,6 +761,12 @@ export class LayoutNode implements QueuedNode {
   setVisual(bounds: VisualBounds | null): void {
     this.#layout.flush();
     this.#native.setVisual(bounds);
+    this.#layout.changed('paint');
+  }
+  /** Draw the node as `notch`, or as a plain box when it is null. */
+  setNotch(notch: Notch | null): void {
+    this.#layout.flush();
+    this.#native.setNotch(notch === null ? null : encodeNotch(notch));
     this.#layout.changed('paint');
   }
   setPointerEvents(enabled: boolean): void {
