@@ -1047,7 +1047,20 @@ export class Host {
     return node;
   }
   createComment(data = ''): HostComment {
-    return this.#register(new HostComment(this, this.layout.createNode({ display: 'none' }), data));
+    const comment = this.#register(
+      new HostComment(this, this.layout.createNode({ display: 'none' }), data),
+    );
+    // Anonymous to the cascade, as text is: it is not a sibling a structural selector counts.
+    const [type] = this.layout.intern(['comment']);
+    comment.layoutNode.queueElement({
+      types: [type!],
+      id: -1,
+      classes: [],
+      attributes: [],
+      inline: [],
+      anonymous: true,
+    });
+    return comment;
   }
   #register<T extends HostNode>(node: T): T {
     this.#nodes.set(node.layoutNode.id, node);

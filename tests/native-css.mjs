@@ -205,6 +205,30 @@ try {
     bare.dispose();
   }
 
+  // Comments and empty text are placeholders a framework keeps between nodes: they are not
+  // siblings a structural selector counts, and they take no room.
+  {
+    const bare = Host.create(native);
+    bare.layout.addStyleSheet(
+      '.row { flex-direction: row; gap: 10px } .row > i { width: 20px; height: 10px } .row > i:first-child { width: 50px } .row > i:nth-child(2) { width: 70px } .row > i:last-child { height: 30px }',
+    );
+    const row = bare.createElement('div');
+    row.className = 'row';
+    bare.root.appendChild(row);
+    row.appendChild(bare.createComment('['));
+    const one = row.appendChild(bare.createElement('i'));
+    row.appendChild(bare.createComment(']'));
+    row.appendChild(bare.createTextNode(''));
+    const two = row.appendChild(bare.createElement('i'));
+    const three = row.appendChild(bare.createElement('i'));
+    bare.compute(W, H);
+    assert.equal(one.bounds()[2], 50, 'the first element is :first-child behind a comment');
+    assert.equal(two.bounds()[2], 70, 'the second counts only elements');
+    assert.equal(three.bounds()[3], 30, 'and the last is :last-child');
+    assert.equal(two.bounds()[0] - (one.bounds()[0] + one.bounds()[2]), 10, 'no room is taken');
+    bare.dispose();
+  }
+
   for (const host of [plain, styled, fromBytes, broken]) {
     host.dispose();
   }
