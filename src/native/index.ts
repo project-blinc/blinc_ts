@@ -51,7 +51,7 @@ export type {
   InlineLayout,
 } from './text.js';
 export { Layout, LayoutNode, HitCache } from './layout.js';
-export type { StyleSheet, CssDiagnostic, Restyled } from './layout.js';
+export type { StyleSheet, CssDiagnostic, LayoutAnimationOptions, Restyled } from './layout.js';
 export { compileCss } from './css.js';
 export type { CompiledCss } from './css.js';
 export type {

@@ -4,7 +4,7 @@
 //! states, and a restyle that applies layout declarations through the
 //! property router and hands paint and text declarations back to JavaScript.
 use crate::layout::{NativeLayout, OwnedLayout};
-use crate::motion::{Context as MotionContext, Motion, Spec, Value, Write};
+use crate::motion::{Context as MotionContext, LayoutAnimation, Motion, Spec, Value, Write};
 use blinc_abi::context::{LayoutContext, Node, PropValue};
 use blinc_abi::css::cascade::{Element, SheetId, States};
 use blinc_abi::css::layout::{Units, is_layout_property, layout_writes};
@@ -33,7 +33,7 @@ pub(crate) struct StyleState {
     /// The declarations the host reads, as last handed to it.
     sent: HashMap<u64, Vec<(Atom, String)>>,
     /// Transitions and animations in flight.
-    motion: Motion,
+    pub(crate) motion: Motion,
     environment: MediaEnvironment,
     root_font_size: f64,
 }
@@ -133,6 +133,9 @@ fn apply_writes(
         match write {
             Write::Paint(p) => paint.push(p),
             Write::Layout(id, value) => layout.push((id, value)),
+            Write::Visual(visual) => tree
+                .set_visual(node, visual)
+                .map_err(|e| format!("visual: {e}"))?,
         }
     }
     if !paint.is_empty() {
@@ -305,6 +308,17 @@ pub struct NativeRestyle {
     pub values: Vec<String>,
     /// Whether a transition or animation needs a tick now.
     pub motion: bool,
+}
+
+/// How a node's layout changes animate: its place, its size, over what time and curve.
+#[napi(object)]
+pub struct NativeLayoutAnimation {
+    pub position: bool,
+    pub size: bool,
+    /// Milliseconds; a spring takes its own.
+    pub duration: f64,
+    /// A CSS `<easing-function>`.
+    pub easing: String,
 }
 
 #[napi(object)]
@@ -744,6 +758,39 @@ impl NativeLayout {
             finished: Uint32Array::new(finished),
             errors,
         })
+    }
+
+    /// Animate `node`'s layout changes, or stop with null; a move in flight
+    /// stops where it is drawn and the node is drawn at its layout.
+    #[napi]
+    pub fn css_animate_layout(
+        &self,
+        node: &crate::layout::NativeLayoutNode,
+        animation: Option<NativeLayoutAnimation>,
+    ) -> Result<()> {
+        self.owner.check()?;
+        let animation = match animation {
+            Some(a) => {
+                let timing = crate::motion::parse_timing(&a.easing)
+                    .ok_or_else(|| error(format!("\"{}\" is not a timing function", a.easing)))?;
+                if !a.duration.is_finite() || a.duration < 0.0 {
+                    return Err(error("A layout animation's duration is a time"));
+                }
+                Some(LayoutAnimation {
+                    position: a.position,
+                    size: a.size,
+                    duration: a.duration,
+                    timing,
+                })
+            }
+            None => None,
+        };
+        let mut tree = self.owner.tree.borrow_mut();
+        let mut state = self.owner.styles.borrow_mut();
+        if state.motion.animate_layout(node.node.raw(), animation) {
+            tree.set_visual(node.node, None).map_err(error)?;
+        }
+        Ok(())
     }
 
     /// How many transitions and animations of `node` have not ended.

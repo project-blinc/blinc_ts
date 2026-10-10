@@ -9,7 +9,7 @@ import { probeShader } from '../dist/renderer/shaders.js';
 
 const native = loadNative();
 const W = 480;
-const H = 240;
+const H = 320;
 const target = await OffscreenRenderer.create(native, W, H, probeShader);
 const output = new URL('../.blinc/motion/', import.meta.url);
 await mkdir(output, { recursive: true });
@@ -73,6 +73,12 @@ const css = `
 #grow { width: 40px; height: 20px; background: #ff0000; transition: width 100ms linear; }
 #grow.on { width: 140px; }
 #after { width: 20px; height: 20px; background: #0000ff; }
+#list { position: absolute; left: 20px; top: 220px; width: 100px; flex-direction: column; }
+#first { height: 20px; background: #00ff00; }
+#first.tall { height: 60px; }
+#second { height: 20px; background: #0000ff; }
+#sizer { position: absolute; left: 300px; top: 220px; width: 60px; height: 20px; background: #ff0000; }
+#sizer.tall { height: 60px; }
 @keyframes themed { from { background: var(--from); } to { background: #000000; } }
 `;
 
@@ -257,6 +263,73 @@ try {
   host.layout.tickMotion(7100);
   host.compute(W, H);
   assert.equal(grow.bounds()[2], 140);
+
+  // Layout animation: pushed down by a sibling, a box is drawn from where it was and eases home.
+  const list = host.createElement('div');
+  list.setAttribute('id', 'list');
+  const first = host.createElement('div');
+  first.setAttribute('id', 'first');
+  const pushed = host.createElement('div');
+  pushed.setAttribute('id', 'second');
+  list.appendChild(first);
+  list.appendChild(pushed);
+  host.root.appendChild(list);
+  pushed.animateLayout({ duration: 100, easing: 'linear' });
+  host.compute(W, H);
+  const BLUE = [0, 0, 255];
+  const flipAt = async (t) => {
+    host.layout.tickMotion(t);
+    return capture(host);
+  };
+  first.classList.add('tall');
+  host.compute(W, H);
+  assert.equal(pushed.bounds()[1], 280, 'layout settles at once');
+  let flipped = await flipAt(8000);
+  assert.ok(near(pixel(flipped, 70, 250), BLUE), 'drawn where it was');
+  assert.ok(near(pixel(flipped, 70, 290), GROUND), 'not yet where it is laid out');
+  flipped = await flipAt(8050);
+  assert.ok(near(pixel(flipped, 70, 270), BLUE), 'halfway');
+  let home = false;
+  const settled = pushed.animationsFinished().then(() => (home = true));
+  flipped = await flipAt(8100);
+  assert.ok(near(pixel(flipped, 70, 290), BLUE), 'and home');
+  await settled;
+  assert.equal(home, true, 'animationsFinished waits for the move');
+
+  // A child carried by its animated parent does not move again on its own.
+  list.animateLayout({ duration: 100, easing: 'linear' });
+  host.compute(W, H);
+  list.setAttribute('style', 'left: 140px');
+  host.compute(W, H);
+  flipped = await flipAt(9000);
+  flipped = await flipAt(9050);
+  assert.ok(near(pixel(flipped, 85, 290), BLUE), 'the child rides with its parent, halfway over');
+  assert.ok(near(pixel(flipped, 225, 290), GROUND), 'not at its own layout');
+  assert.equal(
+    await Promise.race([
+      pushed.animationsFinished().then(() => 'done'),
+      new Promise((resolve) => setTimeout(() => resolve('waiting'), 0)),
+    ]),
+    'done',
+    'nor has a move of its own to wait for',
+  );
+  await flipAt(9100);
+
+  // A resize is drawn at the size between, what it holds clipped to it.
+  const sizer = host.createElement('div');
+  sizer.setAttribute('id', 'sizer');
+  host.root.appendChild(sizer);
+  sizer.animateLayout({ duration: 100, easing: 'linear' });
+  host.compute(W, H);
+  sizer.classList.add('tall');
+  host.compute(W, H);
+  await flipAt(10000);
+  flipped = await flipAt(10050);
+  assert.ok(near(pixel(flipped, 330, 255), RED), 'drawn 40 tall halfway');
+  assert.ok(near(pixel(flipped, 330, 265), GROUND), 'and no taller');
+  flipped = await flipAt(10100);
+  assert.ok(near(pixel(flipped, 330, 275), RED), 'then at its full height');
+  sizer.animateLayout(null);
 
   // What motion cannot do is said once, not on every restyle.
   missing.classList.add('go');

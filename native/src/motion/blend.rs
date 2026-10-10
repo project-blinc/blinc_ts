@@ -371,7 +371,7 @@ pub(crate) fn vector(write: &Write) -> Option<Vec<f32>> {
     match write {
         Write::Paint(paint) => vector_paint(paint),
         Write::Layout(_, Value::Number(v)) if v.is_finite() => Some(vec![*v]),
-        Write::Layout(..) => None,
+        Write::Layout(..) | Write::Visual(_) => None,
     }
 }
 

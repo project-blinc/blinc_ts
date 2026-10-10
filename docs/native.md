@@ -335,6 +335,18 @@ host.compute(width, height);
 host.layout.tickMotion(performance.now()); // true while anything still moves
 ```
 
+`element.animateLayout(options?)` animates where layout puts the element
+(`LayoutNode.animateLayout` underneath): when its place or size changes,
+layout settles at once and the element is drawn where it was, then eases to
+where it is, nothing laid out again for it. While its size changes it is drawn
+at the size between, its children clipped to it. A move is measured against
+the nearest animated element it is in, so a child carried by its parent does
+not move twice, and a change mid-move starts from where it is drawn. Options
+are `position` and `size` (both on), `duration` (200ms) and `easing` (the
+theme's `ease-out`; a spring takes its own time); `null` stops it. Use it for
+what layout moves, such as a list making room or a panel opening; a transition
+of `height` lays out every frame instead.
+
 `element.animationsFinished()` resolves when the element's transitions and
 animations have ended, or at once when it has none; it restyles first, so an
 attribute set just before has started its animation. That is how a component

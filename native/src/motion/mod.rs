@@ -9,6 +9,7 @@
 
 mod blend;
 mod field;
+mod flip;
 mod keyframes;
 mod spec;
 mod timing;
@@ -18,6 +19,13 @@ use blinc_abi::css::Atom;
 use blinc_abi::css::cascade::Cascade;
 use blinc_abi::css::quantity::PaintUnits;
 pub(crate) use field::{Field, Value, Write};
+use flip::Flip;
+pub(crate) use flip::LayoutAnimation;
+
+/// A CSS `<easing-function>`.
+pub(crate) fn parse_timing(text: &str) -> Option<Timing> {
+    Timing::parse(text)
+}
 pub(crate) use spec::Spec;
 use spec::{Animation, Direction};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -489,6 +497,8 @@ impl NodeMotion {
 #[derive(Default)]
 pub(crate) struct Motion {
     nodes: HashMap<u64, NodeMotion>,
+    /// Layout animations, by node.
+    flips: HashMap<u64, Flip>,
     /// Nodes that need frames.
     active: HashSet<u64>,
     /// Nodes whose last run or animation ended since this was last taken.
@@ -574,19 +584,26 @@ impl Motion {
         let mut out = Vec::new();
         let nodes: Vec<u64> = self.active.iter().copied().collect();
         for raw in nodes {
-            let Some(node) = self.nodes.get_mut(&raw) else {
-                self.active.remove(&raw);
-                continue;
-            };
-            let before = node.running();
-            let writes = node.step(now);
+            let before = self.running(raw);
+            let mut writes = Vec::new();
+            let mut ticking = false;
+            if let Some(node) = self.nodes.get_mut(&raw) {
+                writes = node.step(now);
+                ticking = node.ticking();
+            }
+            if let Some(flip) = self.flips.get_mut(&raw) {
+                if let Some(visual) = flip.step(now) {
+                    writes.push(Write::Visual(visual));
+                }
+                ticking |= flip.running();
+            }
             if !writes.is_empty() {
                 out.push((raw, writes));
             }
-            if before > 0 && node.running() == 0 {
+            if before > 0 && self.running(raw) == 0 {
                 self.finished.push(raw);
             }
-            if !node.ticking() {
+            if !ticking {
                 self.active.remove(&raw);
             }
         }
@@ -674,16 +691,71 @@ impl Motion {
         self.nodes.contains_key(&raw)
     }
 
-    /// How many runs and animations of `raw` have not ended.
+    /// How many runs and animations of `raw` have not ended, its layout animation's move among them.
     pub(crate) fn running(&self, raw: u64) -> usize {
         self.nodes.get(&raw).map_or(0, NodeMotion::running)
+            + usize::from(self.flips.get(&raw).is_some_and(Flip::running))
     }
 
     pub(crate) fn forget(&mut self, raw: u64) {
+        let running = self.running(raw);
         self.active.remove(&raw);
-        if let Some(node) = self.nodes.remove(&raw) {
-            if node.running() > 0 {
-                self.finished.push(raw);
+        self.nodes.remove(&raw);
+        self.flips.remove(&raw);
+        if running > 0 {
+            self.finished.push(raw);
+        }
+    }
+
+    /// Animate `raw`'s layout changes, or stop; true when a move was cut short,
+    /// so it must be drawn at its layout again.
+    pub(crate) fn animate_layout(&mut self, raw: u64, animation: Option<LayoutAnimation>) -> bool {
+        match animation {
+            Some(a) => {
+                match self.flips.get_mut(&raw) {
+                    Some(flip) => flip.set(a),
+                    None => {
+                        self.flips.insert(raw, Flip::new(a));
+                    }
+                }
+                false
+            }
+            None => {
+                let cut = self.flips.remove(&raw).is_some_and(|f| f.running());
+                if cut && self.running(raw) == 0 {
+                    self.finished.push(raw);
+                }
+                cut
+            }
+        }
+    }
+
+    /// After a layout: each animated node's box, from `bounds`, relative to the
+    /// nearest animated node it is in, which `parent` walks up to.
+    pub(crate) fn laid_out(
+        &mut self,
+        bounds: impl Fn(u64) -> Option<[f32; 4]>,
+        parent: impl Fn(u64) -> Option<u64>,
+    ) {
+        if self.flips.is_empty() {
+            return;
+        }
+        let animated: Vec<u64> = self.flips.keys().copied().collect();
+        for raw in animated {
+            let Some(own) = bounds(raw) else { continue };
+            let mut up = parent(raw);
+            while let Some(p) = up {
+                if self.flips.contains_key(&p) {
+                    break;
+                }
+                up = parent(p);
+            }
+            let origin = up.and_then(&bounds).map_or([0.0, 0.0], |b| [b[0], b[1]]);
+            let relative = [own[0] - origin[0], own[1] - origin[1], own[2], own[3]];
+            let flip = self.flips.get_mut(&raw).expect("listed");
+            flip.laid_out(relative, up);
+            if flip.running() {
+                self.active.insert(raw);
             }
         }
     }

@@ -23,7 +23,7 @@ import {
 } from './events.js';
 import { window as win } from './index.js';
 import { Input, WHEEL_LINE } from './input.js';
-import type { HitCache, Layout, LayoutNode, Restyled } from './layout.js';
+import type { HitCache, Layout, LayoutAnimationOptions, LayoutNode, Restyled } from './layout.js';
 import { MemoryClipboard, SystemClipboard, type Clipboard } from './clipboard.js';
 import type { Computed, Disposable, ReactiveContext, Signal } from './reactive.js';
 import type { AffineTransform, Color, PaintStyle, TextStyle } from './scene.js';
@@ -372,6 +372,10 @@ export class HostElement extends HostNode {
   /** Whether `setState` gave the element `name`. */
   hasState(name: string): boolean {
     return this.host.elementHasState(this, name);
+  }
+  /** Animate this element's layout changes, or stop with null: see `LayoutNode.animateLayout`. */
+  animateLayout(options: LayoutAnimationOptions | null = {}): void {
+    this.layoutNode.animateLayout(options);
   }
   /**
    * Resolves when this element's transitions and animations have ended, or

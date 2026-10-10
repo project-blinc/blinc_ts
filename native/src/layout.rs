@@ -162,13 +162,30 @@ impl NativeLayout {
         })
     }
     #[napi]
-    pub fn compute(&self, root: &NativeLayoutNode, width: f64, height: f64) -> Result<()> {
+    /// Lay out from `root`; true when a layout animation started, or other motion is pending,
+    /// so a tick has work.
+    pub fn compute(&self, root: &NativeLayoutNode, width: f64, height: f64) -> Result<bool> {
         self.owner.check()?;
-        self.owner
-            .tree
-            .borrow_mut()
-            .compute(root.node, finite(width)?, finite(height)?)
-            .map_err(error)
+        let mut tree = self.owner.tree.borrow_mut();
+        tree.compute(root.node, finite(width)?, finite(height)?)
+            .map_err(error)?;
+        let mut styles = self.owner.styles.borrow_mut();
+        let tree = &*tree;
+        styles.motion.laid_out(
+            |raw| {
+                let node = tree.node(raw).ok()?;
+                let mut out = [0.0f32; 4];
+                tree.read_bounds(&[node], &mut out).ok()?;
+                Some(out)
+            },
+            |raw| {
+                tree.parent(tree.node(raw).ok()?)
+                    .ok()
+                    .flatten()
+                    .map(|n| n.raw())
+            },
+        );
+        Ok(styles.motion.pending())
     }
     #[napi]
     pub fn read_bounds(

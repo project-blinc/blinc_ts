@@ -17,6 +17,7 @@ import type {
   LayoutOverflow,
 } from './generated/layout.js';
 import type { Scope } from '../hmr.js';
+import { cssEasing, type Easing } from '../theme/easing.js';
 import { propertyWrite } from './properties.js';
 import {
   shapeOff,
@@ -226,7 +227,7 @@ export interface NativeLayout extends BrushFactory {
   readonly size: number;
   readonly disposed: boolean;
   createNode(style: NativeLayoutStyle): NativeLayoutNode;
-  compute(root: NativeLayoutNode, width: number, height: number): void;
+  compute(root: NativeLayoutNode, width: number, height: number): boolean;
   readBounds(nodes: readonly NativeLayoutNode[], target: Float32Array): void;
   cssAddSheet(
     source: Uint8Array | string,
@@ -256,6 +257,10 @@ export interface NativeLayout extends BrushFactory {
     errors: string[];
   };
   cssMotionRunning(node: NativeLayoutNode): number;
+  cssAnimateLayout(
+    node: NativeLayoutNode,
+    animation: { position: boolean; size: boolean; duration: number; easing: string } | null,
+  ): void;
   dispose(): void;
 }
 
@@ -271,6 +276,17 @@ export interface CssDiagnostic {
   readonly column: number;
   /** The file it is in, when it is not the sheet's own: one it imports. */
   readonly file?: string | null;
+}
+/** How a node's layout changes animate. */
+export interface LayoutAnimationOptions {
+  /** Ease from where it was; true by default. */
+  readonly position?: boolean;
+  /** Ease from the size it was, its children clipped to the size drawn; true by default. */
+  readonly size?: boolean;
+  /** Milliseconds; 200 by default. A spring takes its own. */
+  readonly duration?: number;
+  /** The curve; the theme's `ease-out` by default. */
+  readonly easing?: Easing;
 }
 /** What a restyle changed beyond layout. */
 export interface Restyled {
@@ -536,7 +552,9 @@ export class Layout {
       this.flush();
     }
     this.#hitRevision++;
-    this.#native.compute(LayoutNode.unwrap(root, this), width, height);
+    // Always laid out; a layout animation may have started a move.
+    const moved = this.#native.compute(LayoutNode.unwrap(root, this), width, height);
+    this.#motion ||= moved;
   }
 
   // --- CSS, run by the native engine ---
@@ -722,6 +740,21 @@ export class Layout {
     });
   }
 
+  /** @internal LayoutNode.animateLayout. */
+  animateLayout(node: LayoutNode, options: LayoutAnimationOptions | null): void {
+    this.flush();
+    this.#native.cssAnimateLayout(
+      LayoutNode.unwrap(node, this),
+      options && {
+        position: options.position ?? true,
+        size: options.size ?? true,
+        duration: options.duration ?? 200,
+        easing: cssEasing(options.easing ?? 'ease-out'),
+      },
+    );
+    this.changed('paint');
+  }
+
   /** @internal A node and its descendants are gone; whoever waited on their motion is told at the next tick. */
   motionRemoved(): void {
     if (this.#motionWaiters.size > 0) {
@@ -829,6 +862,18 @@ export class LayoutNode implements QueuedNode {
     this.#layout.flush();
     this.#native.setText(content, style);
     this.#layout.changed('layout');
+  }
+  /**
+   * Animate this node's layout changes, or stop with null. When layout moves
+   * or resizes it, layout settles at once and the node is drawn where it was,
+   * then eases to where it is: by what is left of the move, and while its
+   * size changes at the size between, its children clipped to it. A move is
+   * measured against the nearest animated node it is in, so a child carried
+   * by its parent's move does not move twice. 200ms on the theme's ease-out by
+   * default; a spring takes its own time.
+   */
+  animateLayout(options: LayoutAnimationOptions | null = {}): void {
+    this.#layout.animateLayout(this, options);
   }
   setVisual(bounds: VisualBounds | null): void {
     this.#layout.flush();

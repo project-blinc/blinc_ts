@@ -45,6 +45,9 @@ pub(crate) enum Write {
     Paint(PaintWrite),
     /// A router id and its value.
     Layout(i32, Value),
+    /// Drawn away from its layout, as a layout animation draws it: offset x, y and a
+    /// size, -1 for the layout's; none to draw it at its layout.
+    Visual(Option<[f32; 4]>),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -66,6 +69,8 @@ pub(crate) enum Field {
     Mask,
     /// A layout property, by its router id; a length's percentage id is its pixel id's slot.
     Layout(i32),
+    /// Where a layout animation draws it.
+    Visual,
 }
 
 /// Each length's pixel id and the percentage id that sets the same slot.
@@ -122,6 +127,7 @@ impl Field {
         match write {
             Write::Paint(paint) => Field::of_paint(paint),
             Write::Layout(id, _) => Field::Layout(slot(*id)),
+            Write::Visual(_) => Field::Visual,
         }
     }
 
@@ -173,6 +179,7 @@ impl Field {
             Field::Filter => PaintWrite::Filter(Filter::default()),
             Field::Mask => PaintWrite::Mask(None),
             Field::Layout(slot) => return Write::Layout(slot, Value::Unset),
+            Field::Visual => return Write::Visual(None),
         })
     }
 
