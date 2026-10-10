@@ -76,6 +76,10 @@ export class Forms {
         data.append(name, control.value);
         continue;
       }
+      if (this.host.behaviours.textFields.has(control)) {
+        data.append(name, control.value);
+        continue;
+      }
       if (control.tag !== 'input') {
         continue;
       }
@@ -128,8 +132,30 @@ export class Forms {
     for (const control of this.elements(form)) {
       this.host.behaviours.inputs.reset(control);
       this.host.behaviours.selects.reset(control);
+      this.host.behaviours.textFields.reset(control);
     }
     return true;
+  }
+
+  /**
+   * Enter in a text field: the form's default button is clicked, its first submit button, unless
+   * that is disabled; with none, a form with no more than one text field submits.
+   */
+  implicitSubmit(form: HostElement): void {
+    const controls = this.elements(form);
+    const button = controls.find((c) => c.tag === 'button' && this.buttonType(c) === 'submit');
+    if (button) {
+      if (!this.host.input.isDisabled(button)) {
+        button.click();
+      }
+      return;
+    }
+    const texts = controls.filter(
+      (c) => c.tag === 'input' && this.host.behaviours.textFields.has(c),
+    );
+    if (texts.length <= 1) {
+      this.requestSubmit(form);
+    }
   }
 
   /** A click reached `button`: submit or reset its form. */

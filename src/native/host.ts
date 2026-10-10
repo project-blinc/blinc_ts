@@ -478,16 +478,34 @@ export class HostElement extends HostNode {
   }
   /** An input's value as text: a range's number, else its `value` attribute; a select's chosen option's value. */
   get value(): string {
-    const { inputs, selects } = this.host.behaviours;
-    return selects.has(this) ? selects.value(this) : (inputs.value(this) ?? '');
+    const { inputs, selects, textFields } = this.host.behaviours;
+    return selects.has(this)
+      ? selects.value(this)
+      : (textFields.value(this) ?? inputs.value(this) ?? '');
   }
   set value(text: string) {
-    const { inputs, selects } = this.host.behaviours;
+    const { inputs, selects, textFields } = this.host.behaviours;
     if (selects.has(this)) {
       selects.setValue(this, text);
+    } else if (textFields.has(this)) {
+      textFields.setValue(this, text);
     } else {
       inputs.setValue(this, text);
     }
+  }
+  /** A text field's: where the selection starts and ends, as UTF-16 indices. */
+  get selectionStart(): number {
+    return this.host.behaviours.textFields.selectionStart(this);
+  }
+  get selectionEnd(): number {
+    return this.host.behaviours.textFields.selectionEnd(this);
+  }
+  /** A text field's: select all of what it holds, or from `start` to `end`. */
+  select(start?: number, end?: number): void {
+    this.host.behaviours.textFields.select(this, start, end);
+  }
+  setSelectionRange(start: number, end: number): void {
+    this.host.behaviours.textFields.select(this, start, end);
   }
   /** A select's: the index of the chosen option, or -1. */
   get selectedIndex(): number {
@@ -502,10 +520,17 @@ export class HostElement extends HostNode {
   }
   /** A range's value as a number, NaN for any other element. */
   get valueAsNumber(): number {
-    return this.host.behaviours.inputs.valueAsNumber(this);
+    const { inputs, textFields } = this.host.behaviours;
+    const range = inputs.valueAsNumber(this);
+    return Number.isNaN(range) ? textFields.valueAsNumber(this) : range;
   }
   set valueAsNumber(value: number) {
-    this.host.behaviours.inputs.setValueAsNumber(this, value);
+    const { inputs, textFields } = this.host.behaviours;
+    if (textFields.has(this)) {
+      textFields.setValue(this, Number.isFinite(value) ? String(value) : '');
+    } else {
+      inputs.setValueAsNumber(this, value);
+    }
   }
   /** Animate this element's layout changes, or stop with null: see `LayoutNode.animateLayout`. */
   animateLayout(options: LayoutAnimationOptions | null = {}): void {
@@ -880,12 +905,15 @@ export class Host {
   readonly behaviours: Behaviours;
   /** The images elements name, loaded once each, which a mounted window draws. */
   readonly images: HostImages | undefined;
+  /** The native bindings this host measures text with, when it was given them. */
+  readonly native: NativeBindings | undefined;
   /** Elements the host made for another to hold, which frameworks do not see among its children. */
   readonly #owned = new WeakMap<HostElement, HostElement[]>();
   readonly #anonymous = new WeakSet<HostElement>();
 
   constructor(layout: Layout, scope?: Scope, native?: NativeBindings) {
     this.layout = layout;
+    this.native = native;
     this.inlineFlows = native ? new InlineFlows(this, native) : undefined;
     this.images = native ? new HostImages(native, layout) : undefined;
     this.behaviours = new Behaviours(this);
@@ -1418,7 +1446,7 @@ export class Host {
     if (!entry) {
       const thumb = new ScrollThumb((colour) => {
         if (!element.destroyed) {
-          element.layoutNode.queueScroll(entry!.x, entry!.y, colour);
+          element.layoutNode.queueScroll(entry!.x, entry!.y, thumbOf(entry!, colour));
         }
       });
       entry = { axes: [false, false], x: 0, y: 0, thumb };
@@ -1435,8 +1463,9 @@ export class Host {
     if (name !== 'overflow-x') {
       entry.axes[1] = scrolls;
     }
-    // The engine draws a thumb for a container it has a scroll record of.
-    element.layoutNode.queueScroll(entry.x, entry.y, entry.thumb.current);
+    // The engine draws a thumb for a container it has a scroll record of, which every container
+    // may have for its scroll offset, so one that does not scroll is given a thumb of no colour.
+    element.layoutNode.queueScroll(entry.x, entry.y, thumbOf(entry, entry.thumb.current));
   }
   /** `scrollbar-color`, `scrollbar-width` and `scrollbar-visibility`, as `element`'s declarations now have them. */
   #scrollbar(element: HostElement, declared: ReadonlyMap<string, string>): void {
@@ -1547,7 +1576,7 @@ export class Host {
     const entry = this.#scrollEntry(element);
     entry.x = x;
     entry.y = y;
-    element.layoutNode.queueScroll(x, y, entry.thumb.current);
+    element.layoutNode.queueScroll(x, y, thumbOf(entry, entry.thumb.current));
     entry.thumb.scrolled();
     element.dispatchEvent(new HostEvent('scroll'));
   }
@@ -1693,11 +1722,22 @@ export class Host {
   }
 
   dispose(): void {
+    this.behaviours.dispose();
     this.images?.dispose();
     this.#text.clear();
     this.#nodes.clear();
     this.layout.dispose();
   }
+}
+
+/** The thumb a container draws: its own colour if it scrolls, none otherwise. */
+function thumbOf(
+  entry: { axes: [boolean, boolean] },
+  colour: readonly [number, number, number, number],
+): [number, number, number, number] {
+  return entry.axes[0] || entry.axes[1]
+    ? [colour[0], colour[1], colour[2], colour[3]]
+    : [0, 0, 0, 0];
 }
 
 /** A text node's defaults, so a property no ancestor sets any more reverts. */

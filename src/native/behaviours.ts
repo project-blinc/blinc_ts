@@ -15,6 +15,7 @@ import { Forms } from './forms.js';
 import { Inputs } from './inputs.js';
 import { Selects } from './selects.js';
 import { Tables } from './tables.js';
+import { TextFields } from './text-fields.js';
 import { ImageFit } from './generated/scene.js';
 import type { StyleSheet } from './layout.js';
 
@@ -73,6 +74,8 @@ export class Behaviours {
   readonly selects: Selects;
   /** What tables do: their columns line up. */
   readonly tables: Tables;
+  /** What text inputs and textareas do: they are edited in place. */
+  readonly textFields: TextFields;
   /** Every `img`, and those whose image or fit may need putting right. */
   readonly #pictures = new Map<HostElement, Picture>();
   readonly #pictureDirty = new Set<HostElement>();
@@ -94,6 +97,7 @@ export class Behaviours {
     this.dialogs = new Dialogs(host);
     this.selects = new Selects(host);
     this.tables = new Tables(host);
+    this.textFields = new TextFields(host);
   }
 
   /** Once the host has its root. */
@@ -101,6 +105,7 @@ export class Behaviours {
     this.inputs.attach();
     this.dialogs.attach();
     this.selects.attach();
+    this.textFields.attach();
     // A click that nothing handled does what the element under it means: follow a link,
     // operate a label's control, open or close a details.
     this.host.root.addEventListener('click', (event) => {
@@ -114,6 +119,7 @@ export class Behaviours {
   created(element: HostElement): void {
     this.inputs.created(element);
     this.selects.created(element);
+    this.textFields.created(element);
     switch (element.tag) {
       case 'summary':
         this.host.ownedElement(element, 'div', ['marker']);
@@ -407,6 +413,7 @@ export class Behaviours {
     this.selects.changed(parent);
     this.tables.changed(parent);
     this.tables.changed(child ?? null);
+    this.textFields.childrenChanged(parent);
     // A control put into a disabled fieldset is disabled by it.
     if (
       parent instanceof ElementClass &&
@@ -432,6 +439,7 @@ export class Behaviours {
     this.dialogs.attributeChanged(element, name);
     this.selects.changed(element);
     this.tables.attributeChanged(element, name);
+    this.textFields.attributeChanged(element, name);
     if (element.tag === 'progress' || element.tag === 'meter') {
       this.#sync(element);
     }
@@ -474,6 +482,7 @@ export class Behaviours {
       this.dialogs.forget(node);
       this.selects.forget(node);
       this.tables.forget(node);
+      this.textFields.forget(node);
       const picture = this.#pictures.get(node);
       if (picture) {
         picture.use?.release();
@@ -489,10 +498,16 @@ export class Behaviours {
     }
   }
 
+  /** The host is going: nothing may fire after it. */
+  dispose(): void {
+    this.textFields.dispose();
+  }
+
   /** Before the tick's writes go: put right what changed. */
   flush(): void {
     this.selects.flush();
     this.tables.flush();
+    this.textFields.flush();
     if (this.#pictureDirty.size > 0) {
       const dirty = [...this.#pictureDirty];
       this.#pictureDirty.clear();

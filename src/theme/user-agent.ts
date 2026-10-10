@@ -39,7 +39,7 @@ const containers =
 const flows =
   'p, h1, h2, h3, h4, h5, h6, span, a, strong, b, em, i, s, u, small, code, kbd, mark, output, legend, figcaption, caption, dt, dd, th, td';
 const fields =
-  'input:is([type="text"], [type="password"], [type="search"], [type="email"], [type="tel"], [type="url"], [type="number"])';
+  'input:is(:not([type]), [type="text"], [type="password"], [type="search"], [type="email"], [type="tel"], [type="url"], [type="number"])';
 const ticks = 'input:is([type="checkbox"], [type="radio"])';
 
 /** Colours and borders easing between states. */
@@ -248,6 +248,19 @@ ${fields}:user-invalid, textarea:user-invalid, ${ticks}:user-invalid {
   border-color: var(--border-error);
   outline-color: var(--focus-ring-error);
 }
+/* What shows through a text field: the text in a clip, the selection behind it, the caret and the placeholder over it. */
+${fields} > .clip { position: relative; flex: 1 1 0; min-width: 0; height: 100%; overflow: hidden; }
+${fields} > .clip > .strip { position: absolute; top: 0; bottom: 0; left: 2px; width: 4096px; flex-direction: row; align-items: center; }
+textarea > .clip { position: relative; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+textarea > .clip > .strip { position: relative; width: 100%; }
+.clip .line { position: relative; flex-direction: row; align-items: center; }
+textarea .line { width: 100%; align-items: flex-start; }
+.clip .selection { position: absolute; top: 0; bottom: 0; background: var(--selection); pointer-events: none; }
+textarea .selection { bottom: auto; }
+.clip .composition { position: absolute; bottom: 0; height: 1px; background: var(--text-primary); pointer-events: none; display: none; }
+.clip .placeholder { position: absolute; top: 0; left: 0; color: var(--text-tertiary); pointer-events: none; display: none; }
+.clip .caret { position: absolute; top: 0; bottom: 0; width: 1.5px; background: var(--text-primary); pointer-events: none; opacity: 0; }
+textarea .caret { bottom: auto; }
 input[type="number"] { width: 120px; padding-right: 2px; }
 input[type="number"] > .steppers { flex-direction: column; flex-shrink: 0; margin-left: 4px; }
 input[type="number"] > .steppers > div {

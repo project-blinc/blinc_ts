@@ -630,6 +630,39 @@ false when it was cancelled (a submitter that is not a submit button of the form
 checkbox and radio back as its `checked` attribute says and each range as its `value`
 does, as if the user had not touched them.
 
+**Text inputs and text areas.** An `input` of `type` `text` (the default), `password`,
+`search`, `email`, `tel`, `url` or `number`, and a `textarea`, are edited in place. A press
+focuses the field and puts the caret where it landed, a drag selects, a double click
+selects a word and a triple click the line or paragraph, and Shift extends a selection.
+Typing, the input method's composition (underlined, in place of the selection), the arrows
+(Option on a Mac, Control elsewhere, by word; Command on a Mac to the ends of a line),
+Home and End, Backspace and Delete, Page Up and Down in a text area, select all, and the
+platform's copy, cut and paste shortcuts edit it, `copy`, `cut` and `paste` being the
+clipboard events they fire. Tab into a field selects what is in it; a script's `focus()`
+does not. A password shows dots and neither copies nor cuts. `readonly` can be selected
+and copied but not changed, and a disabled field takes nothing. `maxlength` cuts what is
+typed or pasted. A single line field turns a pasted line break into a space and scrolls to
+keep its caret in view; a text area wraps at its width, Enter is a new line, and it scrolls
+to its caret. The parts are owned: `.clip` holding a `.strip` and a `.line` with the
+`.text`, the `.selection` rectangles behind it, the `.composition` underline, the
+`.placeholder` and the `.caret`, which the user-agent sheet styles; the caret blinks
+while the field has focus. `placeholder` shows while it is empty, with `:placeholder-shown`;
+`required` and `optional` are states.
+
+`element.value` reads and sets the text, which a script's setting does without an event and
+with the caret at the end; the `value` attribute (a textarea's text) is where it starts, until
+the user or a script has set it, and a form's `reset()` puts it back. `selectionStart`,
+`selectionEnd`, `select()` and `setSelectionRange()` are the selection. `input` fires after
+each edit, and `change` when focus leaves after a change or Enter settles a single line
+field, which also submits its form: its default button is clicked, else a form with no
+more than one text field is submitted. Escape empties a `search` field. A `number` takes
+only the characters a number is written with, the up and down arrows and its owned `.steppers`
+(`.step-up` and `.step-down`) move it by `step` within `min` and `max`, an empty one
+starting from zero or the minimum, and `valueAsNumber` is NaN when it is empty or not one.
+A named field is in `form.formData()`. The caret's place is not yet published to the input
+method for its candidate window, and there is no validity yet (`required`, `pattern`,
+`:valid` and `:invalid`).
+
 **Tables.** Every row of a `table`, its own and those in `thead`, `tbody` and `tfoot`, is a
 grid of the same columns, so cells line up down the table: as many as the widest row has
 counting each cell's `colspan`, or as the table's `col`s and `colgroup`s stand for, if more.
