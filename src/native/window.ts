@@ -1,6 +1,9 @@
 import type { Scope } from '../hmr.js';
 import { gpu, window, LayoutNode, type Layout, type NativeBindings } from './index.js';
 import { SceneRenderer, type RenderOptions, type SceneRenderStats } from './renderer.js';
+import { FrameTap, type CapturedFrame } from './frame-tap.js';
+
+export type { CapturedFrame } from './frame-tap.js';
 
 export interface NativeWindowOptions extends window.WindowAttributes {
   /** Global native-loop raw-device policy; GUI hosts default to Never. */
@@ -47,6 +50,7 @@ export class NativeWindowHost {
   #pumping = false;
   readonly #listeners = new Set<(event: window.Event) => void>();
   #painter: Painter | undefined;
+  #tap: FrameTap | undefined;
   #disposed = false;
   #painting = false;
   #holdingFrame = false;
@@ -239,6 +243,26 @@ export class NativeWindowHost {
     );
   }
 
+  /**
+   * Read back every frame the scene presents, for tests and tools. The
+   * scene is drawn a second time into a readable texture in the frame's own
+   * submission, so each capture is the state that frame showed, with the
+   * clock its motion was sampled at. Costs a second pass and a readback a
+   * frame; the returned function stops it.
+   */
+  captureFrames(listener: (frame: CapturedFrame) => void): () => void {
+    const state = this.#liveGpu();
+    this.#tap?.dispose();
+    const tap = new FrameTap(state.device, state.format, listener);
+    this.#tap = tap;
+    return () => {
+      if (this.#tap === tap) {
+        this.#tap = undefined;
+      }
+      tap.dispose();
+    };
+  }
+
   /** Attach after ready. Owns the renderer, while the caller owns the layout. */
   attachScene(
     layout: Layout,
@@ -275,7 +299,10 @@ export class NativeWindowHost {
         render.width = w;
         render.height = h;
         render.scale = ratio;
-        this.#stats = renderer.encode(encoder, root, target, render);
+        // A capture is the presented frame only while nothing runs between these two draws.
+        const draw = (view: gpu.GpuTextureView) => renderer.encode(encoder, root, view, render);
+        this.#stats = draw(target);
+        this.#tap?.record(encoder, draw, w, h, time);
         if (moving) {
           this.requestFrame();
         }
@@ -539,10 +566,12 @@ export class NativeWindowHost {
       state.queue.presentSurface(state.surface);
       this.#check(state.device);
       this.#frames++;
+      this.#tap?.presented(this.#frames);
       this.#missStreak = 0;
       return true;
     } catch (error) {
       failed = true;
+      this.#tap?.dropped();
       this.#error = error;
       throw error;
     } finally {
@@ -571,6 +600,8 @@ export class NativeWindowHost {
       clearTimeout(this.#timer);
     }
     this.#listeners.clear();
+    this.#tap?.dispose();
+    this.#tap = undefined;
     this.#unsubscribeEvents?.();
     this.#unsubscribeEvents = undefined;
     try {

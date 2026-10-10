@@ -644,6 +644,14 @@ or image uploads. Requests made during painting survive for the next frame.
 scene render. `host.render()` attempts a pending frame synchronously. An encoding
 or presentation failure releases the host and is available through `host.error`.
 
+`host.captureFrames(listener)` reads back every frame the scene presents, for
+tests and tools: the scene is drawn a second time into a readable texture in
+the frame's own submission, and the listener gets its RGBA pixels, its index
+and the clock its motion was sampled at. It costs a second pass and a readback
+a frame until the returned function stops it. It is the frame's state, not the
+swapchain image, so it does not show what the compositor does after
+presentation.
+
 The shared xwindow backend's external pump also passes the Linux NUC's
 GNOME 50.1 Wayland desktop suite: idle blocking, proxy wakes, input routing,
 clipboard and frame-paced redraws. Linux Node/libuv integration remains
