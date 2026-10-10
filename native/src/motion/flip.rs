@@ -62,6 +62,17 @@ impl Flip {
         self.running.is_some()
     }
 
+    /// When the move in flight ends, on the clock it started on.
+    pub(crate) fn ends(&self) -> Option<f64> {
+        let run = self.running.as_ref()?;
+        run.start.map(|s| s + run.duration)
+    }
+
+    /// Where it is drawn now: none at its layout.
+    pub(crate) fn visual(&self) -> Option<[f32; 4]> {
+        (self.shown != AT_LAYOUT).then_some(self.shown)
+    }
+
     /// Its box after a layout, relative to `within`, the nearest animated element
     /// it is in: a move starts when the box changed. Measured against another
     /// element than before, the box is not comparable, and is where it starts.

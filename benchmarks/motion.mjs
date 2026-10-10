@@ -285,6 +285,11 @@ if (values.window) {
   holder.setAttribute('class', 'holder still');
   await delay(500);
   report.window.still = await sample();
+  // The same boxes animating, all out of view.
+  holder.setAttribute('class', 'holder');
+  holder.setAttribute('style', 'position: absolute; left: 5000px; top: 0px');
+  await delay(500);
+  report.window.outOfView = await sample();
   if (process.platform === 'darwin') {
     try {
       const summary = execFileSync('/usr/bin/vmmap', ['-summary', String(process.pid)], {

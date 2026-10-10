@@ -233,6 +233,23 @@ impl NodeMotion {
         self.runs.len() + self.anims.iter().filter(|a| a.phase != Phase::Done).count()
     }
 
+    /// When the first of its runs and finite, unpaused animations ends.
+    fn ends(&self) -> Option<f64> {
+        let runs = self
+            .runs
+            .iter()
+            .filter_map(|r| r.start.map(|s| s + r.delay + r.duration));
+        let anims = self
+            .anims
+            .iter()
+            .filter(|a| a.phase != Phase::Done && !a.spec.paused && a.spec.iterations.is_finite())
+            .filter_map(|a| {
+                a.start
+                    .map(|s| s + a.spec.delay + a.spec.duration * a.spec.iterations)
+            });
+        runs.chain(anims).min_by(f64::total_cmp)
+    }
+
     /// Those that need frames: a paused animation does once, to note the time it stopped.
     fn ticking(&self) -> bool {
         !self.runs.is_empty()
@@ -496,6 +513,16 @@ impl NodeMotion {
     }
 }
 
+/// What a tick did.
+pub(crate) struct Frame {
+    /// The writes to apply, by node.
+    pub(crate) writes: Vec<(u64, Vec<Write>)>,
+    /// Whether motion in view needs another frame.
+    pub(crate) drawing: bool,
+    /// Milliseconds until the first motion out of view ends, which must then be written.
+    pub(crate) wake: Option<f64>,
+}
+
 #[derive(Default)]
 pub(crate) struct Motion {
     nodes: HashMap<u64, NodeMotion>,
@@ -503,6 +530,10 @@ pub(crate) struct Motion {
     flips: HashMap<u64, Flip>,
     /// Nodes that need frames.
     active: HashSet<u64>,
+    /// What out of view was not written, by node: written when it is seen again, or ends.
+    culled: HashMap<u64, HashSet<Field>>,
+    /// Whether each node is in view, as last asked; cleared by `view_changed`.
+    seen: HashMap<u64, bool>,
     /// Nodes whose last run or animation ended since this was last taken.
     finished: Vec<u64>,
     /// Nodes new to motion whose values it has not all seen: one that gained motion
@@ -581,10 +612,18 @@ impl Motion {
         now
     }
 
-    /// The writes for the frame at `now` milliseconds, by node.
-    pub(crate) fn tick(&mut self, now: f64) -> Vec<(u64, Vec<Write>)> {
-        let mut out = Vec::new();
+    /// The frame at `now` milliseconds. Motion keeps its clock out of view, but
+    /// what it would draw there is not written, and asks for no frames: only for
+    /// a wake when it ends. Layout is written wherever it is, since it moves
+    /// what is in view. `in_view` says whether a node's box is on screen.
+    pub(crate) fn tick(&mut self, now: f64, in_view: impl Fn(u64) -> bool) -> Frame {
+        let mut frame = Frame {
+            writes: Vec::new(),
+            drawing: false,
+            wake: None,
+        };
         let nodes: Vec<u64> = self.active.iter().copied().collect();
+        let mut changed_view = false;
         for raw in nodes {
             let before = self.running(raw);
             let mut writes = Vec::new();
@@ -599,17 +638,73 @@ impl Motion {
                 }
                 ticking |= flip.running();
             }
-            if !writes.is_empty() {
-                out.push((raw, writes));
+            let still = self.running(raw) > 0;
+            let visible = *self.seen.entry(raw).or_insert_with(|| in_view(raw));
+            if still && !visible {
+                let dropped = self.culled.entry(raw).or_default();
+                writes.retain(|w| {
+                    let layout = matches!(w, Write::Layout(..));
+                    if !layout {
+                        dropped.insert(Field::of(w));
+                    }
+                    layout
+                });
+                let ends = self.nodes.get(&raw).and_then(NodeMotion::ends);
+                let moved = self.flips.get(&raw).and_then(Flip::ends);
+                if let Some(end) = ends.into_iter().chain(moved).min_by(f64::total_cmp) {
+                    let wait = (end - now).max(0.0);
+                    frame.wake = Some(frame.wake.map_or(wait, |w: f64| w.min(wait)));
+                }
+            } else {
+                frame.drawing |= still;
+                // Seen again, or ended out of view: what was not written is, as it stands now.
+                if let Some(fields) = self.culled.remove(&raw) {
+                    for field in fields {
+                        if writes.iter().any(|w| Field::of(w) == field) {
+                            continue;
+                        }
+                        let current = match field {
+                            Field::Visual => {
+                                self.flips.get(&raw).map(|f| Write::Visual(f.visual()))
+                            }
+                            _ => self
+                                .nodes
+                                .get(&raw)
+                                .and_then(|n| n.shown.get(&field).cloned()),
+                        };
+                        writes.extend(current);
+                    }
+                    writes.sort_by_key(Field::of);
+                }
             }
-            if before > 0 && self.running(raw) == 0 {
+            // A visual or a visibility written moves what else is in view.
+            if writes.iter().any(|w| {
+                matches!(
+                    w,
+                    Write::Visual(_) | Write::Paint(blinc_abi::css::paint::PaintWrite::Visible(_))
+                )
+            }) {
+                changed_view = true;
+            }
+            if !writes.is_empty() {
+                frame.writes.push((raw, writes));
+            }
+            if before > 0 && !still {
                 self.finished.push(raw);
             }
             if !ticking {
                 self.active.remove(&raw);
             }
         }
-        out
+        if changed_view {
+            self.view_changed();
+        }
+        frame
+    }
+
+    /// Layout, a scroll, a visual or a visibility changed: whether a node is in view is asked again.
+    pub(crate) fn view_changed(&mut self) {
+        self.seen.clear();
     }
 
     /// Whether a tick has anything to do: frames to draw, or nodes to report as finished.
@@ -702,6 +797,8 @@ impl Motion {
     pub(crate) fn forget(&mut self, raw: u64) {
         let running = self.running(raw);
         self.active.remove(&raw);
+        self.culled.remove(&raw);
+        self.seen.remove(&raw);
         self.nodes.remove(&raw);
         self.flips.remove(&raw);
         if running > 0 {

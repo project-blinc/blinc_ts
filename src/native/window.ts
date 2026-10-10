@@ -51,6 +51,8 @@ export class NativeWindowHost {
   readonly #listeners = new Set<(event: window.Event) => void>();
   #painter: Painter | undefined;
   #tap: FrameTap | undefined;
+  /** Wakes the scene when motion out of view ends, with nothing in view to draw meanwhile. */
+  #motionTimer: ReturnType<typeof setTimeout> | undefined;
   #disposed = false;
   #painting = false;
   #holdingFrame = false;
@@ -308,8 +310,19 @@ export class NativeWindowHost {
         const draw = (view: gpu.GpuTextureView) => renderer.encode(encoder, root, view, render);
         this.#stats = draw(target);
         this.#tap?.record(encoder, draw, w, h, time);
+        clearTimeout(this.#motionTimer);
+        this.#motionTimer = undefined;
+        const wake = layout.motionWake;
         if (moving) {
           this.requestFrame();
+        } else if (wake !== null) {
+          this.#motionTimer = setTimeout(
+            () => {
+              this.#motionTimer = undefined;
+              this.requestFrame();
+            },
+            Math.max(1, Math.ceil(wake)),
+          );
         }
       },
       () => {
@@ -607,6 +620,7 @@ export class NativeWindowHost {
     this.#listeners.clear();
     this.#tap?.dispose();
     this.#tap = undefined;
+    clearTimeout(this.#motionTimer);
     this.#unsubscribeEvents?.();
     this.#unsubscribeEvents = undefined;
     try {

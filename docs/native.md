@@ -326,7 +326,12 @@ theme's `--ease-spring` is a spring, `spring(1, 400, 30)` from
 
 Values are interpolated natively and written to the node, so JavaScript only
 supplies the time. A mounted host ticks every frame and asks for another
-while anything moves; with nothing moving, a frame makes no native call.
+while anything in view moves; with nothing moving, a frame makes no native
+call. Motion out of view, outside the window or a clipping ancestor at its
+scroll, keeps its clock but draws nothing and asks for no frames; layout it
+moves is still written, since it moves what is in view. Seen again, it is drawn
+where its clock has got to, and when it ends out of view its end is written;
+`layout.motionWake` says when, and a mounted host wakes for it.
 Without a window, advance the clock yourself:
 
 ```ts

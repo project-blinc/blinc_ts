@@ -252,6 +252,8 @@ export interface NativeLayout extends BrushFactory {
   };
   cssTickMotion(now: number): {
     active: boolean;
+    drawing: boolean;
+    wake: number | null | undefined;
     layout: boolean;
     finished: Uint32Array;
     errors: string[];
@@ -319,6 +321,7 @@ export class Layout {
   #styled = false;
   /** Whether a tick may have something to do: false lets frames skip the native call. */
   #motion = false;
+  #motionWake: number | null = null;
   readonly #motionWaiters = new Map<bigint, (() => void)[]>();
   #shapeTokens: ShapeTokens | null = null;
   #shapeOverride: Partial<ShapeTokens> = {};
@@ -689,17 +692,21 @@ export class Layout {
   }
   /**
    * Advance transitions and animations to `now`, in milliseconds on any
-   * steady clock, and write their values. True while any still needs
-   * frames, so a host asks for another; it costs no native call when none
-   * has been started. One that moved layout reports a `layout` change, so
+   * steady clock, and write their values. True while one in view still
+   * needs frames, so a host asks for another; it costs no native call when
+   * none has been started. Motion out of view keeps its clock but draws
+   * nothing and asks for no frames; `motionWake` says when the first of it
+   * ends, to be written. One that moved layout reports a `layout` change, so
    * compute before drawing.
    */
   tickMotion(now: number): boolean {
+    this.#motionWake = null;
     if (!this.#motion) {
       return false;
     }
     const tick = this.#native.cssTickMotion(now);
     this.#motion = tick.active;
+    this.#motionWake = tick.drawing ? null : (tick.wake ?? null);
     if (tick.layout) {
       // A transitioned size or place: lay out again before drawing.
       this.changed('layout');
@@ -717,7 +724,12 @@ export class Layout {
         }
       }
     }
-    return tick.active;
+    return tick.drawing;
+  }
+
+  /** Milliseconds after the last tick until motion out of view ends; null when there is none to wait for. */
+  get motionWake(): number | null {
+    return this.#motionWake;
   }
 
   /**

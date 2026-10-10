@@ -327,8 +327,12 @@ pub struct NativeLayoutAnimation {
 
 #[napi(object)]
 pub struct NativeMotionTick {
-    /// Whether a transition or animation still needs a frame.
+    /// Whether a transition or animation is still running, in view or not.
     pub active: bool,
+    /// Whether one in view needs another frame.
+    pub drawing: bool,
+    /// Milliseconds until the first one out of view ends, when nothing in view runs.
+    pub wake: Option<f64>,
     /// Whether it moved layout, which must be computed again before drawing.
     pub layout: bool,
     /// Nodes whose last transition or animation ended: raw ids, low then high word.
@@ -543,6 +547,7 @@ impl NativeLayout {
         let mut state = self.owner.styles.borrow_mut();
         let state = &mut *state;
         let mut held = HashMap::new();
+        state.motion.view_changed();
         let mut errors = state.styles.restyle_host(
             &mut Restyling {
                 tree: &mut tree,
@@ -764,7 +769,13 @@ impl NativeLayout {
         let mut state = self.owner.styles.borrow_mut();
         let mut errors = Vec::new();
         let mut layout = false;
-        for (raw, writes) in state.motion.tick(now) {
+        let frame = {
+            let tree = &*tree;
+            state.motion.tick(now, |raw| {
+                tree.node(raw).and_then(|n| tree.in_view(n)).unwrap_or(true)
+            })
+        };
+        for (raw, writes) in frame.writes {
             match tree.node(raw) {
                 Ok(node) => match apply_writes(&mut tree, node, writes) {
                     Ok(applied) => layout |= applied.layout,
@@ -781,6 +792,8 @@ impl NativeLayout {
             .collect();
         Ok(NativeMotionTick {
             active: state.motion.active(),
+            drawing: frame.drawing,
+            wake: frame.wake,
             layout,
             finished: Uint32Array::new(finished),
             errors,

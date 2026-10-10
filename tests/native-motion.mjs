@@ -79,6 +79,12 @@ const css = `
 #second { height: 20px; background: #0000ff; }
 #sizer { position: absolute; left: 300px; top: 220px; width: 60px; height: 20px; background: #ff0000; }
 #sizer.tall { height: 60px; }
+#away { position: absolute; left: 600px; top: 260px; width: 40px; height: 40px; background: #ff0000; transition: opacity 100ms linear; }
+#away.out { opacity: 0; }
+#scroller { position: absolute; left: 380px; top: 182px; width: 50px; height: 36px; overflow: auto; flex-direction: column; }
+#spacer { height: 100px; flex-shrink: 0; }
+#below { width: 40px; height: 20px; flex-shrink: 0; background: #ff0000; animation: dim 100ms linear infinite alternate; }
+@keyframes dim { from { opacity: 1; } to { opacity: 0; } }
 @keyframes themed { from { background: var(--from); } to { background: #000000; } }
 `;
 
@@ -330,6 +336,52 @@ try {
   flipped = await flipAt(10100);
   assert.ok(near(pixel(flipped, 330, 275), RED), 'then at its full height');
   sizer.animateLayout(null);
+
+  // Out of view, motion keeps its clock but draws nothing and asks for no frames, only a wake.
+  const away = host.createElement('div');
+  away.setAttribute('id', 'away');
+  host.root.appendChild(away);
+  host.compute(W, H);
+  away.classList.add('out');
+  host.compute(W, H);
+  assert.equal(host.layout.tickMotion(11000), false, 'no frames for what is out of view');
+  assert.equal(host.layout.motionWake, 100, 'but a wake when it ends');
+  assert.equal(host.layout.tickMotion(11040), false);
+  assert.equal(host.layout.motionWake, 60);
+  // Brought into view mid-flight, it is drawn where its clock has got to.
+  away.setAttribute('style', 'left: 420px');
+  host.compute(W, H);
+  assert.equal(host.layout.tickMotion(11050), true, 'in view, it wants frames again');
+  assert.ok(near(at(await capture(host), away, 20, 20), [144, 16, 16], 6), 'halfway');
+  // It ends out of view, and is right when it is next seen.
+  away.setAttribute('style', 'left: 600px');
+  host.compute(W, H);
+  host.layout.tickMotion(11060);
+  host.layout.tickMotion(11100);
+  assert.equal(host.layout.motionWake, null);
+  away.setAttribute('style', 'left: 420px');
+  assert.ok(near(at(await capture(host), away, 20, 20), GROUND), 'faded out');
+
+  // Below a scroller's fold it asks for nothing; scrolled into view it is drawn as its clock says.
+  const scroller = host.createElement('div');
+  scroller.setAttribute('id', 'scroller');
+  const spacer = host.createElement('div');
+  spacer.setAttribute('id', 'spacer');
+  const below = host.createElement('div');
+  below.setAttribute('id', 'below');
+  scroller.appendChild(spacer);
+  scroller.appendChild(below);
+  host.root.appendChild(scroller);
+  host.compute(W, H);
+  assert.equal(host.layout.tickMotion(12000), false, 'below the fold');
+  assert.equal(host.layout.tickMotion(12025), false);
+  // A scroll is not a layout: a window draws the next frame without laying out.
+  scroller.scrollTo(0, 80);
+  host.layout.flush();
+  assert.equal(host.layout.tickMotion(12050), true, 'scrolled into view');
+  const [sx, sy] = scroller.bounds();
+  assert.ok(near(pixel(await capture(host), sx + 20, sy + 30), [144, 16, 16], 6), 'halfway dimmed');
+  scroller.remove();
 
   // What motion cannot do is said once, not on every restyle.
   missing.classList.add('go');

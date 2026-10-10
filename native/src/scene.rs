@@ -664,6 +664,7 @@ impl NativeLayoutNode {
     #[napi]
     pub fn set_visual(&self, value: Option<Vec<f64>>) -> Result<()> {
         self.owner.check()?;
+        self.owner.styles.borrow_mut().motion.view_changed();
         let visual = match value {
             Some(v) => {
                 if v.len() != 4 {
@@ -738,6 +739,7 @@ impl NativeLayoutNode {
     #[napi]
     pub fn set_scroll(&self, x: f64, y: f64) -> Result<()> {
         self.owner.check()?;
+        self.owner.styles.borrow_mut().motion.view_changed();
         self.owner
             .tree
             .borrow_mut()

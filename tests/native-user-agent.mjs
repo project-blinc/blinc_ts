@@ -306,7 +306,9 @@ try {
       settle();
       assert.equal(dialog.bounds()[2], 0, 'and once it is gone, it is not shown');
 
-      // An indeterminate progress bar pulses until it is told its value.
+      // An indeterminate progress bar pulses until it is told its value: in view, where motion draws.
+      progress.setAttribute('style', 'position: absolute; left: 10px; top: 100px');
+      host.root.appendChild(progress);
       progress.setState('indeterminate', true);
       start();
       assert.equal(advance(100), true, 'the pulse runs');

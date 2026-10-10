@@ -185,6 +185,7 @@ impl NativeLayout {
                     .map(|n| n.raw())
             },
         );
+        styles.motion.view_changed();
         Ok(styles.motion.pending())
     }
     #[napi]

@@ -40,6 +40,8 @@ const css = `
 #opener { height: 10px; background: #ff0000; }
 #opener.tall { height: 50px; }
 #rider { height: 20px; background: #00ff00; }
+#elsewhere { position: absolute; left: 2000px; top: 0px; width: 40px; height: 40px; background: #ff0000; animation: spin 1s linear infinite; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(180deg); } }
 `;
 
 const window = new NativeWindowHost(native, {
@@ -81,6 +83,11 @@ try {
   stack.appendChild(rider);
   host.root.appendChild(stack);
   rider.animateLayout({ duration: DURATION, easing: 'linear' });
+  // Out of view all along, an endless animation asks for no frames: every phase below waits
+  // for the window to go quiet around it.
+  const elsewhere = host.createElement('div');
+  elsewhere.setAttribute('id', 'elsewhere');
+  host.root.appendChild(elsewhere);
   host.mount(window, { scope });
   await waitFor(() => window.frames > 0, 'First frame');
   await delay(100);
@@ -310,6 +317,14 @@ try {
   const tops = await trace('flip', pushed, riderTop, 170, 210);
   assert.equal(tops[0], 170, 'the first frame draws it where it was');
   assert.equal(rider.bounds()[1], 210, 'while its layout is already where it is going');
+
+  // Still running out of view, it draws nothing.
+  const quietFrom = window.frames;
+  await delay(300);
+  assert.ok(
+    window.frames - quietFrom <= 1,
+    `${window.frames - quietFrom} frames for motion out of view`,
+  );
 
   stop();
   assert.deepEqual(errors, []);

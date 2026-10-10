@@ -265,6 +265,7 @@ impl NativeLayout {
                     }
                 }
                 SCROLL => {
+                    self.owner.styles.borrow_mut().motion.view_changed();
                     let node = r.node(&tree)?;
                     let [x, y] = [r.number()?, r.number()?];
                     if !x.is_finite() || !y.is_finite() {

@@ -24,8 +24,8 @@ fn opacity(write: &Write) -> f32 {
 
 /// The opacity `node` is given at `now`, none when nothing is written.
 fn opacity_at(motion: &mut Motion, now: f64) -> Option<f32> {
-    let frame = motion.tick(now);
-    let writes = &frame.iter().find(|(raw, _)| *raw == NODE)?.1;
+    let frame = motion.tick(now, |_| true);
+    let writes = &frame.writes.iter().find(|(raw, _)| *raw == NODE)?.1;
     writes.iter().find_map(|w| match w {
         Write::Paint(PaintWrite::Opacity(o)) => Some(*o),
         _ => None,
@@ -430,8 +430,8 @@ fn a_keyframe_reads_variables_and_reads_them_again_when_the_theme_changes() {
 
 /// The outline offset `node` is given at `now`, which, unlike opacity, has no bounds to clamp an overshoot.
 fn offset_at(motion: &mut Motion, now: f64) -> Option<f32> {
-    let frame = motion.tick(now);
-    let writes = &frame.iter().find(|(raw, _)| *raw == NODE)?.1;
+    let frame = motion.tick(now, |_| true);
+    let writes = &frame.writes.iter().find(|(raw, _)| *raw == NODE)?.1;
     writes.iter().find_map(|w| match w {
         Write::Paint(PaintWrite::OutlineOffset(o)) => Some(*o),
         _ => None,
@@ -547,8 +547,8 @@ fn px(id: i32, v: f32) -> Write {
 
 /// The layout value `node` is given for router id `id` at `now`.
 fn layout_at(motion: &mut Motion, id: i32, now: f64) -> Option<Value> {
-    let frame = motion.tick(now);
-    let writes = &frame.iter().find(|(raw, _)| *raw == NODE)?.1;
+    let frame = motion.tick(now, |_| true);
+    let writes = &frame.writes.iter().find(|(raw, _)| *raw == NODE)?.1;
     writes.iter().find_map(|w| match w {
         Write::Layout(i, v) if *i == id => Some(v.clone()),
         _ => None,
@@ -635,7 +635,7 @@ fn a_length_that_changes_unit_flips_halfway() {
         None,
         vec![px(id::WIDTH_PERCENT, 0.5)],
     );
-    motion.tick(0.0);
+    motion.tick(0.0, |_| true);
     assert_eq!(
         layout_at(&mut motion, id::WIDTH, 40.0),
         Some(Value::Number(100.0))
@@ -703,4 +703,98 @@ fn a_node_new_to_motion_that_moves_layout_transitions_from_its_real_size() {
     let mut paint = Motion::default();
     route(&mut paint, &cascade, Some(spec(LINEAR)), vec![]);
     assert!(paint.take_unbased().is_empty());
+}
+
+/// The node's opacity written in `frame`, if any.
+fn opacity_in(frame: &Frame) -> Option<f32> {
+    let writes = &frame.writes.iter().find(|(raw, _)| *raw == NODE)?.1;
+    writes.iter().find_map(|w| match w {
+        Write::Paint(PaintWrite::Opacity(o)) => Some(*o),
+        _ => None,
+    })
+}
+
+#[test]
+fn out_of_view_motion_keeps_time_but_writes_nothing_and_wakes_at_its_end() {
+    let (mut motion, cascade) = (Motion::default(), cascade(""));
+    restyle(
+        &mut motion,
+        &cascade,
+        Some(spec(LINEAR)),
+        vec![PaintWrite::Opacity(1.0)],
+    );
+    restyle(&mut motion, &cascade, None, vec![PaintWrite::Opacity(0.0)]);
+    let hidden = motion.tick(0.0, |_| false);
+    assert_eq!(opacity_in(&hidden), None, "nothing drawn out of view");
+    assert!(!hidden.drawing, "and no frames asked for");
+    assert_eq!(hidden.wake, Some(100.0), "but a wake when it ends");
+    assert_eq!(motion.tick(40.0, |_| false).wake, Some(60.0));
+    // Seen again, as a scroll or a layout makes it, it is where its clock has got to.
+    motion.view_changed();
+    let seen = motion.tick(50.0, |_| true);
+    assert!(seen.drawing);
+    assert!((opacity_in(&seen).unwrap() - 0.5).abs() < 1e-4);
+    // It ends out of view, and its end is written all the same.
+    motion.view_changed();
+    motion.tick(60.0, |_| false);
+    let ended = motion.tick(100.0, |_| false);
+    assert_eq!(opacity_in(&ended), Some(0.0));
+    assert!(!motion.active());
+}
+
+#[test]
+fn an_endless_animation_out_of_view_asks_for_nothing() {
+    let (mut motion, _) = animate(&[("animation", "fade 100ms linear infinite")], FADE);
+    let frame = motion.tick(0.0, |_| false);
+    assert!(!frame.drawing);
+    assert_eq!(frame.wake, None);
+    assert!(
+        motion.active(),
+        "it still runs, to be drawn when it is seen"
+    );
+    motion.view_changed();
+    assert!(opacity_in(&motion.tick(1050.0, |_| true)).is_some_and(|o| (o - 0.5).abs() < 1e-4));
+}
+
+#[test]
+fn layout_is_written_out_of_view() {
+    let (mut motion, cascade) = (Motion::default(), cascade(""));
+    let wide = spec(&[("transition", "width 100ms linear")]);
+    route(
+        &mut motion,
+        &cascade,
+        Some(wide),
+        vec![px(id::WIDTH, 100.0)],
+    );
+    route(&mut motion, &cascade, None, vec![px(id::WIDTH, 200.0)]);
+    motion.tick(0.0, |_| false);
+    let frame = motion.tick(50.0, |_| false);
+    let width = frame.writes[0].1.iter().find_map(|w| match w {
+        Write::Layout(i, Value::Number(v)) if *i == id::WIDTH => Some(*v),
+        _ => None,
+    });
+    assert_eq!(width, Some(150.0), "it moves what is in view");
+}
+
+#[test]
+fn whether_a_node_is_in_view_is_asked_once_until_the_view_changes() {
+    let (mut motion, _) = animate(&[("animation", "fade 100ms linear infinite")], FADE);
+    let asked = std::cell::Cell::new(0);
+    let visible = std::cell::Cell::new(false);
+    let in_view = |_| {
+        asked.set(asked.get() + 1);
+        visible.get()
+    };
+    for t in [0.0, 16.0, 32.0] {
+        assert!(!motion.tick(t, in_view).drawing);
+    }
+    assert_eq!(asked.get(), 1, "paint does not change what is in view");
+    visible.set(true);
+    assert!(
+        !motion.tick(48.0, in_view).drawing,
+        "the answer holds until the view changes"
+    );
+    motion.view_changed();
+    assert!(motion.tick(64.0, in_view).drawing);
+    assert_eq!(asked.get(), 2);
 }
