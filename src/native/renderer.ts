@@ -19,6 +19,7 @@ import {
 import { sceneSchema } from './scene.js';
 import type { Shader } from './offscreen.js';
 import { TextureAtlas, type AtlasRect } from './texture-atlas.js';
+import { IMAGE_BASE, type ImageLibrary } from './image-library.js';
 import { boxShader } from '../renderer/generated/box.js';
 import { shadowShader } from '../renderer/generated/shadow.js';
 import { textShader } from '../renderer/generated/text.js';
@@ -56,6 +57,22 @@ interface GlyphTexture extends Texture {
 const R = sceneSchema.recordFloats;
 const KIND = fields.typeInfo * 4;
 const GRADIENT = fields.gradient * 4;
+const BOUNDS = fields.bounds * 4;
+const COLOR = fields.color * 4;
+const COLOR2 = fields.color2 * 4;
+/** Image sizes are bucketed at twelve steps an octave of scale, so a zoom reuses rasterizations. */
+const IMAGE_STEPS_PER_OCTAVE = 12;
+/** The largest side an image is resampled to; beyond it, it is magnified. */
+const IMAGE_MAX_SIDE = 2048;
+
+function imageScale(onScreen: number): number {
+  return onScreen > 0
+    ? 2 ** (Math.round(Math.log2(onScreen) * IMAGE_STEPS_PER_OCTAVE) / IMAGE_STEPS_PER_OCTAVE)
+    : 1;
+}
+function imageSide(v: number): number {
+  return Math.max(1, Math.min(IMAGE_MAX_SIDE, Math.ceil(v - 0.01)));
+}
 // Generated WGSL is a module constant, shared by every renderer. Compile only used primitives.
 const SHADERS = new Map<number, Shader>([
   [0, boxShader],
@@ -86,7 +103,16 @@ export class SceneRenderer {
   readonly #sampler: gpu.GpuSampler;
   readonly #images: TextureAtlas;
   readonly #imageSlots = new Map<number, AtlasRect>();
-  readonly #imageCache = new WeakMap<ImageResource, Map<string, AtlasRect>>();
+  /** What each fixed slot was given, to put it back when the atlas is emptied. */
+  readonly #fixedImages = new Map<
+    number,
+    { image: ImageResource; width: number; height: number; fit: ImageFit }
+  >();
+  readonly #imageIds = new WeakMap<ImageResource, number>();
+  /** Atlas rects by what was drawn into them: an image, its size and fit. */
+  readonly #imageRects = new Map<string, AtlasRect>();
+  #nextImageId = 0;
+  #library: ImageLibrary | null = null;
   readonly #textureGroups = new Map<
     gpu.GpuTextureView,
     Map<gpu.GpuTextureView, gpu.GpuBindGroup>
@@ -314,25 +340,148 @@ export class SceneRenderer {
     ) {
       throw new RangeError('Invalid image dimensions');
     }
-    const key = `${width}:${height}:${fit}`;
-    let entries = this.#imageCache.get(image);
-    let rect = entries?.get(key);
+    this.#fixedImages.set(slot, { image, width, height, fit });
+    this.#imageSlots.set(slot, this.#fixedRect(image, width, height, fit));
+    this.#check();
+  }
+
+  /** Draw the library's images, each at the size it covers on screen, as records name them. */
+  useImages(library: ImageLibrary | null): void {
+    this.#assertLive();
+    this.#assertIdle();
+    this.#library = library;
+  }
+
+  #imageId(image: ImageResource): number {
+    let id = this.#imageIds.get(image);
+    if (id === undefined) {
+      id = this.#nextImageId++;
+      this.#imageIds.set(image, id);
+    }
+    return id;
+  }
+
+  /** The atlas rect of `key`, made by `draw` into a `width` by `height` buffer when it has none. */
+  #imageRect(
+    key: string,
+    width: number,
+    height: number,
+    draw: (pixels: Uint8Array) => void,
+  ): AtlasRect {
+    let rect = this.#imageRects.get(key);
     if (!rect) {
       const pixels = new Uint8Array(width * height * 4);
-      image.resample(width, height, fit, pixels);
+      draw(pixels);
       const revision = this.#images.revision;
       rect = this.#images.add(width, height, pixels);
-      if (!entries) {
-        entries = new Map();
-        this.#imageCache.set(image, entries);
-      }
-      entries.set(key, rect);
+      this.#imageRects.set(key, rect);
       if (revision !== this.#images.revision) {
         this.#clearGroups();
       }
     }
-    this.#imageSlots.set(slot, rect);
-    this.#check();
+    return rect;
+  }
+
+  #fixedRect(image: ImageResource, width: number, height: number, fit: ImageFit): AtlasRect {
+    return this.#imageRect(
+      `${this.#imageId(image)}:${width}:${height}:${fit}`,
+      width,
+      height,
+      (p) => image.resample(width, height, fit, p),
+    );
+  }
+
+  /** Empty the image atlas, putting the fixed slots back. */
+  #resetImages(): void {
+    this.#images.reset();
+    this.#imageRects.clear();
+    for (const [slot, { image, width, height, fit }] of this.#fixedImages) {
+      this.#imageSlots.set(slot, this.#fixedRect(image, width, height, fit));
+    }
+  }
+
+  /**
+   * Give every image record its rect in the atlas. A record that names a library image is drawn
+   * from it at the size it covers on screen, which a record carries as its scale; one whose image
+   * is not there draws nothing. False when the atlas could not hold them all.
+   */
+  #resolveImages(count: number): boolean {
+    let fitted = true;
+    for (let i = 0; i < count; i++) {
+      const at = i * R;
+      if (this.#records[at + KIND] !== 32) {
+        continue;
+      }
+      const slot = this.#records[at + GRADIENT]!;
+      let rect: AtlasRect | undefined;
+      let fill = 1;
+      if (slot >= IMAGE_BASE) {
+        const entry = this.#library?.get(slot);
+        if (entry) {
+          try {
+            ({ rect, fill } = this.#libraryRect(entry, at));
+          } catch (error) {
+            if (!(error instanceof RangeError)) {
+              throw error;
+            }
+            fitted = false;
+          }
+        }
+        if (!rect) {
+          // Nothing to draw: no colour, no opacity.
+          this.#records[at + COLOR + 3] = 0;
+          this.#records[at + COLOR2 + 3] = 0;
+          continue;
+        }
+      } else {
+        rect = this.#imageSlots.get(slot);
+        if (!rect) {
+          throw new Error(`Image slot ${slot} has not been uploaded`);
+        }
+      }
+      this.#records[at + KIND + 1] = fill;
+      this.#records[at + GRADIENT] = rect.x;
+      this.#records[at + GRADIENT + 1] = rect.y;
+      this.#records[at + GRADIENT + 2] = rect.x + rect.width;
+      this.#records[at + GRADIENT + 3] = rect.y + rect.height;
+    }
+    return fitted;
+  }
+
+  #libraryRect(
+    { image, id, fit }: NonNullable<ReturnType<ImageLibrary['get']>>,
+    at: number,
+  ): { rect: AtlasRect; fill: number } {
+    const scale = imageScale(this.#records[at + GRADIENT + 1]!);
+    const width = imageSide(this.#records[at + BOUNDS + 2]! * scale);
+    const height = imageSide(this.#records[at + BOUNDS + 3]! * scale);
+    if (image.kind === 'bitmap') {
+      const rect = this.#imageRect(`b${id}:${fit}:${width}x${height}`, width, height, (p) =>
+        image.image.resample(width, height, fit, p),
+      );
+      return { rect, fill: 1 };
+    }
+    // A mask is rasterized white and tinted when drawn; a colour image bakes in its currentColor.
+    let color = '#ffffff';
+    let key = `s${id}:${width}x${height}`;
+    if (!image.mask) {
+      const channel = (v: number): number => Math.max(0, Math.min(255, Math.round(v * 255)));
+      const hex = (v: number): string => channel(v).toString(16).padStart(2, '0');
+      color = `#${hex(this.#records[at + COLOR]!)}${hex(this.#records[at + COLOR + 1]!)}${hex(this.#records[at + COLOR + 2]!)}`;
+      if (/currentcolor/i.test(image.markup)) {
+        key += color;
+      }
+    }
+    const rect = this.#imageRect(key, width, height, (pixels) => {
+      const markup = image.markup.replace(/currentcolor/gi, color);
+      const raster = this.#library!.rasterize(markup, width, height);
+      try {
+        raster.readPixels(pixels);
+      } finally {
+        raster.dispose();
+      }
+    });
+    return { rect, fill: image.mask ? 0 : 1 };
   }
 
   /** Append a complete frame to the host's encoder; submit it before encoding another frame. */
@@ -375,6 +524,12 @@ export class SceneRenderer {
     const info = this.#layout.prepareDisplayList(root, options);
     this.#reserve(info.floats);
     this.#layout.readDisplayList(this.#records);
+    if (!this.#resolveImages(info.count)) {
+      // The images covering the screen are more than the atlas holds: start it afresh with them.
+      this.#resetImages();
+      this.#layout.readDisplayList(this.#records);
+      this.#resolveImages(info.count);
+    }
     let depth = 0;
     let maxDepth = 0;
     let needsRows = false;
@@ -404,19 +559,6 @@ export class SceneRenderer {
         needsShadow ||= this.#records[at + fields.via * 4 + 3]! > 0;
       } else if (kind === 42) {
         needsRows = true;
-      }
-      if (kind === 32) {
-        const slot = this.#records[at + GRADIENT]!;
-        const rect = this.#imageSlots.get(slot);
-        if (!rect) {
-          throw new Error(`Image slot ${slot} has not been uploaded`);
-        }
-        // Uploaded ImageResource pixels are straight RGBA, rather than a tint mask.
-        this.#records[at + KIND + 1] = 1;
-        this.#records[at + GRADIENT] = rect.x;
-        this.#records[at + GRADIENT + 1] = rect.y;
-        this.#records[at + GRADIENT + 2] = rect.x + rect.width;
-        this.#records[at + GRADIENT + 3] = rect.y + rect.height;
       }
     }
     if (depth !== 0) {

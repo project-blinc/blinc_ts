@@ -751,6 +751,18 @@ are packed into one growing atlas; call
 before drawing a registered image brush. The atlas preserves entries when it
 grows, up to 4096 × 4096; an individual entry must leave room for its one-pixel gap.
 
+An `ImageLibrary` (`blinc_ts/native/image-library`) holds images by id, a decoded
+`ImageResource` with `add` or SVG markup with `addSvg`, and gives the image slot a
+record draws one fitted by a given `ImageFit` with `library.slot(id, fit)`. Hand
+the library to a renderer with `renderer.useImages(library)`: each image record
+that names a library image is resampled, or an SVG rasterized, to the size it
+covers on screen, in steps of a twelfth of an octave of scale so a zoom reuses
+what it made, up to 2048 pixels a side. When the images on screen outgrow the
+atlas it is emptied once and filled with them; a record whose image is not in
+the library, or no longer is, draws nothing. An SVG keeps its aspect ratio and is
+centred in what it covers; with `{ mask: true }` it is drawn white and tinted by
+the node's colour, as an icon is, and without it `currentColor` is the node's.
+
 Backdrops use two Gaussian passes over the accumulated content in the current layer. Liquid glass
 adds refraction, tint, grain and adjustable chromatic separation. Rounded and
 shaped boxes, gradients, borders, analytic shadows, clipping, text and RGBA images

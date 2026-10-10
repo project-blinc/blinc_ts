@@ -92,6 +92,11 @@ export class TextureAtlas {
         { width: rect.width, height: rect.height, depthOrArrayLayers: 1 },
       );
   }
+  /** Forgets every entry: the space is free again, and the rects handed out are no longer valid. */
+  reset(): void {
+    this.#shelves.length = 0;
+    this.#nextY = 0;
+  }
   dispose(): void {
     this.view.destroy();
     this.#texture.destroy();
