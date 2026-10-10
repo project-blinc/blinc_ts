@@ -574,6 +574,20 @@ change. A `progress` with no `value` is `:indeterminate`, and the sheet pulses
 its bar. A meter's bar is `optimum`, `suboptimum` or `even-less-good` by which
 region of the range its value falls in against the optimum's.
 
+**Images.** An `img` loads its `src`: a path (from the host's `images.base` or the
+working directory), a `file:`, `http:` or `https:` URL, or a `data:` URL, PNG, JPEG,
+WebP or SVG. A source is loaded once however many elements name it, and let go
+with the last. The element fires `load` or `error` (not bubbling) once it has the
+image or cannot. With no size from style it is the image's own, the `width` and
+`height` attributes (pixels or a percentage) shaping it, and the image's aspect
+ratio fills in a side given neither; style, even a class's, wins over all of
+that. `object-fit` is `fill` (the default), `contain` or `cover`; `none` and
+`scale-down` are reported and draw as `fill`, and `object-position` is the centre.
+`host.images.loader` replaces how sources are read. Nothing is drawn, and no room
+is taken, until an image has loaded; `alt` is kept as an attribute and not drawn.
+`host.mount` hands the images to its window; a renderer made by hand takes
+`renderer.useImages(host.images.library)`.
+
 **Disabled fieldsets.** A `fieldset` with `disabled` disables the controls in
 it: no presses, no focus and `:disabled`, including one added to it later.
 `element.setState` gives the other states, `checked` and the like.

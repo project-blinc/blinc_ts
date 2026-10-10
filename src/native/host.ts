@@ -30,6 +30,7 @@ import type { AffineTransform, Color, PaintStyle, TextStyle } from './scene.js';
 import type { ShapeTokens } from '../theme/shape.js';
 import { ScrollThumb, words } from './scrollbar.js';
 import { InlineFlows } from './inline-flow.js';
+import { HostImages } from './host-images.js';
 import { Behaviours } from './behaviours.js';
 import type { NativeBindings } from './index.js';
 import type { NativeWindowHost, WindowSceneOptions } from './window.js';
@@ -139,6 +140,7 @@ const otherProperties: ReadonlySet<string> = new Set([
   'scrollbar-visibility',
   'text-align',
   'list-style-type',
+  'object-fit',
   ...Object.keys(shapeProperties),
 ]);
 
@@ -758,6 +760,8 @@ export class Host {
   readonly inlineFlows: InlineFlows | undefined;
   /** What built-in elements do: list markers, links, labels and the like. */
   readonly behaviours: Behaviours;
+  /** The images elements name, loaded once each, which a mounted window draws. */
+  readonly images: HostImages | undefined;
   /** Elements the host made for another to hold, which frameworks do not see among its children. */
   readonly #owned = new WeakMap<HostElement, HostElement[]>();
   readonly #anonymous = new WeakSet<HostElement>();
@@ -765,6 +769,7 @@ export class Host {
   constructor(layout: Layout, scope?: Scope, native?: NativeBindings) {
     this.layout = layout;
     this.inlineFlows = native ? new InlineFlows(this, native) : undefined;
+    this.images = native ? new HostImages(native) : undefined;
     this.behaviours = new Behaviours(this);
     this.#stateBits = new Map(layout.stateNames.map((name, i) => [name, 1 << i]));
     this.root = this.#register(new HostElement(this, layout.createNode(), 'root'));
@@ -1121,6 +1126,14 @@ export class Host {
     }
     this.layout.setShapeOverride(override);
   }
+  /** @internal Report a style problem the host found, as the cascade reports its own. */
+  reportStyleError(error: string): void {
+    this.#reportOne(error);
+  }
+  /** @internal Ask for a frame: something changed outside a tick. */
+  wake(): void {
+    this.#schedule();
+  }
   #reportOne(error: string): void {
     if (this.#styleErrorListeners.size === 0) {
       console.warn(`CSS: ${error}`);
@@ -1402,7 +1415,12 @@ export class Host {
   mount(window: NativeWindowHost, options: HostMountOptions = {}): () => void {
     const { scope, ...scene } = options;
     this.flush();
-    window.attachScene(this.layout, this.root.layoutNode, scene, scope);
+    window.attachScene(
+      this.layout,
+      this.root.layoutNode,
+      this.images ? { ...scene, images: this.images.library } : scene,
+      scope,
+    );
     this.clipboard = new SystemClipboard(window.bindings.window);
     const offCursor = this.input.onCursor((cursor) => {
       window.window.setCursorIcon(cursorIcon(cursor));
@@ -1528,6 +1546,7 @@ export class Host {
   }
 
   dispose(): void {
+    this.images?.dispose();
     this.#text.clear();
     this.#nodes.clear();
     this.layout.dispose();

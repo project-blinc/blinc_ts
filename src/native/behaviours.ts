@@ -9,6 +9,9 @@ import { spawn } from 'node:child_process';
 import { HostEvent, HostPointerEvent } from './events.js';
 import type { Host, HostElement, HostNode, HostText } from './host.js';
 import { HostElement as ElementClass } from './host.js';
+import type { ImageEntry } from './host-images.js';
+import { ImageFit } from './generated/scene.js';
+import type { StyleSheet } from './layout.js';
 
 const LISTS: ReadonlySet<string> = new Set(['ul', 'ol', 'menu']);
 const BULLETS = ['disc', 'circle', 'square'] as const;
@@ -41,8 +44,26 @@ interface Marker {
   text: HostText | undefined;
 }
 
+/** An `img`: the image it names, once loaded, and what has been done with it. */
+interface Picture {
+  /** What names this one in the hints sheet. */
+  readonly serial: number;
+  source: string | null;
+  use: { entry: ImageEntry; release(): void } | null;
+  /** The slot set on its node, or none. */
+  slot: number | null;
+  /** The `object-fit` values already reported as unsupported. */
+  readonly reported: Set<string>;
+}
+
 export class Behaviours {
   readonly host: Host;
+  /** Every `img`, and those whose image or fit may need putting right. */
+  readonly #pictures = new Map<HostElement, Picture>();
+  readonly #pictureDirty = new Set<HostElement>();
+  #hints: StyleSheet | null = null;
+  #hintsDirty = false;
+  #serial = 0;
   /** Lists whose items' markers may be wrong now. */
   readonly #lists = new Set<HostElement>();
   readonly #markers = new WeakMap<HostElement, Marker>();
@@ -77,6 +98,119 @@ export class Behaviours {
         this.#bars.set(element, this.host.ownedElement(element, 'div', ['bar']));
         this.#sync(element);
         break;
+      case 'img':
+        this.#pictures.set(element, {
+          serial: this.#serial++,
+          source: null,
+          use: null,
+          slot: null,
+          reported: new Set(),
+        });
+        break;
+    }
+  }
+
+  /** An `img`'s `src` changed: let go of its image and load the new one. */
+  #source(element: HostElement, picture: Picture): void {
+    const named = element.getAttribute('src')?.trim();
+    const source = named === undefined || named === '' ? null : named;
+    if (source === picture.source) {
+      return;
+    }
+    picture.use?.release();
+    picture.use = null;
+    picture.source = source;
+    this.#pictureDirty.add(element);
+    this.host.wake();
+    const images = this.host.images;
+    if (!source || !images) {
+      return;
+    }
+    const use = images.use(source, () => {
+      if (picture.use !== use || element.destroyed) {
+        return;
+      }
+      this.#pictureDirty.add(element);
+      this.#hintsDirty = true;
+      this.host.wake();
+      element.dispatchEvent(new HostEvent(use.entry.status === 'loaded' ? 'load' : 'error'));
+    });
+    picture.use = use;
+  }
+
+  /** What an `img`'s `object-fit` asks for. */
+  #fitOf(element: HostElement, picture: Picture): ImageFit {
+    const value = this.host.declaredOf(element).get('object-fit')?.trim().toLowerCase() ?? 'fill';
+    switch (value) {
+      case 'fill':
+        return ImageFit.Fill;
+      case 'contain':
+        return ImageFit.Contain;
+      case 'cover':
+        return ImageFit.Cover;
+      default:
+        if (!picture.reported.has(value)) {
+          picture.reported.add(value);
+          this.host.reportStyleError(
+            `object-fit: ${value}: not supported; use fill, contain or cover`,
+          );
+        }
+        return ImageFit.Fill;
+    }
+  }
+
+  /** Put an `img`'s node right with what it names now: its slot, drawn fitted as its style asks. */
+  #picture(element: HostElement, picture: Picture): void {
+    const images = this.host.images;
+    const entry = picture.use?.entry;
+    if (!images || entry?.status !== 'loaded') {
+      if (picture.slot !== null) {
+        element.layoutNode.setResource(null);
+        picture.slot = null;
+        this.#hintsDirty = true;
+      }
+      return;
+    }
+    const slot = images.library.slot(entry.id, this.#fitOf(element, picture));
+    if (picture.slot !== slot) {
+      picture.slot = slot;
+      element.layoutNode.setResource(slot);
+      this.#hintsDirty = true;
+    }
+  }
+
+  /**
+   * The size an image gives its element when style gives none, as rules of no specificity in the
+   * lowest sheet: the width and height attributes, else the image's own size, and its shape.
+   */
+  #sizes(): void {
+    const dimension = (value: string | null): string | undefined => {
+      const v = value?.trim() ?? '';
+      return /^\d+(\.\d+)?$/.test(v) ? `${v}px` : /^\d+(\.\d+)?%$/.test(v) ? v : undefined;
+    };
+    const rules: string[] = [];
+    for (const [element, picture] of this.#pictures) {
+      const entry = picture.use?.entry;
+      if (element.destroyed || entry?.status !== 'loaded' || entry.width <= 0) {
+        continue;
+      }
+      if (element.getAttribute('data-blinc-image') !== String(picture.serial)) {
+        element.setAttribute('data-blinc-image', String(picture.serial));
+      }
+      const width = dimension(element.getAttribute('width'));
+      const height = dimension(element.getAttribute('height'));
+      const own = width === undefined && height === undefined ? `width: ${entry.width}px; ` : '';
+      rules.push(
+        `:where(img[data-blinc-image="${picture.serial}"]) { ${own}${width ? `width: ${width}; ` : ''}${height ? `height: ${height}; ` : ''}aspect-ratio: ${entry.width} / ${entry.height}; }`,
+      );
+    }
+    const layout = this.host.layout;
+    if (this.#hints) {
+      layout.removeStyleSheet(this.#hints);
+      this.#hints = null;
+    }
+    if (rules.length > 0) {
+      this.#hints = layout.addStyleSheet(rules.join('\n'), { at: 0 });
     }
   }
 
@@ -263,6 +397,15 @@ export class Behaviours {
     if (element.tag === 'progress' || element.tag === 'meter') {
       this.#sync(element);
     }
+    const picture = this.#pictures.get(element);
+    if (picture) {
+      if (name === 'src') {
+        this.#source(element, picture);
+      } else if (name === 'width' || name === 'height') {
+        this.#hintsDirty = true;
+        this.host.wake();
+      }
+    }
     if (LISTS.has(element.tag) && (name === 'start' || name === 'reversed' || name === 'type')) {
       this.#lists.add(element);
     } else if (element.tag === 'li' && (name === 'value' || name === 'type')) {
@@ -275,6 +418,10 @@ export class Behaviours {
 
   /** A style changed at `element`: `list-style-type` may have. */
   restyled(element: HostElement): void {
+    if (this.#pictures.has(element)) {
+      this.#pictureDirty.add(element);
+      this.host.wake();
+    }
     if (LISTS.has(element.tag)) {
       this.#lists.add(element);
     } else if (element.tag === 'li' && element.parentNode && LISTS.has(element.parentNode.tag)) {
@@ -285,6 +432,13 @@ export class Behaviours {
   /** A node is destroyed. */
   forget(node: HostNode): void {
     if (node instanceof ElementClass) {
+      const picture = this.#pictures.get(node);
+      if (picture) {
+        picture.use?.release();
+        this.#pictures.delete(node);
+        this.#pictureDirty.delete(node);
+        this.#hintsDirty = true;
+      }
       this.#lists.delete(node);
       const parent = node.parentNode;
       if (node.tag === 'li' && parent && LISTS.has(parent.tag)) {
@@ -295,6 +449,20 @@ export class Behaviours {
 
   /** Before the tick's writes go: put right what changed. */
   flush(): void {
+    if (this.#pictureDirty.size > 0) {
+      const dirty = [...this.#pictureDirty];
+      this.#pictureDirty.clear();
+      for (const element of dirty) {
+        const picture = this.#pictures.get(element);
+        if (picture && !element.destroyed) {
+          this.#picture(element, picture);
+        }
+      }
+    }
+    if (this.#hintsDirty) {
+      this.#hintsDirty = false;
+      this.#sizes();
+    }
     if (this.#lists.size === 0) {
       return;
     }

@@ -2,6 +2,7 @@ import type { Scope } from '../hmr.js';
 import { gpu, window, LayoutNode, type Layout, type NativeBindings } from './index.js';
 import { SceneRenderer, type RenderOptions, type SceneRenderStats } from './renderer.js';
 import { FrameTap, type CapturedFrame } from './frame-tap.js';
+import type { ImageLibrary } from './image-library.js';
 
 export type { CapturedFrame } from './frame-tap.js';
 
@@ -12,6 +13,8 @@ export interface NativeWindowOptions extends window.WindowAttributes {
 
 /** Scene presentation options; the window supplies dimensions and display scale. */
 export type WindowSceneOptions = Omit<RenderOptions, 'width' | 'height' | 'scale'> & {
+  /** The images the scene's image records may name, drawn at the size they cover; see `ImageLibrary`. */
+  images?: ImageLibrary;
   /** Milliseconds on a steady clock, which transitions and animations run on; `performance.now` by default. */
   now?: () => number;
 };
@@ -279,7 +282,9 @@ export class NativeWindowHost {
     }
     LayoutNode.unwrap(root, layout);
     const renderer = new SceneRenderer(state.device, layout, state.format);
-    const render: RenderOptions = { ...options, width: 0, height: 0, scale: 1 };
+    const { images, ...rendering } = options;
+    renderer.useImages(images ?? null);
+    const render: RenderOptions = { ...rendering, width: 0, height: 0, scale: 1 };
     const clock = options.now ?? (() => performance.now());
     let needsLayout = true;
     let width = -1,
