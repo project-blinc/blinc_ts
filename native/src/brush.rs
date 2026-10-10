@@ -154,6 +154,7 @@ impl BrushDescriptor {
                     ImageFit::Cover => blinc_abi::scene::blinc_core::layer::ImageFit::Cover,
                     ImageFit::Contain => blinc_abi::scene::blinc_core::layer::ImageFit::Contain,
                     ImageFit::Fill => blinc_abi::scene::blinc_core::layer::ImageFit::Fill,
+                    ImageFit::Tile => blinc_abi::scene::blinc_core::layer::ImageFit::Tile,
                 };
                 Brush::Image(image)
             }

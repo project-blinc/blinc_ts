@@ -9,6 +9,14 @@ export interface NativeImage {
   resample(width: number, height: number, fit: ImageFit, target: Uint8Array): void;
   dispose(): void;
 }
+/** @internal What the native loader read, until its raster image is taken. */
+export interface NativeLoadedImage {
+  readonly svg: boolean;
+  readonly width: number;
+  readonly height: number;
+  markup(): string | null;
+  takeImage(): NativeImage;
+}
 /** Decoded native pixels, independent of a GPU device or layout tree. */
 export class ImageResource {
   readonly #native: NativeImage;

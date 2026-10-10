@@ -312,6 +312,10 @@ pub struct NativeRestyle {
     pub values: Vec<String>,
     /// Whether a transition or animation needs a tick now.
     pub motion: bool,
+    /// Nodes whose background image changed: raw ids, low then high word, and the source of each,
+    /// empty when it has none now.
+    pub image_nodes: Uint32Array,
+    pub image_sources: Vec<String>,
 }
 
 /// How a node's layout changes animate: its place, its size, over what time and curve.
@@ -338,6 +342,21 @@ pub struct NativeMotionTick {
     /// Nodes whose last transition or animation ended: raw ids, low then high word.
     pub finished: Uint32Array,
     pub errors: Vec<String>,
+    /// Nodes whose background image changed, as `NativeRestyle` has them.
+    pub image_nodes: Uint32Array,
+    pub image_sources: Vec<String>,
+}
+
+/// The background image changes since last asked: node ids as low and high words, and sources.
+fn image_uses(tree: &mut LayoutContext) -> (Uint32Array, Vec<String>) {
+    let mut nodes = Vec::new();
+    let mut sources = Vec::new();
+    for (node, source) in tree.take_image_uses() {
+        let raw = node.raw();
+        nodes.extend([(raw & 0xffff_ffff) as u32, (raw >> 32) as u32]);
+        sources.push(source.unwrap_or_default());
+    }
+    (Uint32Array::new(nodes), sources)
 }
 
 fn diagnostics(sheet: &blinc_abi::css::Stylesheet) -> Vec<NativeDiagnostic> {
@@ -755,6 +774,7 @@ impl NativeLayout {
                 errors.extend(state.motion.unreported(problems));
             }
         }
+        let (image_nodes, image_sources) = image_uses(&mut tree);
         Ok(NativeRestyle {
             errors,
             restyled: state.styles.last_restyled() as u32,
@@ -764,6 +784,8 @@ impl NativeLayout {
             names,
             values,
             motion: state.motion.pending(),
+            image_nodes,
+            image_sources,
         })
     }
 
@@ -799,6 +821,7 @@ impl NativeLayout {
             .into_iter()
             .flat_map(|raw| [(raw & 0xffff_ffff) as u32, (raw >> 32) as u32])
             .collect();
+        let (image_nodes, image_sources) = image_uses(&mut tree);
         Ok(NativeMotionTick {
             active: state.motion.active(),
             drawing: frame.drawing,
@@ -806,6 +829,8 @@ impl NativeLayout {
             layout,
             finished: Uint32Array::new(finished),
             errors,
+            image_nodes,
+            image_sources,
         })
     }
 

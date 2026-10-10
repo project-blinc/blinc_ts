@@ -249,6 +249,8 @@ export interface NativeLayout extends BrushFactory {
     names: string[];
     values: string[];
     motion: boolean;
+    imageNodes: Uint32Array;
+    imageSources: string[];
   };
   cssTickMotion(now: number): {
     active: boolean;
@@ -257,6 +259,8 @@ export interface NativeLayout extends BrushFactory {
     layout: boolean;
     finished: Uint32Array;
     errors: string[];
+    imageNodes: Uint32Array;
+    imageSources: string[];
   };
   cssMotionRunning(node: NativeLayoutNode): number;
   cssAnimateLayout(
@@ -322,6 +326,7 @@ export class Layout {
   readonly #atoms = new Map<string, number>();
   readonly #layoutNames = new Map<string, boolean>();
   readonly #restyleListeners = new Set<(restyled: Restyled) => void>();
+  readonly #imageListeners = new Set<(node: bigint, source: string | null) => void>();
   readonly #laidOutListeners = new Set<() => boolean | void>();
   #styled = false;
   /** Whether a tick may have something to do: false lets frames skip the native call. */
@@ -680,6 +685,26 @@ export class Layout {
     this.#native.cssSetRootFontSize(px);
     this.#markStyled();
   }
+  /**
+   * Listen for nodes whose background image changed, from a restyle or a transition: the node and
+   * the source it names now, or null when it names none.
+   */
+  onImageUse(listener: (node: bigint, source: string | null) => void, scope?: Scope): () => void {
+    this.#imageListeners.add(listener);
+    const remove = () => {
+      this.#imageListeners.delete(listener);
+    };
+    scope?.onCleanup(remove);
+    return remove;
+  }
+  #imageUses(nodes: Uint32Array, sources: readonly string[]): void {
+    for (let i = 0; i < sources.length; i++) {
+      const id = BigInt(nodes[i * 2]!) | (BigInt(nodes[i * 2 + 1]!) << 32n);
+      for (const listener of this.#imageListeners) {
+        listener(id, sources[i] === '' ? null : sources[i]!);
+      }
+    }
+  }
   /** Listen for restyles: the paint and text declarations of each node whose changed. */
   onRestyle(listener: (restyled: Restyled) => void, scope?: Scope): () => void {
     const callback = (restyled: Restyled) => listener(restyled);
@@ -700,6 +725,7 @@ export class Layout {
     this.flush();
     const r = this.#native.cssRestyle(LayoutNode.unwrap(root, this));
     this.#motion ||= r.motion;
+    this.#imageUses(r.imageNodes, r.imageSources);
     const nodes = new Map<bigint, [string, string][]>();
     let at = 0;
     for (let i = 0; i < r.counts.length; i++) {
@@ -741,6 +767,7 @@ export class Layout {
     }
     const tick = this.#native.cssTickMotion(now);
     this.#motion = tick.active;
+    this.#imageUses(tick.imageNodes, tick.imageSources);
     this.#motionWake = tick.drawing ? null : (tick.wake ?? null);
     if (tick.layout) {
       // A transitioned size or place: lay out again before drawing.

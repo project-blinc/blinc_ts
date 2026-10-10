@@ -10,7 +10,14 @@ export const IMAGE_BASE = 1 << 20;
 /** What a library holds under an id. */
 export type LibraryImage =
   | { readonly kind: 'bitmap'; readonly image: ImageResource }
-  | { readonly kind: 'svg'; readonly markup: string; readonly mask: boolean };
+  | {
+      readonly kind: 'svg';
+      readonly markup: string;
+      readonly mask: boolean;
+      /** The size it says it is, which a tile repeats at. */
+      readonly width: number;
+      readonly height: number;
+    };
 
 /** Rasterizes SVG markup at a size, as `loadNative().rasterizeSvg` does. */
 export type Rasterize = (markup: string, width: number, height: number) => ImageResource;
@@ -36,10 +43,20 @@ export class ImageLibrary {
 
   /**
    * SVG markup, rasterized wherever it is drawn. A `mask` is drawn white and tinted by the node's
-   * colour, as an icon is; any other keeps its own colours, `currentColor` being the node's.
+   * colour, as an icon is; any other keeps its own colours, `currentColor` being the node's. A
+   * tile of it repeats at its `width` and `height`, CSS's 300 by 150 when they are not given.
    */
-  addSvg(markup: string, options: { mask?: boolean } = {}): number {
-    return this.#put({ kind: 'svg', markup, mask: options.mask ?? false });
+  addSvg(
+    markup: string,
+    options: { mask?: boolean; width?: number; height?: number } = {},
+  ): number {
+    return this.#put({
+      kind: 'svg',
+      markup,
+      mask: options.mask ?? false,
+      width: options.width ?? 300,
+      height: options.height ?? 150,
+    });
   }
 
   /** The slot an image record uses to draw `id` fitted by `fit`. */

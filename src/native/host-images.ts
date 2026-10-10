@@ -3,9 +3,11 @@
  * library its renderer draws from. A source loads when first named and is let go when the last
  * to name it lets go; one that cannot be loaded or decoded is an error, which says why.
  */
+import type { Layout } from './layout.js';
 import type { ImageResource } from './image.js';
+import { ImageFit } from './generated/scene.js';
 import { ImageLibrary } from './image-library.js';
-import { defaultImageLoader, isSvg, svgSize, type ImageLoader } from './image-source.js';
+import { defaultImageLoader, type ImageLoader } from './image-source.js';
 import type { NativeBindings } from './index.js';
 
 /** What is known of a source. It changes once, from loading to loaded or to an error. */
@@ -36,9 +38,15 @@ export class HostImages {
   loader: ImageLoader = (source) => defaultImageLoader(this.base)(source);
   readonly #native: NativeBindings;
   readonly #slots = new Map<string, Slot>();
+  #loading = 0;
+  #idle: (() => void)[] = [];
 
-  constructor(native: NativeBindings) {
+  readonly #layout: Layout | undefined;
+
+  /** With a `layout`, each source that loads is bound to its slots in it, for brushes that name it. */
+  constructor(native: NativeBindings, layout?: Layout) {
     this.#native = native;
+    this.#layout = layout;
     this.library = new ImageLibrary((markup, width, height) =>
       native.rasterizeSvg(markup, width, height),
     );
@@ -57,6 +65,7 @@ export class HostImages {
         waiters: new Set(),
       };
       this.#slots.set(source, slot);
+      this.#loading++;
       void this.#load(slot);
     }
     slot.users++;
@@ -83,39 +92,78 @@ export class HostImages {
   }
 
   async #load(slot: Slot): Promise<void> {
+    try {
+      await this.#read(slot);
+    } finally {
+      const waiters = [...slot.waiters];
+      slot.waiters.clear();
+      for (const settled of waiters) {
+        settled();
+      }
+      if (--this.#loading === 0) {
+        for (const resolve of this.#idle.splice(0)) {
+          resolve();
+        }
+      }
+    }
+  }
+
+  async #read(slot: Slot): Promise<void> {
     const { entry } = slot;
     try {
       const loaded = await this.loader(entry.source);
       if (slot.users === 0) {
         return;
       }
-      if (isSvg(loaded, entry.source)) {
-        const markup = new TextDecoder().decode(loaded.bytes);
-        ({ width: entry.width, height: entry.height } = svgSize(markup));
-        entry.id = this.library.addSvg(markup);
+      // Decoded, or parsed for its size, on a worker thread.
+      const picture = await this.#native.loadImage(loaded.bytes);
+      if (slot.users === 0) {
+        if (!picture.svg) {
+          picture.image.dispose();
+        }
+        return;
+      }
+      entry.width = picture.width;
+      entry.height = picture.height;
+      if (picture.svg) {
+        entry.id = this.library.addSvg(picture.markup, {
+          width: picture.width,
+          height: picture.height,
+        });
         entry.svg = true;
       } else {
-        const resource = this.#native.decodeImage(loaded.bytes);
-        slot.resource = resource;
-        entry.width = resource.width;
-        entry.height = resource.height;
-        entry.id = this.library.add(resource);
+        slot.resource = picture.image;
+        entry.id = this.library.add(picture.image);
       }
       entry.status = 'loaded';
+      this.#bind(entry, true);
     } catch (error) {
       entry.status = 'error';
       entry.error = error instanceof Error ? error.message : String(error);
     }
-    const waiters = [...slot.waiters];
-    slot.waiters.clear();
-    for (const settled of waiters) {
-      settled();
+  }
+
+  /** Resolves once no source is loading: every image that was asked for has loaded or failed. */
+  idle(): Promise<void> {
+    return this.#loading === 0
+      ? Promise.resolve()
+      : new Promise((resolve) => this.#idle.push(resolve));
+  }
+
+  /** Name the library's slots for `entry` to the layout, or take them away. */
+  #bind(entry: ImageEntry, on: boolean): void {
+    if (!this.#layout || this.#layout.disposed) {
+      return;
+    }
+    for (const fit of [ImageFit.Cover, ImageFit.Contain, ImageFit.Fill, ImageFit.Tile]) {
+      this.#layout.setImageSource(entry.source, fit, on ? this.library.slot(entry.id, fit) : null);
     }
   }
 
   #drop(slot: Slot): void {
     this.#slots.delete(slot.entry.source);
     if (slot.entry.id >= 0) {
+      this.#bind(slot.entry, false);
       this.library.remove(slot.entry.id);
     }
     slot.resource?.dispose();

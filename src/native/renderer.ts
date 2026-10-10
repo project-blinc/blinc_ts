@@ -415,11 +415,12 @@ export class SceneRenderer {
       const slot = this.#records[at + GRADIENT]!;
       let rect: AtlasRect | undefined;
       let fill = 1;
+      let cell: readonly [number, number] | undefined;
       if (slot >= IMAGE_BASE) {
         const entry = this.#library?.get(slot);
         if (entry) {
           try {
-            ({ rect, fill } = this.#libraryRect(entry, at));
+            ({ rect, fill, cell } = this.#libraryRect(entry, at));
           } catch (error) {
             if (!(error instanceof RangeError)) {
               throw error;
@@ -440,6 +441,11 @@ export class SceneRenderer {
         }
       }
       this.#records[at + KIND + 1] = fill;
+      if (cell) {
+        // A tile repeats at its own size, which the record carries for the shader.
+        this.#records[at + COLOR2] = cell[0];
+        this.#records[at + COLOR2 + 1] = cell[1];
+      }
       this.#records[at + GRADIENT] = rect.x;
       this.#records[at + GRADIENT + 1] = rect.y;
       this.#records[at + GRADIENT + 2] = rect.x + rect.width;
@@ -451,19 +457,30 @@ export class SceneRenderer {
   #libraryRect(
     { image, id, fit }: NonNullable<ReturnType<ImageLibrary['get']>>,
     at: number,
-  ): { rect: AtlasRect; fill: number } {
+  ): { rect: AtlasRect; fill: number; cell?: readonly [number, number] } {
     const scale = imageScale(this.#records[at + GRADIENT + 1]!);
-    const width = imageSide(this.#records[at + BOUNDS + 2]! * scale);
-    const height = imageSide(this.#records[at + BOUNDS + 3]! * scale);
+    // A tile is made once at the image's own size, one layout unit a pixel as CSS sizes images,
+    // and repeated by the shader; any other fit is made at the size of what it covers.
+    const tile = fit === ImageFit.Tile;
+    const natural: readonly [number, number] =
+      image.kind === 'bitmap'
+        ? [image.image.width, image.image.height]
+        : [image.width, image.height];
+    const [boxWidth, boxHeight] = tile
+      ? natural
+      : [this.#records[at + BOUNDS + 2]!, this.#records[at + BOUNDS + 3]!];
+    const width = imageSide(boxWidth * scale);
+    const height = imageSide(boxHeight * scale);
+    const cell = tile ? natural : undefined;
     if (image.kind === 'bitmap') {
       const rect = this.#imageRect(`b${id}:${fit}:${width}x${height}`, width, height, (p) =>
-        image.image.resample(width, height, fit, p),
+        image.image.resample(width, height, tile ? ImageFit.Fill : fit, p),
       );
-      return { rect, fill: 1 };
+      return { rect, fill: tile ? 2 : 1, ...(cell && { cell }) };
     }
     // A mask is rasterized white and tinted when drawn; a colour image bakes in its currentColor.
     let color = '#ffffff';
-    let key = `s${id}:${width}x${height}`;
+    let key = `s${id}:${tile ? 't' : ''}${width}x${height}`;
     if (!image.mask) {
       const channel = (v: number): number => Math.max(0, Math.min(255, Math.round(v * 255)));
       const hex = (v: number): string => channel(v).toString(16).padStart(2, '0');
@@ -481,7 +498,7 @@ export class SceneRenderer {
         raster.dispose();
       }
     });
-    return { rect, fill: image.mask ? 0 : 1 };
+    return { rect, fill: tile ? 2 : image.mask ? 0 : 1, ...(cell && { cell }) };
   }
 
   /** Append a complete frame to the host's encoder; submit it before encoding another frame. */

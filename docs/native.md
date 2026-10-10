@@ -264,7 +264,10 @@ means the same in a stylesheet, an inline `style` and a compiled sheet:
   reaching the farthest corner), or `glass`, whose settings are `glass-blur`,
   `glass-tint`, `glass-aberration`, `glass-bevel`, `glass-noise`,
   `glass-mode` (`liquid` or `frosted`) and `glass-curvature` (`inset` or
-  `outset`). A `url()` background is reported as unsupported.
+  `outset`). A `url()` background loads its image, as an `img` does, and is
+  `cover`, `contain` or stretched (`100% 100%`) by `background-size`, or at its own
+  size, repeated; see Images below. Other sizes, `no-repeat` at its own size, and a
+  position other than the centre are reported.
 - Colours are hex, CSS's named colours, `rgb()`, `hsl()`, `color-mix(in srgb, …)`,
   `transparent` and `currentcolor`, which is the node's own `color`.
 - `color`, `opacity`, `visibility`, `border-radius` (px, `em`, `rem` and
@@ -574,9 +577,12 @@ change. A `progress` with no `value` is `:indeterminate`, and the sheet pulses
 its bar. A meter's bar is `optimum`, `suboptimum` or `even-less-good` by which
 region of the range its value falls in against the optimum's.
 
-**Images.** An `img` loads its `src`: a path (from the host's `images.base` or the
-working directory), a `file:`, `http:` or `https:` URL, or a `data:` URL, PNG, JPEG,
-WebP or SVG. A source is loaded once however many elements name it, and let go
+**Images.** An `img` loads its `src`, and a `background-image: url()` its source: a path
+(from the host's `images.base` or the working directory), a `file:`, `http:` or
+`https:` URL, or a `data:` URL, PNG, JPEG, WebP or SVG. What a file is comes from its
+bytes, read and decoded on a worker thread so a large image does not hold up a frame
+(`native.loadImage`); an SVG's size is the one it says it is, a missing side following
+its viewBox's shape. `await host.images.idle()` waits until nothing is loading. A source is loaded once however many elements name it, and let go
 with the last. The element fires `load` or `error` (not bubbling) once it has the
 image or cannot. With no size from style it is the image's own, the `width` and
 `height` attributes (pixels or a percentage) shaping it, and the image's aspect
@@ -773,7 +779,8 @@ that names a library image is resampled, or an SVG rasterized, to the size it
 covers on screen, in steps of a twelfth of an octave of scale so a zoom reuses
 what it made, up to 2048 pixels a side. When the images on screen outgrow the
 atlas it is emptied once and filled with them; a record whose image is not in
-the library, or no longer is, draws nothing. An SVG keeps its aspect ratio and is
+the library, or no longer is, draws nothing. `ImageFit.Tile` repeats an image at its
+own size, which the record carries to the shader. An SVG keeps its aspect ratio and is
 centred in what it covers; with `{ mask: true }` it is drawn white and tinted by
 the node's colour, as an icon is, and without it `currentColor` is the node's.
 

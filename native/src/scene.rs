@@ -12,8 +12,9 @@ use blinc_abi::{
     display_list::{RECORD_FLOATS, Shapes},
     scene::{self, PaintOptions, SceneEncoder, TextMeasureContext},
 };
+use napi::bindgen_prelude::AsyncTask;
 use napi::bindgen_prelude::{BigInt, ClassInstance};
-use napi::{Env, Error, Result, Status, Unknown};
+use napi::{Env, Error, Result, Status, Task, Unknown};
 use napi_derive::napi;
 use scene::blinc_core::{
     Color, CornerRadius, Transform,
@@ -394,6 +395,11 @@ pub(crate) fn apply_paint(
                     Background::Gradient(g) => scene::blinc_core::Brush::Gradient(g.clone()),
                     Background::Glass(style, _) => scene::blinc_core::Brush::Glass(*style),
                     Background::Blur(style) => scene::blinc_core::Brush::Blur(*style),
+                    Background::Image { source, fit } => {
+                        let mut image = scene::blinc_core::ImageBrush::new(source.clone());
+                        image.fit = *fit;
+                        scene::blinc_core::Brush::Image(image)
+                    }
                 });
                 glass = Some(match background {
                     Background::Glass(_, effects) => Some(*effects),
@@ -839,6 +845,76 @@ pub fn decode_image(env: Env, input: Unknown<'_>) -> Result<NativeImage> {
         buffers::bytes_input(env, input, |data| {
             Ok(NativeImage::new(Bitmap::decode(data).map_err(error)?))
         })
+    }
+}
+/// An image file read on a worker thread: a raster image decoded, or SVG parsed for its size.
+pub struct LoadImage {
+    bytes: Vec<u8>,
+}
+impl Task for LoadImage {
+    type Output = blinc_abi::bitmap::Loaded;
+    type JsValue = NativeLoadedImage;
+    fn compute(&mut self) -> Result<Self::Output> {
+        blinc_abi::bitmap::load(&self.bytes).map_err(error)
+    }
+    fn resolve(&mut self, _env: Env, loaded: Self::Output) -> Result<Self::JsValue> {
+        Ok(NativeLoadedImage {
+            loaded: RefCell::new(Some(loaded)),
+        })
+    }
+}
+/// What `loadImage` read, until its raster image is taken.
+#[napi]
+pub struct NativeLoadedImage {
+    loaded: RefCell<Option<blinc_abi::bitmap::Loaded>>,
+}
+#[napi]
+pub fn load_image(env: Env, input: Unknown<'_>) -> Result<AsyncTask<LoadImage>> {
+    let bytes = unsafe { buffers::bytes_input(env, input, |data| Ok(data.to_vec()))? };
+    Ok(AsyncTask::new(LoadImage { bytes }))
+}
+#[napi]
+impl NativeLoadedImage {
+    /// Whether it is SVG, which is drawn from its markup, rather than a decoded raster image.
+    #[napi(getter)]
+    pub fn svg(&self) -> bool {
+        matches!(
+            self.loaded.borrow().as_ref(),
+            Some(blinc_abi::bitmap::Loaded::Svg { .. })
+        )
+    }
+    /// Its size in pixels; an SVG's is the one it says it is.
+    #[napi(getter)]
+    pub fn width(&self) -> u32 {
+        match self.loaded.borrow().as_ref() {
+            Some(blinc_abi::bitmap::Loaded::Raster(b)) => b.width,
+            Some(blinc_abi::bitmap::Loaded::Svg { width, .. }) => *width,
+            None => 0,
+        }
+    }
+    #[napi(getter)]
+    pub fn height(&self) -> u32 {
+        match self.loaded.borrow().as_ref() {
+            Some(blinc_abi::bitmap::Loaded::Raster(b)) => b.height,
+            Some(blinc_abi::bitmap::Loaded::Svg { height, .. }) => *height,
+            None => 0,
+        }
+    }
+    /// An SVG's markup.
+    #[napi]
+    pub fn markup(&self) -> Option<String> {
+        match self.loaded.borrow().as_ref() {
+            Some(blinc_abi::bitmap::Loaded::Svg { markup, .. }) => Some(markup.clone()),
+            _ => None,
+        }
+    }
+    /// A raster image's pixels, handed over once.
+    #[napi]
+    pub fn take_image(&self) -> Result<NativeImage> {
+        match self.loaded.borrow_mut().take() {
+            Some(blinc_abi::bitmap::Loaded::Raster(bitmap)) => Ok(NativeImage::new(bitmap)),
+            _ => Err(error("There is no raster image to take")),
+        }
     }
 }
 #[napi]

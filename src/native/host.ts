@@ -769,7 +769,7 @@ export class Host {
   constructor(layout: Layout, scope?: Scope, native?: NativeBindings) {
     this.layout = layout;
     this.inlineFlows = native ? new InlineFlows(this, native) : undefined;
-    this.images = native ? new HostImages(native) : undefined;
+    this.images = native ? new HostImages(native, layout) : undefined;
     this.behaviours = new Behaviours(this);
     this.#stateBits = new Map(layout.stateNames.map((name, i) => [name, 1 << i]));
     this.root = this.#register(new HostElement(this, layout.createNode(), 'root'));
@@ -783,6 +783,7 @@ export class Host {
       this.#queueText();
     });
     layout.onRestyle((restyled) => this.#restyled(restyled), scope);
+    layout.onImageUse((id, source) => this.#backgroundImage(id, source), scope);
     this.input.onInteraction((element, state) => {
       if (!element.destroyed) {
         element.layoutNode.queueStates(this.#bits(element, state));
@@ -1107,6 +1108,27 @@ export class Host {
         }
       }
     }
+  }
+  /** What each element's `url()` background has loaded, to let go of when it names another or goes. */
+  readonly #backgrounds = new Map<HostElement, { release(): void }>();
+  /** The element `id` now names `source` as its background image, or none. */
+  #backgroundImage(id: bigint, source: string | null): void {
+    const node = this.#nodes.get(id);
+    if (!(node instanceof HostElement) || !this.images) {
+      return;
+    }
+    this.#backgrounds.get(node)?.release();
+    this.#backgrounds.delete(node);
+    if (source === null) {
+      return;
+    }
+    const use = this.images.use(source, () => {
+      if (use.entry.status === 'error') {
+        this.#reportOne(`background: url(${source}): ${use.entry.error ?? 'cannot be loaded'}`);
+      }
+      this.#schedule();
+    });
+    this.#backgrounds.set(node, use);
   }
   /** The corner smoothing the root's declarations set, over the theme's. */
   #rootShape(declared: ReadonlyMap<string, string>): void {
@@ -1517,6 +1539,8 @@ export class Host {
     this.inlineFlows?.forget(node);
     this.behaviours.forget(node);
     if (node instanceof HostElement) {
+      this.#backgrounds.get(node)?.release();
+      this.#backgrounds.delete(node);
       for (const owned of this.#owned.get(node) ?? []) {
         this.destroyNode(owned);
       }

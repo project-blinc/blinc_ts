@@ -169,7 +169,7 @@ try {
   image.resample(16, 16, 1, scaled);
   assert.equal(scaled[(1 * 16 + 8) * 4 + 3], 0);
   assert.equal(scaled[(8 * 16 + 8) * 4 + 3], 255);
-  for (const fit of [-1, 0.5, 3, 2 ** 32, NaN]) {
+  for (const fit of [-1, 0.5, 4, 2 ** 32, NaN]) {
     assert.throws(() => image.resample(16, 16, fit, scaled), /integer|enum/);
   }
   for (const dimension of [0, -1, 1.5, 16385, Infinity, NaN]) {

@@ -2,10 +2,24 @@ export { Brush } from './brush.js';
 export { notch, notchEdge, concaveTop, encodeNotch } from './notch.js';
 export type { Notch, NotchEdge } from './notch.js';
 export type { BrushColor, GlassOptions } from './brush.js';
-import { ImageResource, type NativeImage } from './image.js';
+import { ImageResource, type NativeImage, type NativeLoadedImage } from './image.js';
 import { validateSceneSchema } from './scene.js';
 import { bind as bindScene } from './generated/scene.js';
 export { ImageResource } from './image.js';
+/** What `loadImage` read: a decoded raster image, or SVG markup, with the size it says it is. */
+export type LoadedPicture =
+  | {
+      readonly svg: false;
+      readonly image: ImageResource;
+      readonly width: number;
+      readonly height: number;
+    }
+  | {
+      readonly svg: true;
+      readonly markup: string;
+      readonly width: number;
+      readonly height: number;
+    };
 export { ImageFit } from './generated/scene.js';
 export { sceneSchema } from './scene.js';
 export type {
@@ -85,6 +99,7 @@ interface Addon {
   sceneSchema(): unknown;
   sceneCall: NativeBinding['call'];
   decodeImage(bytes: Uint8Array): NativeImage;
+  loadImage(bytes: Uint8Array): Promise<NativeLoadedImage>;
   rasterizeSvg(markup: string, width: number, height: number): NativeImage;
   NativeLayout: new () => NativeLayout;
   measureText: NativeText['measureText'];
@@ -130,6 +145,12 @@ export interface NativeBindings {
   /** @internal Event readiness integration, where supported by the native host. */
   subscribeWindowEvents?: (callback: () => void) => () => void;
   decodeImage(bytes: Uint8Array, scope?: Scope): ImageResource;
+  /**
+   * Read an image file of any kind on a worker thread, so a large one does not hold up a frame:
+   * a raster image is decoded, an SVG parsed for the size it says it is. Which it is comes from
+   * the bytes, not from a name.
+   */
+  loadImage(bytes: Uint8Array, scope?: Scope): Promise<LoadedPicture>;
   rasterizeSvg(markup: string, width: number, height: number, scope?: Scope): ImageResource;
   readonly buildProfile: string;
   createLayout(scope?: Scope): Layout;
@@ -164,6 +185,14 @@ export function loadNative(
       : {}),
     buildProfile: addon.buildProfile(),
     decodeImage: (bytes, scope) => new ImageResource(addon.decodeImage(bytes), scope),
+    loadImage: async (bytes, scope) => {
+      const loaded = await addon.loadImage(bytes);
+      const { width, height } = loaded;
+      if (loaded.svg) {
+        return { svg: true, markup: loaded.markup() ?? '', width, height };
+      }
+      return { svg: false, image: new ImageResource(loaded.takeImage(), scope), width, height };
+    },
     rasterizeSvg: (markup, width, height, scope) =>
       new ImageResource(addon.rasterizeSvg(markup, width, height), scope),
     createLayout: (scope?: Scope) => new Layout(new addon.NativeLayout(), addon, scope),
