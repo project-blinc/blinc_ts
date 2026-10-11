@@ -798,3 +798,34 @@ fn whether_a_node_is_in_view_is_asked_once_until_the_view_changes() {
     assert!(motion.tick(64.0, in_view).drawing);
     assert_eq!(asked.get(), 2);
 }
+
+fn angle_at(motion: &mut Motion, now: f64) -> Option<f32> {
+    let frame = motion.tick(now, |_| true);
+    let writes = &frame.writes.iter().find(|(raw, _)| *raw == NODE)?.1;
+    writes.iter().find_map(|w| match w {
+        Write::Paint(PaintWrite::Transform(m)) => {
+            Some(m.elements[1].atan2(m.elements[0]).to_degrees())
+        }
+        _ => None,
+    })
+}
+
+#[test]
+fn a_keyframed_rotate_turns_by_its_angle_not_the_short_way_between_matrices() {
+    let (mut motion, _) = animate(
+        &[("animation", "spin 100ms linear infinite")],
+        "@keyframes spin { to { transform: rotate(360deg) } }",
+    );
+    near(angle_at(&mut motion, 0.0), 0.0);
+    // A whole turn, though rotate(360deg) is the same matrix as none.
+    near(angle_at(&mut motion, 25.0), 90.0);
+    near(angle_at(&mut motion, 50.0).map(f32::abs), 180.0);
+    near(angle_at(&mut motion, 75.0), -90.0);
+    let (mut motion, _) = animate(
+        &[("animation", "tilt 100ms linear")],
+        "@keyframes tilt { from { transform: translateX(10px) rotate(0deg) } to { transform: translateX(30px) rotate(270deg) } }",
+    );
+    angle_at(&mut motion, 0.0);
+    // Three quarters of a turn the long way, where the matrices would go a quarter back.
+    near(angle_at(&mut motion, 50.0), 135.0);
+}

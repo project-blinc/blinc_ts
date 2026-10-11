@@ -2,6 +2,7 @@
 
 use super::Context;
 use super::field::{Value, Write};
+use super::functions::{self, Function};
 use super::timing::Timing;
 use blinc_abi::css::layout::{Units, is_layout_property, layout_writes};
 use blinc_abi::css::paint::{is_paint_property, paint_writes};
@@ -13,6 +14,8 @@ pub(crate) struct Stop {
     pub(crate) writes: Vec<Write>,
     /// The curve from this stop to the next, when the block names one.
     pub(crate) timing: Option<Timing>,
+    /// Its transform as the functions it lists, when it sets one that blends by them.
+    pub(crate) functions: Option<Vec<Function>>,
 }
 
 /// The stops of the `@keyframes` named `name`, in order of offset, and
@@ -35,6 +38,7 @@ pub(crate) fn read(
     for frame in sheet.keyframe_list(block) {
         let mut writes = Vec::new();
         let mut timing = None;
+        let mut transform = None;
         for declaration in sheet.keyframe_declarations(frame) {
             let property = sheet.str(declaration.name);
             let written = sheet.str(declaration.value);
@@ -56,7 +60,12 @@ pub(crate) fn read(
                 }
             } else if is_paint_property(property) {
                 match paint_writes(property, Some(value), &context.units) {
-                    Some(Ok(w)) => writes.extend(w.into_iter().map(Write::Paint)),
+                    Some(Ok(w)) => {
+                        if property == "transform" {
+                            transform = functions::parse(value, &context.units);
+                        }
+                        writes.extend(w.into_iter().map(Write::Paint))
+                    }
                     Some(Err(e)) => problems.push(format!("@keyframes {name}: {property}: {e}")),
                     None => {}
                 }
@@ -79,6 +88,7 @@ pub(crate) fn read(
                 offset: offset.clamp(0.0, 1.0),
                 writes: writes.clone(),
                 timing: timing.clone(),
+                functions: transform.clone(),
             });
         }
     }

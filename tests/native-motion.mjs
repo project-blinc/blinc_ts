@@ -490,6 +490,37 @@ try {
     `${errors}`,
   );
   assert.equal(errors.length, 2, `nothing else was reported: ${errors}`);
+  // A keyframed rotate turns by its angle: to rotate(360deg) is a whole turn, though it is the same
+  // matrix as no transform at all.
+  {
+    const spinHost = Host.create(native);
+    try {
+      spinHost.layout.addStyleSheet(
+        `#bar { position: absolute; left: 180px; top: 154px; width: 120px; height: 12px; background: #ff0000;
+          animation: turn 1000ms linear infinite; }
+         @keyframes turn { to { transform: rotate(360deg); } }`,
+      );
+      spinHost.root.setAttribute('style', 'background: #202020');
+      const bar = spinHost.createElement('div');
+      bar.setAttribute('id', 'bar');
+      spinHost.root.appendChild(bar);
+      spinHost.compute(W, H);
+      spinHost.layout.tickMotion(1000);
+      // Its middle is at 240, 160: lying, it reaches 50px across; standing, 50px down.
+      const across = (pixels) => near(pixel(pixels, 290, 160), RED, 40);
+      const down = (pixels) => near(pixel(pixels, 240, 210), RED, 40);
+      let frame = await capture(spinHost);
+      assert.ok(across(frame) && !down(frame), 'it starts lying');
+      spinHost.layout.tickMotion(1250);
+      frame = await capture(spinHost, 'spin-quarter');
+      assert.ok(down(frame) && !across(frame), 'a quarter of the way, it stands');
+      spinHost.layout.tickMotion(1500);
+      frame = await capture(spinHost);
+      assert.ok(across(frame) && !down(frame), 'halfway, it lies again');
+    } finally {
+      spinHost.dispose();
+    }
+  }
 } finally {
   host.dispose();
   context.dispose();

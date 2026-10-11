@@ -10,6 +10,7 @@
 mod blend;
 mod field;
 mod flip;
+mod functions;
 mod keyframes;
 mod spec;
 mod timing;
@@ -17,7 +18,9 @@ mod timing;
 use blend::{blend, same, vector};
 use blinc_abi::css::Atom;
 use blinc_abi::css::cascade::Cascade;
+use blinc_abi::css::paint::PaintWrite;
 use blinc_abi::css::quantity::PaintUnits;
+use blinc_abi::css::transform::IDENTITY;
 pub(crate) use field::{Field, Value, Write};
 use flip::Flip;
 pub(crate) use flip::LayoutAnimation;
@@ -78,7 +81,8 @@ fn carried(previous: &Run, from: &Write, to: &Write) -> Option<f64> {
 /// One field's values through a `@keyframes` block, by offset.
 struct Track {
     field: Field,
-    stops: Vec<(f64, Write, Option<Timing>)>,
+    /// Each stop's offset, value, curve to the next, and a transform's functions.
+    stops: Vec<(f64, Write, Option<Timing>, Option<Vec<functions::Function>>)>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -169,7 +173,13 @@ impl Track {
         let (from, to) = (&self.stops[i], &self.stops[i + 1]);
         let span = to.0 - from.0;
         let x = if span > 0.0 { (p - from.0) / span } else { 1.0 };
-        blend(&from.1, &to.1, from.2.as_ref().unwrap_or(timing).at(x))
+        let t = from.2.as_ref().unwrap_or(timing).at(x);
+        if let (Some(a), Some(b)) = (&from.3, &to.3)
+            && let Some(m) = functions::blend(a, b, t)
+        {
+            return Write::Paint(PaintWrite::Transform(m));
+        }
+        blend(&from.1, &to.1, t)
     }
 }
 
@@ -186,13 +196,17 @@ fn tracks(stops: &[keyframes::Stop], base: &HashMap<Field, Write>) -> Vec<Track>
     fields
         .into_iter()
         .map(|field| {
-            let mut points: Vec<(f64, Write, Option<Timing>)> = Vec::new();
+            let mut points: Vec<(f64, Write, Option<Timing>, Option<Vec<functions::Function>>)> =
+                Vec::new();
             for stop in stops {
                 for write in stop.writes.iter().filter(|w| Field::of(w) == field) {
+                    let listed = stop.functions.clone().filter(|_| field == Field::Transform);
                     // A later declaration at one offset replaces the earlier.
                     match points.iter_mut().find(|p| p.0 == stop.offset) {
-                        Some(p) => (p.1, p.2) = (write.clone(), stop.timing.clone()),
-                        None => points.push((stop.offset, write.clone(), stop.timing.clone())),
+                        Some(p) => (p.1, p.2, p.3) = (write.clone(), stop.timing.clone(), listed),
+                        None => {
+                            points.push((stop.offset, write.clone(), stop.timing.clone(), listed))
+                        }
                     }
                 }
             }
@@ -202,11 +216,20 @@ fn tracks(stops: &[keyframes::Stop], base: &HashMap<Field, Write>) -> Vec<Track>
                     .cloned()
                     .unwrap_or_else(|| field.default_write())
             };
+            // What the cascade gives blends by functions only when it is no transform at all.
+            let listed = |w: &Write| match w {
+                Write::Paint(PaintWrite::Transform(m)) if m.elements == IDENTITY.elements => {
+                    Some(Vec::new())
+                }
+                _ => None,
+            };
             if points[0].0 > 0.0 {
-                points.insert(0, (0.0, rest(), None));
+                let r = rest();
+                points.insert(0, (0.0, r.clone(), None, listed(&r)));
             }
             if points[points.len() - 1].0 < 1.0 {
-                points.push((1.0, rest(), None));
+                let r = rest();
+                points.push((1.0, r.clone(), None, listed(&r)));
             }
             Track {
                 field,
