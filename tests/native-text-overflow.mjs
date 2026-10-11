@@ -50,8 +50,8 @@ async function render(css, parts, scale) {
   const bounds = (n) => made[n].bounds();
   const ink = ([x0, y0, x1, y1]) => {
     let n = 0;
-    for (let y = y0 * scale; y < y1 * scale; y++) {
-      for (let x = x0 * scale; x < x1 * scale; x++) {
+    for (let y = Math.floor(y0 * scale); y < Math.ceil(y1 * scale); y++) {
+      for (let x = Math.floor(x0 * scale); x < Math.ceil(x1 * scale); x++) {
         if (px[(y * w + x) * 4] > 100) {
           n++;
         }
@@ -129,7 +129,9 @@ for (const scale of [1, 2]) {
   r.finish();
 
   // A clamp holds the text to its lines: the box is two lines tall and nothing is below.
-  const para = 'one two three four five six seven eight nine ten eleven twelve thirteen';
+  const para = Array(4)
+    .fill('one two three four five six seven eight nine ten eleven twelve thirteen')
+    .join(' ');
   const wrapped = [
     ['box', 'box', null, null],
     ['text', 't', 'box', para],
