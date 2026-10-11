@@ -1,1 +1,1 @@
-{"author":{"id":"a51b5961cc6de343a64125d8eb6a0f965aa434020b9c46ed932a1bbf143eb532"},"ops":[{"type":3,"timestamp":1791732245,"nonce":"ZHdHiYSS5qv/uxN33WzCSwHFlpI=","message":"Landed: blinc_abi 6bf5c4a (the engine stack) and blinc_ts 32c3b42..45183b1; CI pin moved.","files":null}]}
+{"author":{"id":"a51b5961cc6de343a64125d8eb6a0f965aa434020b9c46ed932a1bbf143eb532"},"ops":[{"type":4,"timestamp":1791732245,"nonce":"RDrayXRzZRwx7Mz1XBqFzfxBiTg=","status":2}]}
