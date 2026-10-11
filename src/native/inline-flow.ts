@@ -179,6 +179,23 @@ class Flow {
     root.layoutNode.queueInsertBefore(this.#spacer, first);
   }
 
+  /**
+   * What its content wants across, laid out: the width it would take on one line and the widest
+   * piece it cannot break, each with the flow's inset (its padding and border on each side), as
+   * a table sizes its columns by. Undefined until the flow has measured itself.
+   */
+  widths(): { min: number; max: number } | undefined {
+    if (this.#applied.width < 0) {
+      return undefined;
+    }
+    const out = new Float32Array(8);
+    this.#flows.host.layout.readBounds([this.root.layoutNode, this.#spacer], out);
+    // The spacer is at the content box: what lies before it is the inset, taken to be the same
+    // on the far side.
+    const inset = 2 * Math.max(0, out[4]! - out[0]!);
+    return { min: this.#applied.min + inset, max: this.#applied.width + inset };
+  }
+
   /** A node is being destroyed: what the flow made for it goes now, before its place in the tree does. */
   forgetNode(node: HostNode): void {
     const under = (member: Member) => {
@@ -559,6 +576,8 @@ export class InlineFlows {
   /** Texts a flow hides, and the pieces it shows: the host leaves their display and wrapping to it. */
   readonly #owned = new WeakSet<HostText>();
   readonly #pending = new Set<HostElement>();
+  /** What runs after a pass in which no flow had anything to write; true when it wrote. */
+  readonly #settled = new Set<() => boolean>();
   #release: (() => void) | undefined;
 
   constructor(host: Host, native: NativeBindings) {
@@ -577,6 +596,25 @@ export class InlineFlows {
   /** @internal */
   disown(node: HostText): void {
     this.#owned.delete(node);
+  }
+
+  /** What the flow of `element` wants across, when it is one; see `Flow.widths`. */
+  widths(element: HostElement): { min: number; max: number } | undefined {
+    return this.#flows.get(element)?.widths();
+  }
+
+  /**
+   * Run `listener` after each layout pass in which the flows had nothing more to write, so what
+   * it reads of them is settled. It returns true when it wrote, and layout runs again.
+   */
+  onSettled(listener: () => boolean): () => void {
+    this.#settled.add(listener);
+    if (!this.#release) {
+      this.#release = this.host.layout.onLaidOut(() => this.#layOut());
+    }
+    return () => {
+      this.#settled.delete(listener);
+    };
   }
 
   /** Whether there is anything to lay out: some flow, or some element that may become one. */
@@ -653,6 +691,10 @@ export class InlineFlows {
         texts++;
       }
     }
+    // A table's cell is always one, so its table can size its column by what it holds.
+    if (root.tag === 'td' || root.tag === 'th') {
+      return root.firstChild !== null;
+    }
     if (FLOW_TAGS.has(root.tag)) {
       return inline || texts >= 2;
     }
@@ -703,6 +745,13 @@ export class InlineFlows {
     for (const write of writes) {
       write();
     }
-    return writes.length > 0;
+    if (writes.length > 0) {
+      return true;
+    }
+    let after = false;
+    for (const listener of this.#settled) {
+      after = listener() || after;
+    }
+    return after;
   }
 }

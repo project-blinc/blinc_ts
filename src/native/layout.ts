@@ -316,7 +316,7 @@ export interface NativeCss {
 }
 
 /** How many times layout runs again for what `onLaidOut` listeners moved. */
-const LAYOUT_PASSES = 4;
+const LAYOUT_PASSES = 6;
 
 /** An owned native tree. A mounted root's Scope can release it during HMR. */
 export class Layout {

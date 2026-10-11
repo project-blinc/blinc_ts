@@ -698,10 +698,13 @@ doing, so it updates `:valid` and `:invalid` but not the user states.
 **Tables.** Every row of a `table`, its own and those in `thead`, `tbody` and `tfoot`, is a
 grid of the same columns, so cells line up down the table: as many as the widest row has
 counting each cell's `colspan`, or as the table's `col`s and `colgroup`s stand for, if more.
-A column is an equal share of the width unless its `col` gives it one: `width="120"` (pixels),
-`width="25%"` or `width="2*"` (twice a share), a `col`'s `span` and a `colgroup`'s `span`
-without `col`s standing for that many. A cell's `colspan` spans columns. Rows and cells that
-come or go, and `colspan`, `span` and `width` that change, lay the columns out again before
+A column a `col` gives a width has it: `width="120"` (pixels), `width="25%"` or `width="2*"` (twice
+a share of what is left), a `col`'s `span` and a `colgroup`'s `span` without `col`s standing for
+that many. Any other column is sized by its cells, as a browser's automatic table layout does:
+never narrower than the widest thing in it that cannot break, and sharing the rest of the width in
+proportion to what its cells would take on one line, or, beside columns given shares, taking up to
+that and leaving the rest to them. Every cell is an inline flow, which measures what it holds.
+A cell's `colspan` spans columns. Rows and cells that come or go, and `colspan`, `span` and `width` that change, lay the columns out again before
 the next frame. `rowspan` is not supported.
 
 **Selects.** A `select` shows the label of its chosen option (its `label` attribute, else
@@ -857,7 +860,7 @@ along the box.
 An anchored entry is placed again after each layout, so it follows its
 content's size and its anchor's place, with layout run again before the frame
 is drawn. That is `layout.onLaidOut(listener)`: a listener that moves or
-resizes something returns true, and layout runs again, up to four more times.
+resizes something returns true, and layout runs again, up to six more times.
 The geometry alone is `place(placement, contentSize, viewportSize)` in
 `blinc_ts/native/placement`, which needs no window.
 

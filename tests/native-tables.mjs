@@ -88,52 +88,96 @@ try {
   ]);
   host.root.appendChild(table);
   settle();
-  const quarter = box(table, b1)[1];
-  const origin = box(table, h1)[0];
-  assert.ok(quarter > 90 && quarter <= 100, `four equal columns: ${quarter}`);
-  for (const [c, at] of [
-    [h1, 0],
-    [h2, 1],
-    [h3, 2],
-    [a1, 0],
-    [a2, 1],
-    [a3, 2],
-    [b1, 0],
-    [b2, 1],
-    [b3, 2],
-    [b4, 3],
-  ]) {
-    assert.ok(near(box(table, c)[0] - origin, at * quarter, 1.5), `column ${at}: ${box(table, c)}`);
-    assert.ok(near(box(table, c)[1], quarter, 1.5), `a column's width: ${box(table, c)}`);
-  }
+  // Each column's cells line up, one left edge and one width down the table, side by side.
+  const columnsOf = (rows) => {
+    const out = [];
+    for (const cells of rows) {
+      const [x, w] = box(table, cells[0]);
+      for (const c of cells) {
+        assert.ok(
+          near(box(table, c)[0], x, 1) && near(box(table, c)[1], w, 1),
+          `lined up: ${box(table, c)}`,
+        );
+      }
+      out.push([x, w]);
+    }
+    for (let i = 1; i < out.length; i++) {
+      assert.ok(near(out[i][0], out[i - 1][0] + out[i - 1][1], 1.5), `next to each other: ${out}`);
+    }
+    return out;
+  };
+  let columns = columnsOf([[h1, a1, b1], [h2, a2, b2], [h3, a3, b3], [b4]]);
+  const [rowX, , rowW] = b1.parentNode.bounds();
+  const filled = columns.at(-1)[0] + columns.at(-1)[1] - columns[0][0];
+  assert.ok(near(filled, rowW, 2), `the columns fill the row: ${filled} of ${rowW}`);
+  void rowX;
+  // Sized by what they hold: Price and three take more than Qty and two.
+  assert.ok(columns[2][1] > columns[1][1] + 4, `a wider column for wider content: ${columns}`);
   assert.ok(
-    near(box(table, wide)[1], quarter * 2, 2),
+    near(box(table, wide)[1], columns[0][1] + columns[1][1], 2),
     `a colspan of 2 is two columns: ${box(table, wide)}`,
   );
   assert.ok(near(box(table, w3)[0], box(table, b3)[0], 1), 'and the cell after it is in the third');
   await capture(host, 'table');
 
-  // A row that goes leaves the widest at three, and the columns widen.
+  // A row that goes leaves the widest at three, and the three take the whole row.
   fourth.parentNode.removeChild(fourth);
   settle();
-  const third = box(table, a1)[1];
-  assert.ok(third > 125 && third <= 134, `three equal columns: ${third}`);
-  assert.ok(near(box(table, wide)[1], third * 2, 2));
+  columns = columnsOf([
+    [h1, a1],
+    [h2, a2],
+    [h3, a3],
+  ]);
+  assert.ok(
+    near(columns[2][0] + columns[2][1] - columns[0][0], rowW, 2),
+    `three fill it: ${columns}`,
+  );
   // A cell added to a row, or a colspan changed, lays them out again.
   const extra = cell('td', 'more');
   a3.parentNode.appendChild(extra);
   settle();
-  assert.ok(near(box(table, a1)[1], quarter, 1.5), 'a fourth column from a fourth cell');
-  assert.ok(near(box(table, extra)[0] - origin, 3 * quarter, 1.5));
+  columns = columnsOf([[h1, a1], [h2, a2], [h3, a3], [extra]]);
   a3.parentNode.removeChild(extra);
   wide.setAttribute('colspan', '3');
   settle();
-  assert.ok(near(box(table, a1)[1], quarter, 1.5), 'a wider colspan makes more columns');
-  assert.ok(near(box(table, wide)[1], quarter * 3, 2));
+  columns = columnsOf([[h1, a1], [h2, a2], [h3, a3], [w3]]);
+  assert.ok(
+    near(box(table, wide)[1], columns[0][1] + columns[1][1] + columns[2][1], 2),
+    'a wider colspan spans three',
+  );
   wide.removeAttribute('colspan');
   settle();
-  assert.ok(near(box(table, wide)[1], third, 1.5), 'a cell of one column again');
-  assert.ok(near(box(table, a1)[1], third, 1.5));
+  columns = columnsOf([
+    [h1, a1, wide],
+    [h2, a2, w3],
+    [h3, a3],
+  ]);
+
+  // A word that cannot break holds its column open in a narrow table; the other column takes
+  // what is left and wraps.
+  const word = 'Incomprehensibilities';
+  const long = 'a run of words long enough that it has to wrap in what is left';
+  const n1 = cell('td', word);
+  const n2 = cell('td', long);
+  const narrow = el(
+    'table',
+    { style: 'position: absolute; left: 20px; top: 150px; width: 300px' },
+    [el('tbody', {}, [row(n1, n2)])],
+  );
+  host.root.appendChild(narrow);
+  settle();
+  const wordWidth = native.measureText(word, { fontSize: 16 }).lines[0].width;
+  assert.ok(box(narrow, n1)[1] >= wordWidth, `the word fits: ${box(narrow, n1)} for ${wordWidth}`);
+  assert.ok(
+    near(box(narrow, n1)[1] + box(narrow, n2)[1], narrow.bounds()[2], 4),
+    'the rest is the other',
+  );
+  // One layout lays it all out: a row of one line is far shorter than this.
+  const tall = n2.parentNode.bounds()[3];
+  settle();
+  assert.equal(n2.parentNode.bounds()[3], tall, 'settled in one layout');
+  assert.ok(tall > 3 * 24, `which wraps: ${tall}`);
+  narrow.parentNode.removeChild(narrow);
 
   // Columns given widths: pixels, a percentage, a share of what is left.
   const sized = el('table', { style: 'position: absolute; left: 20px; top: 200px; width: 400px' }, [
@@ -141,7 +185,7 @@ try {
       el('col', { width: '120' }),
       el('col', { width: '25%' }),
       el('col', { width: '2*' }),
-      el('col', {}),
+      el('col', { width: '1*' }),
     ]),
     el('tbody', {}, [
       row(cell('td', 'a'), cell('td', 'b'), cell('td', 'c'), cell('td', 'd')),
@@ -182,10 +226,12 @@ try {
     grouped.firstChild.nextSibling.firstChild.firstChild,
     grouped.firstChild.nextSibling.firstChild.firstChild.nextSibling,
   ];
-  assert.ok(near(box(grouped, g1)[1], box(grouped, g2)[1], 1));
+  assert.ok(near(box(grouped, g1)[1], box(grouped, g2)[1], 1), 'alike cells, alike columns');
+  const [, , groupedRow] = g1.parentNode.bounds();
+  const [g2x, g2w] = box(grouped, g2);
   assert.ok(
-    box(grouped, g1)[1] < 140,
-    `three columns though the row has two cells: ${box(grouped, g1)}`,
+    g2x + g2w < groupedRow - 4,
+    `three columns though the row has two cells, the third empty: ${box(grouped, g2)} of ${groupedRow}`,
   );
   await capture(host, 'sized');
   assert.deepEqual(errors, [], String(errors));
