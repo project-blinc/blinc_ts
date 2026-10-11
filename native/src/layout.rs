@@ -170,6 +170,25 @@ impl NativeLayout {
         tree.compute(root.node, finite(width)?, finite(height)?)
             .map_err(error)?;
         let mut styles = self.owner.styles.borrow_mut();
+        styles.motion.view_changed();
+        Ok(styles.motion.pending())
+    }
+    #[napi]
+    /// Forget the layouts layout animations have measured, so the next one is where each starts.
+    pub fn rebase_motion(&self) -> Result<()> {
+        self.owner.check()?;
+        self.owner.styles.borrow_mut().motion.rebase_layouts();
+        Ok(())
+    }
+    #[napi]
+    /// A frame's layout is settled, after however many passes it took. Layout animations measure
+    /// what moved against the last frame's, and not against the passes between, so what a page
+    /// does as it is built is not a move. True when a layout animation started, or other motion
+    /// is pending.
+    pub fn settle_motion(&self) -> Result<bool> {
+        self.owner.check()?;
+        let tree = self.owner.tree.borrow();
+        let mut styles = self.owner.styles.borrow_mut();
         let tree = &*tree;
         styles.motion.laid_out(
             |raw| {
@@ -185,7 +204,6 @@ impl NativeLayout {
                     .map(|n| n.raw())
             },
         );
-        styles.motion.view_changed();
         Ok(styles.motion.pending())
     }
     #[napi]

@@ -66,6 +66,49 @@ try {
   const rows = readout.bounds()[3];
   frame.prepare(W / 2, H, 1, () => (clock += 16));
   assert.ok(readout.bounds()[3] >= rows, 'a narrower window lays out again');
+  // What a read of a size saw before the first frame is not where an element moves from: a layout
+  // made for a size read lays the page out before it is placed, and a window draws it laid out.
+  const stage = Host.create(native);
+  try {
+    const box = stage.createElement('div');
+    box.setAttribute(
+      'style',
+      'position: absolute; left: 50%; top: 10px; width: 20px; height: 20px; background: #ff0000',
+    );
+    stage.root.appendChild(box);
+    box.animateLayout({ duration: 100, easing: 'linear' });
+    stage.compute(100, 100);
+    assert.equal(box.bounds()[0], 50, 'a read laid it out at the width it was given');
+    const staged = new FrameLayout(stage.layout, stage.root.layoutNode);
+    stage.layout.onChange((change) => staged.changed(change));
+    assert.equal(
+      staged.prepare(400, 300, 1, () => 1000),
+      false,
+      'the first frame is where it starts',
+    );
+    assert.equal(box.bounds()[0], 200, 'laid out at the size of the window');
+    assert.equal(
+      staged.prepare(400, 300, 1, () => 1016),
+      false,
+      'and nothing moves after it',
+    );
+    // A read between frames, at a size the window is not, is not a layout to move from.
+    stage.compute(100, 100);
+    stage.layout.queue();
+    assert.equal(
+      staged.prepare(400, 300, 1, () => 1032),
+      false,
+      'a read between frames moves nothing',
+    );
+    // A later change of the window is a move.
+    assert.equal(
+      staged.prepare(200, 300, 1, () => 2000),
+      true,
+      'a resize moves it',
+    );
+  } finally {
+    stage.dispose();
+  }
 } finally {
   host.dispose();
   target.dispose();

@@ -337,6 +337,41 @@ try {
   assert.ok(near(pixel(flipped, 330, 275), RED), 'then at its full height');
   sizer.animateLayout(null);
 
+  // A page settling as it is built is not a move: what a listener after layout shifts in the passes
+  // of one frame is where the element starts, and not where it flies in from.
+  const settling = host.createElement('div');
+  settling.setAttribute('id', 'settling');
+  settling.setAttribute(
+    'style',
+    'position: absolute; left: 250px; top: 230px; width: 40px; height: 20px; background: #ff0000',
+  );
+  host.root.appendChild(settling);
+  settling.animateLayout({ duration: 100, easing: 'linear' });
+  let shifted = false;
+  const unlisten = host.layout.onLaidOut(() => {
+    if (shifted) {
+      return false;
+    }
+    shifted = true;
+    settling.setProperty('top', 275);
+    return true;
+  });
+  host.compute(W, H);
+  unlisten();
+  assert.equal(settling.bounds()[1], 275, 'laid out where the listener put it');
+  host.layout.tickMotion(11000);
+  assert.equal(host.layout.tickMotion(11050), false, 'no move began for what the passes did');
+  flipped = await capture(host);
+  assert.ok(near(pixel(flipped, 270, 285), RED), 'it is drawn there at once');
+  assert.ok(near(pixel(flipped, 270, 240), GROUND), 'and not where the first pass had it');
+  // A change in a later frame is a move.
+  settling.setProperty('top', 250);
+  host.compute(W, H);
+  assert.equal(host.layout.tickMotion(12000), true, 'a later change moves');
+  await flipAt(12100);
+  settling.animateLayout(null);
+  host.root.removeChild(settling);
+
   // Out of view, motion keeps its clock but draws nothing and asks for no frames, only a wake.
   const away = host.createElement('div');
   away.setAttribute('id', 'away');

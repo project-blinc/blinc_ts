@@ -829,6 +829,13 @@ impl Motion {
         }
     }
 
+    /// Forget every layout seen, so the next is each animated node's first and moves nothing.
+    pub(crate) fn rebase_layouts(&mut self) {
+        for flip in self.flips.values_mut() {
+            flip.rebase();
+        }
+    }
+
     /// After a layout: each animated node's box, from `bounds`, relative to the
     /// nearest animated node it is in, which `parent` walks up to.
     pub(crate) fn laid_out(

@@ -20,6 +20,11 @@ export class FrameLayout {
   constructor(layout: Layout, root: LayoutNode) {
     this.#layout = layout;
     this.#root = root;
+    // Only the layouts a frame draws are where a move begins and ends; one made to read a size,
+    // while a page is built, is not.
+    layout.measureByFrame = true;
+    // What was laid out before there was a window, to read a size, is not where anything starts.
+    layout.rebaseMotion();
   }
 
   /** The layout reported `change`: if it is one of geometry, the next frame lays out. */
@@ -38,6 +43,7 @@ export class FrameLayout {
       // Clear before computing, so a change made during the frame survives for the next.
       this.#needs = false;
       layout.compute(this.#root, width / scale, height / scale);
+      layout.settleMotion();
       this.#width = width;
       this.#height = height;
       this.#scale = scale;
@@ -48,6 +54,7 @@ export class FrameLayout {
     if (this.#needs) {
       this.#needs = false;
       layout.compute(this.#root, width / scale, height / scale);
+      layout.settleMotion();
     }
     return moving;
   }

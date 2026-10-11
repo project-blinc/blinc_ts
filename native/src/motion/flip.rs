@@ -58,6 +58,12 @@ impl Flip {
         self.animation = animation;
     }
 
+    /// Forget the layouts seen: the next is a first, where it starts.
+    pub(crate) fn rebase(&mut self) {
+        self.last = None;
+        self.within = None;
+    }
+
     pub(crate) fn running(&self) -> bool {
         self.running.is_some()
     }

@@ -228,6 +228,8 @@ export interface NativeLayout extends BrushFactory {
   readonly disposed: boolean;
   createNode(style: NativeLayoutStyle): NativeLayoutNode;
   compute(root: NativeLayoutNode, width: number, height: number): boolean;
+  settleMotion(): boolean;
+  rebaseMotion(): void;
   readBounds(nodes: readonly NativeLayoutNode[], target: Float32Array): void;
   cssAddSheet(
     source: Uint8Array | string,
@@ -575,6 +577,22 @@ export class Layout {
     return remove;
   }
 
+  /**
+   * Whether layout animations measure only where `settleMotion` says, a frame's layout, and not at
+   * every `compute`. A window sets it; a host that draws as it lays out leaves it be.
+   */
+  measureByFrame = false;
+
+  /** Forget the layouts measured so far: the next is where every layout animation starts. */
+  rebaseMotion(): void {
+    this.#native.rebaseMotion();
+  }
+
+  /** The layout just computed is a frame's: layout animations measure what moved against the last one's. */
+  settleMotion(): void {
+    this.#motion ||= this.#native.settleMotion();
+  }
+
   compute(root: LayoutNode, width: number, height: number): void {
     for (let pass = 0; ; pass++) {
       this.flush();
@@ -599,6 +617,12 @@ export class Layout {
         }
       }
       if (!again) {
+        // However many passes it took, this is a layout: layout animations measure against the
+        // last one's, and a page settling as it is built is not a move. A window measures only
+        // the layouts it draws, since one made to read a size sees the page before it is placed.
+        if (!this.measureByFrame) {
+          this.#motion ||= this.#native.settleMotion();
+        }
         return;
       }
     }
