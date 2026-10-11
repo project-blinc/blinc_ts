@@ -1,10 +1,12 @@
 /** The wiki's Adapters pages. */
 import type { WikiPage } from '../page.js';
-import { Example, Note, Page, SourceView } from '../kit.js';
+import { Example, Note, Page, SourceView, lazy } from '../kit.js';
 import HandWritten from '../examples/adapter-h.js';
 import FromData from '../examples/adapter-json.js';
-import VueCounter from '../examples/vue-counter.js';
 import Reactive from '../examples/reactive.js';
+
+// Vue is imported only once its page is shown.
+const VueCounter = lazy(() => import('../examples/vue-counter.js'));
 
 export const adaptersPages: readonly WikiPage[] = [
   {

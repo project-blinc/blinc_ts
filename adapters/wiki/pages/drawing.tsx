@@ -1,11 +1,13 @@
 /** The wiki's Drawing pages: what an app draws itself, beside what the host draws for it. */
 import type { WikiPage } from '../page.js';
-import { Example, Note, Page, SourceView, Table } from '../kit.js';
+import { Example, Note, Page, SourceView, Table, lazy } from '../kit.js';
 import Brushes from '../examples/brushes.js';
 import MeasureText from '../examples/measure-text.js';
 import Notches from '../examples/notches.js';
 import ReactiveGraph from '../examples/reactive-graph.js';
-import CanvasShader from '../examples/canvas-shader.js';
+
+// TypeGPU is imported only once its page is shown.
+const CanvasShader = lazy(() => import('../examples/canvas-shader.js'));
 
 export const drawingPages: readonly WikiPage[] = [
   {

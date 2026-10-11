@@ -1,7 +1,8 @@
 /** What pages are made of: a page, prose, a note, and an example with its source beside it. */
 import type { CssDiagnostic } from 'blinc_ts/native';
 import type { HostElement } from 'blinc_ts/native/host';
-import { onCleanup, useHost } from '#jsx/owner';
+import { onCleanup, signal, useHost } from '#jsx/owner';
+import { Show } from '#jsx/flow';
 import type { Child, JsxNode } from '#jsx/jsx-runtime';
 import { Tabs } from '../base-ui/tabs.js';
 import { highlight, languageOf, type Language } from './highlight.js';
@@ -19,6 +20,24 @@ export function Page(props: { title: string; lead?: string; children?: Child }):
 
 export function Note(props: { children?: Child }): JsxNode {
   return <div class="wiki-note">{props.children}</div>;
+}
+
+/**
+ * A view whose module is imported the first time it is shown, so what that module imports costs
+ * nothing until a page shows it.
+ */
+export function lazy(load: () => Promise<{ default: () => Child }>): () => Child {
+  return function Lazy() {
+    const loaded = signal<{ view: () => Child } | undefined>(undefined);
+    let ended = false;
+    onCleanup(() => (ended = true));
+    void load().then((module) => {
+      if (!ended) {
+        loaded.set({ view: module.default });
+      }
+    });
+    return <Show when={loaded}>{(m: { view: () => Child }) => <m.view />}</Show>;
+  };
 }
 
 /** A live example, in a pane with its source on the next tab. Each is a component of its own file. */
