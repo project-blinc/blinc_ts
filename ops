@@ -1,1 +1,1 @@
-{"author":{"id":"a51b5961cc6de343a64125d8eb6a0f965aa434020b9c46ed932a1bbf143eb532"},"ops":[{"type":5,"timestamp":1791727878,"nonce":"dcnZHj0+K3vSy6a18eYay0VNqdY=","added":["debt","priority:high","area:style"],"removed":null}]}
+{"author":{"id":"a51b5961cc6de343a64125d8eb6a0f965aa434020b9c46ed932a1bbf143eb532"},"ops":[{"type":3,"timestamp":1791728037,"nonce":"82LP9sbHrioCF686GHULi8Fm8ho=","message":"Added e9b16a0: Canvas 3D (meshes, materials, lights, glTF), medium priority. The other SDK has it; reuse blinc_gpu's mesh pipeline.","files":null}]}
