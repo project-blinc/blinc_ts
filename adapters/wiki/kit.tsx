@@ -2,7 +2,7 @@
 import type { HostElement } from 'blinc_ts/native/host';
 import type { Child, JsxNode } from '#jsx/jsx-runtime';
 import { Tabs } from '../base-ui/tabs.js';
-import { sourceOf } from './source.js';
+import { sourceOf, sourceOfFile } from './source.js';
 
 export function Page(props: { title: string; lead?: string; children?: Child }): JsxNode {
   return (
@@ -38,6 +38,29 @@ export function Example(props: { name: string; title?: string; view: () => Child
           </pre>
         </Tabs.Panel>
       </Tabs.Root>
+    </div>
+  );
+}
+
+/** A file of an adapter, or lines of it, quoted as it is in the repository, with where it is. */
+export function SourceView(props: {
+  file: string;
+  from?: number;
+  to?: number;
+  title?: string;
+}): JsxNode {
+  const lines = props.from ? ` (lines ${props.from} to ${props.to ?? 'the end'})` : '';
+  return (
+    <div class="wiki-example">
+      <div class="wiki-example-title">
+        {props.title ?? props.file}
+        {lines}
+      </div>
+      <div class="wiki-example-source">
+        <pre>
+          <code>{sourceOfFile(props.file, props.from, props.to)}</code>
+        </pre>
+      </div>
     </div>
   );
 }

@@ -162,8 +162,8 @@ try {
       const { frame, press } = windowed(host, target, W, H);
       const named = (text) => buttonNamed(host.root, text);
       await frame();
-      await press(named('Reactive views'));
-      assert.equal(wiki.page.get(), 'reactive');
+      await press(named('The JSX adapter'));
+      assert.equal(wiki.page.get(), 'jsx-adapter');
       const readout = () => findAll(host.root, 'wiki-readout')[0].textContent;
       assert.equal(readout(), '0 doubled is 0');
       for (let n = 1; n <= 4; n++) {
@@ -176,6 +176,29 @@ try {
       const list = findAll(host.root, 'wiki-page')[0];
       // Two items were added and reversed and one removed: the first of what is left is first.
       assert.match(list.textContent, /Two, number 1One, number 2/);
+      // The pages of adapters work: one written by hand, one from data, and Vue's, on the same host.
+      wiki.page.set('writing');
+      await frame();
+      const readouts = () => findAll(host.root, 'wiki-readout').map((e) => e.textContent);
+      assert.deepEqual(readouts(), ['0 clicks']);
+      await press(named('Click me'));
+      await press(named('Click me'));
+      assert.deepEqual(readouts(), ['2 clicks'], 'hyperscript, updated by hand');
+      const steps = () => findAll(host.root, 'wiki-col')[0].textContent;
+      assert.match(steps(), /Add a stepWrite a specRender it$/);
+      await press(named('Add a step'));
+      assert.match(
+        steps(),
+        /Add a stepWrite a specRender itStep 3$/,
+        'a view from data, drawn again',
+      );
+      wiki.page.set('vue-adapter');
+      await frame();
+      assert.deepEqual(readouts(), ['count = 0']);
+      for (let i = 0; i < 3; i++) {
+        await press(named('Count in Vue'));
+      }
+      assert.deepEqual(readouts(), ['count = 3'], "Vue's renderer, driving this host");
       assert.deepEqual(wiki.errors, []);
     } finally {
       wiki.close();
