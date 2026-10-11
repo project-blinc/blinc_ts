@@ -40,6 +40,7 @@ import { InlineFlows, INLINE_TAGS } from './inline-flow.js';
 import { textTransform, transformText, type TextTransform } from './text-transform.js';
 import { HostCanvases } from './canvases.js';
 import { HostImages } from './host-images.js';
+import { HostFonts } from './host-fonts.js';
 import { Behaviours } from './behaviours.js';
 import type { ValidityFlags } from './validity.js';
 import type { NativeBindings } from './index.js';
@@ -986,6 +987,8 @@ export class Host {
   readonly behaviours: Behaviours;
   /** The images elements name, loaded once each, which a mounted window draws. */
   readonly images: HostImages | undefined;
+  /** Bundled faces named by active @font-face rules, owned by this host. */
+  readonly fonts: HostFonts | undefined;
   /** What `canvas` elements draw, through the renderers that draw the host. */
   readonly canvases: HostCanvases;
   /** The native bindings this host measures text with, when it was given them. */
@@ -1012,6 +1015,27 @@ export class Host {
     this.#stateBits = new Map(layout.stateNames.map((name, i) => [name, 1 << i]));
     this.root = this.#register(new HostElement(this, layout.createNode(), 'root'));
     this.styleChanged(this.root);
+    this.fonts = native
+      ? new HostFonts(
+          native,
+          layout,
+          () => {
+            // Inline pieces are native children kept outside authored/owned child lists.
+            // They need new registry names even when their text and placement stay equal.
+            for (const node of this.#nodes.values()) {
+              if (node instanceof HostText) {
+                this.#text.add(node);
+              } else if (node instanceof HostElement) {
+                this.behaviours.textFields.restyled(node);
+              }
+            }
+            this.inlineFlows?.touchTree(this.root);
+            this.layout.changed('layout');
+            this.#schedule();
+          },
+          (error) => this.reportStyleError(error),
+        )
+      : undefined;
     this.root.layoutNode.setLayoutProperty('width', '100%');
     this.root.layoutNode.setLayoutProperty('height', '100%');
     this.behaviours.attach();
@@ -1534,7 +1558,8 @@ export class Host {
   }
   /** @internal The text style `node` has now, defaults under what the cascade gave it. */
   textStyleOf(node: HostText): TextStyle {
-    return { ...defaultText, ...this.#textStyles.get(node) };
+    const style = { ...defaultText, ...this.#textStyles.get(node) };
+    return this.fonts?.resolve(style) ?? style;
   }
   /** @internal Presentation casing inherited through the host's composed tree. */
   textTransformOf(node: HostNode): TextTransform {
@@ -1672,8 +1697,7 @@ export class Host {
       // A text a flow hides or shows is the flow's to size: it does not wrap, and its display is the flow's.
       const flowed = this.inlineFlows?.owns(node) ?? false;
       const style = {
-        ...defaultText,
-        ...this.#textStyles.get(node),
+        ...this.textStyleOf(node),
         ...(flowed ? { wrap: false } : {}),
       };
       const sent = this.#sentText.get(node);
@@ -2102,6 +2126,7 @@ export class Host {
   dispose(): void {
     this.behaviours.dispose();
     this.images?.dispose();
+    this.fonts?.dispose();
     this.#text.clear();
     this.#nodes.clear();
     this.#generated.clear();

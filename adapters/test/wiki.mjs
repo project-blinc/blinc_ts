@@ -49,6 +49,7 @@ async function open(scheme) {
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
     await host.images.idle();
+    await host.fonts.idle();
     host.flush();
     host.compute(W, H);
   };

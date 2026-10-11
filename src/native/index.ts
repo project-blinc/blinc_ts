@@ -52,6 +52,8 @@ import {
   type NativeText,
 } from './text.js';
 import type { TextStyle } from './scene.js';
+import { FontResource, type NativeFont } from './font.js';
+export { FontResource } from './font.js';
 export { TextMeasurement } from './text.js';
 export { Paragraph } from './paragraph.js';
 export type { ParagraphRun } from './paragraph.js';
@@ -95,6 +97,15 @@ export * as gpu from './generated/gpu.js';
 export * as window from './generated/window.js';
 
 interface Addon {
+  loadFont(bytes: Uint8Array): Promise<NativeFont>;
+  fontFamilies(stack: string): string[];
+  loadLocalFont(name: string, weight: number, italic: boolean): NativeFont;
+  matchFontFace(
+    weights: number[],
+    styles: boolean[],
+    weight: number,
+    italic: boolean,
+  ): number | null;
   NativeEventPump?: new (callback: () => void) => { dispose(): void };
   sceneSchema(): unknown;
   sceneCall: NativeBinding['call'];
@@ -144,6 +155,19 @@ function subscribeEvents(addon: Addon, callback: () => void): () => void {
   };
 }
 export interface NativeBindings {
+  /** Decode a TTF/OpenType/WOFF2 face on a worker thread. */
+  loadFont(bytes: Uint8Array, scope?: Scope): Promise<FontResource>;
+  /** @internal Family parsing shared with native CSS. */
+  fontFamilies(stack: string): string[];
+  /** Resolve src: local() through the shared system font registry. */
+  loadLocalFont(name: string, weight?: number, italic?: boolean, scope?: Scope): FontResource;
+  /** @internal CSS descriptor matching owned by blinc_abi. */
+  matchFontFace(
+    weights: number[],
+    styles: boolean[],
+    weight: number,
+    italic: boolean,
+  ): number | null;
   /** @internal Event readiness integration, where supported by the native host. */
   subscribeWindowEvents?: (callback: () => void) => () => void;
   decodeImage(bytes: Uint8Array, scope?: Scope): ImageResource;
@@ -196,6 +220,12 @@ export function loadNative(
       ? { subscribeWindowEvents: (callback: () => void) => subscribeEvents(addon, callback) }
       : {}),
     buildProfile: addon.buildProfile(),
+    loadFont: async (bytes, scope) => new FontResource(await addon.loadFont(bytes), scope),
+    fontFamilies: (stack) => addon.fontFamilies(stack),
+    loadLocalFont: (name, weight = 400, italic = false, scope) =>
+      new FontResource(addon.loadLocalFont(name, weight, italic), scope),
+    matchFontFace: (weights, styles, weight, italic) =>
+      addon.matchFontFace(weights, styles, weight, italic),
     decodeImage: (bytes, scope) => new ImageResource(addon.decodeImage(bytes), scope),
     loadImage: async (bytes, scope) => {
       const loaded = await addon.loadImage(bytes);

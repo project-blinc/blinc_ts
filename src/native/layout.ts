@@ -236,7 +236,8 @@ export interface NativeLayout extends BrushFactory {
     source: Uint8Array | string,
     file: string | undefined,
     at: number | undefined,
-  ): { id: number; diagnostics: CssDiagnostic[] };
+  ): { id: number; diagnostics: CssDiagnostic[]; fonts: number };
+  cssFontFaces(): FontFaceRule[];
   cssRemoveSheet(id: number): boolean;
   cssSetTheme(names: string[], values: string[]): void;
   cssSetEnvironment(width: number, height: number, dark: boolean): void;
@@ -290,6 +291,21 @@ export interface NativeLayout extends BrushFactory {
 export interface StyleSheet {
   readonly id: number;
   readonly diagnostics: readonly CssDiagnostic[];
+}
+/** A native font rule active under the current media environment, in cascade order. */
+export interface FontFaceRule {
+  readonly key: string;
+  readonly family: string;
+  readonly sources: readonly {
+    readonly name: string;
+    readonly local: boolean;
+    readonly format?: string | null;
+  }[];
+  readonly weight: readonly number[];
+  readonly italic: boolean;
+  readonly file?: string | null;
+  readonly line: number;
+  readonly column: number;
 }
 export interface CssDiagnostic {
   readonly severity: 'error' | 'warning';
@@ -350,6 +366,8 @@ export class Layout {
   readonly #layoutNames = new Map<string, boolean>();
   readonly #restyleListeners = new Set<(restyled: Restyled) => void>();
   readonly #imageListeners = new Set<(node: bigint, source: string | null) => void>();
+  readonly #fontListeners = new Set<(faces: readonly FontFaceRule[]) => void>();
+  #hasFonts = false;
   readonly #laidOutListeners = new Set<() => boolean | void>();
   #styled = false;
   /** Whether a tick may have something to do: false lets frames skip the native call. */
@@ -632,6 +650,7 @@ export class Layout {
   }
 
   compute(root: LayoutNode, width: number, height: number): void {
+    this.#setEnvironment(width, height);
     for (let pass = 0; ; pass++) {
       this.flush();
       if (this.#styled) {
@@ -724,16 +743,35 @@ export class Layout {
     options: { at?: number; file?: string } = {},
   ): StyleSheet {
     const sheet = this.#native.cssAddSheet(source, options.file, options.at);
+    this.#hasFonts ||= sheet.fonts > 0;
     this.#markStyled();
+    this.#fontsChanged();
     return { id: sheet.id, diagnostics: sheet.diagnostics };
   }
   /** Remove a sheet; false if it was removed already. */
   removeStyleSheet(sheet: StyleSheet): boolean {
     const removed = this.#native.cssRemoveSheet(sheet.id);
     if (removed) {
+      this.#fontsChanged();
       this.changed('layout');
     }
     return removed;
+  }
+  /** @internal Active font descriptors change with sheet edits and media conditions. */
+  onFonts(listener: (faces: readonly FontFaceRule[]) => void): () => void {
+    this.#fontListeners.add(listener);
+    if (this.#hasFonts) {
+      listener(this.#native.cssFontFaces());
+    }
+    return () => this.#fontListeners.delete(listener);
+  }
+  #fontsChanged(): void {
+    if (this.#hasFonts && this.#fontListeners.size > 0) {
+      const faces = this.#native.cssFontFaces();
+      for (const listener of this.#fontListeners) {
+        listener(faces);
+      }
+    }
   }
   /** The theme's variables, by name with or without `--`, which `var()` reads after the sheets'. */
   setTheme(variables: Readonly<Record<string, string>>): void {
@@ -992,6 +1030,8 @@ export class Layout {
     if (key !== this.#environment) {
       this.#environment = key;
       this.#native.cssSetEnvironment(width, height, this.#dark);
+      this.#styled = true;
+      this.#fontsChanged();
     }
   }
 
@@ -1015,6 +1055,7 @@ export class Layout {
       this.changed('disposed');
     } finally {
       this.#listeners.clear();
+      this.#fontListeners.clear();
     }
   }
 }

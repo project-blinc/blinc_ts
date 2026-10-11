@@ -254,6 +254,59 @@ reason to `host.onStyleErrors` listeners, or logged as a warning when there
 are none, and the rest of its rule still applies. A property the cascade does
 not know is skipped without a report.
 
+### Bundled fonts
+
+`@font-face` loads fonts owned by the host's active stylesheets. Give each face a
+family, a `src` list, and optionally `font-weight` (a number or range) and
+`font-style` (`normal`, `italic` or `oblique`, which selects an italic face).
+
+```ts
+host.layout.addStyleSheet(
+  `
+  @font-face {
+    font-family: AppMono;
+    src: url("fonts/app-mono.woff2") format("woff2");
+    font-weight: 400;
+  }
+  .code { font-family: AppMono, monospace; }
+`,
+  'styles/app.css',
+);
+await host.fonts.idle();
+host.compute(800, 600);
+```
+
+Relative URLs resolve from the stylesheet's file, including imported sheets;
+without a file they resolve from `host.fonts.base`, initially the working directory.
+File, data and HTTP URLs use the same loader as images. Replace `host.fonts.loader`
+to supply bytes another way. TrueType, OpenType and WOFF2 are supported; `local()`
+looks up an installed family. Sources are tried in order, and a shared URL loads
+once per host. CSS weight/style matching chooses among the loaded faces.
+
+Pending or failed fonts keep the existing fallback. When a face loads, text,
+inline wrapping and editable caret metrics are refreshed, and mounted hosts
+request a frame. `host.fonts.entries` exposes loading, loaded and error states;
+failures also reach `host.onStyleErrors`. Media queries activate and release
+faces as the viewport changes. Removing the sheet or disposing the host releases
+its resources, without changing another host's fonts. Runtime and compiled CSS
+use the same descriptors and source locations.
+
+This initial implementation always swaps a loaded face into its fallback;
+`font-display` timing, `unicode-range`, non-normal `font-stretch`, distinct oblique
+angles and original WOFF files are not implemented. The WOFF2 decoder currently
+rejects transformed `hmtx` tables; such a source can fall through to a later TTF
+source.
+
+For direct scenes, `await native.loadFont(bytes, scope?)` returns a `FontResource`.
+Its `family(weight = 400)` supplies a private name for `TextStyle.fontFamily`.
+Keep the resource alive while using that name, and call `dispose()` or let its
+scope release it. `native.loadLocalFont(name, weight, italic, scope?)` creates the
+same owned resource from an installed family.
+
+`tests/native-font-face.mjs` checks runtime/compiled TTF and WOFF2 pixels at 1x/2x,
+weight/style matching, delayed reflow, inline text, editable caret metrics,
+source fallback, media activation, errors, host isolation and disposal.
+
 ### Generated content
 
 `::before` and `::after` rules match their originating element, including its

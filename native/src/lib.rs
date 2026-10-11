@@ -12,6 +12,7 @@ mod buffers;
 mod commands;
 mod css;
 mod enum_value;
+mod font;
 mod gpu;
 mod layout;
 mod layout_values;

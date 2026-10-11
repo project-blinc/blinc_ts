@@ -39,6 +39,7 @@ import PaintTextOverflow from '../examples/paint-text-overflow.js';
 import PaintTextShadow from '../examples/paint-text-shadow.js';
 import PaintTransforms from '../examples/paint-transforms.js';
 import TextTransform from '../examples/text-transform.js';
+import FontFace from '../examples/font-face.js';
 import GlassGallery from '../examples/glass-gallery.js';
 import LayoutLab from '../examples/layout-lab.js';
 import GlassLens from '../examples/glass-lens.js';
@@ -479,6 +480,15 @@ export const stylingPages: readonly WikiPage[] = [
           <code>none</code> restores the source case. It runs before shaping and wrapping, including
           across inline spans. Text content, editable values and copied text keep their original
           case.
+        </p>
+        <h2>Bundled fonts</h2>
+        <Example name="font-face" view={FontFace} />
+        <p>
+          <code>@font-face</code> names a TTF, OpenType or WOFF2 file with a custom family, weight
+          and style. A pending face uses its fallback; loading it remeasures text and editable
+          carets. Relative URLs resolve from the stylesheet's file, or the host's working directory
+          when it has no file. Files, HTTP and data URLs use the same loading path as images. A
+          stylesheet owns its faces, so removing it restores the fallback.
         </p>
         <h2>Text decoration</h2>
         <Example name="paint-text" view={PaintText} />

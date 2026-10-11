@@ -295,6 +295,25 @@ pub struct NativeDiagnostic {
 pub struct NativeSheet {
     pub id: u32,
     pub diagnostics: Vec<NativeDiagnostic>,
+    pub fonts: u32,
+}
+
+#[napi(object)]
+pub struct NativeFontSource {
+    pub name: String,
+    pub local: bool,
+    pub format: Option<String>,
+}
+#[napi(object)]
+pub struct NativeFontFace {
+    pub key: String,
+    pub family: String,
+    pub sources: Vec<NativeFontSource>,
+    pub weight: Vec<u32>,
+    pub italic: bool,
+    pub file: Option<String>,
+    pub line: u32,
+    pub column: u32,
 }
 
 #[napi(object)]
@@ -485,6 +504,7 @@ impl NativeLayout {
             Either::B(text) => parse(&text, file.as_deref(), &mut |_, _| None),
         };
         let report = diagnostics(&sheet);
+        let fonts = sheet.font_faces.len() as u32;
         let mut state = self.owner.styles.borrow_mut();
         let cascade = state.styles.cascade_mut();
         let sheet_id = match at {
@@ -495,7 +515,38 @@ impl NativeLayout {
         Ok(NativeSheet {
             id: (state.sheets.len() - 1) as u32,
             diagnostics: report,
+            fonts,
         })
+    }
+    #[napi]
+    pub fn css_font_faces(&self) -> Result<Vec<NativeFontFace>> {
+        self.owner.check()?;
+        Ok(self
+            .owner
+            .styles
+            .borrow()
+            .styles
+            .cascade()
+            .font_faces()
+            .map(|(id, index, sheet, f)| NativeFontFace {
+                key: format!("{}:{index}", id.0),
+                family: sheet.str(f.family).to_string(),
+                sources: f
+                    .sources
+                    .iter()
+                    .map(|s| NativeFontSource {
+                        name: sheet.str(s.name).to_string(),
+                        local: s.local,
+                        format: s.format.map(|a| sheet.str(a).to_string()),
+                    })
+                    .collect(),
+                weight: f.weight.iter().map(|w| u32::from(*w)).collect(),
+                italic: f.italic,
+                file: f.file.map(|a| sheet.str(a).to_string()),
+                line: f.line,
+                column: f.column,
+            })
+            .collect())
     }
     /// Remove a sheet added before; false if it was removed already.
     #[napi]
