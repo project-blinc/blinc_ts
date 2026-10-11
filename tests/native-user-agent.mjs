@@ -473,6 +473,41 @@ try {
       host.dispose();
     }
   }
+  // Under the pointer a button lifts a pixel: the row just above its top edge, the page's at rest,
+  // is the button's when it is hovered.
+  {
+    const host = Host.create(native);
+    try {
+      const state = new ThemeState(context, neutralTheme, { scheme: 'light' });
+      state.attach(host.layout);
+      addUserAgent(host.layout);
+      host.root.setAttribute('style', 'padding: 40px');
+      const button = el(host, 'button', ['Lift']);
+      host.root.appendChild(button);
+      let clock = 0;
+      const settle = () => {
+        host.compute(W, H);
+        host.layout.tickMotion((clock += 1));
+        host.layout.tickMotion((clock += 1000));
+        host.compute(W, H);
+      };
+      settle();
+      const [x, y, w, h] = button.bounds();
+      const above = (pixels) => pixel(pixels, x + w / 2, Math.floor(y) - 1);
+      const rest = above(await capture(host));
+      host.input.pointerMove(x + w / 2, y + h / 2);
+      settle();
+      const lifted = above(await capture(host));
+      const fill = pixel(await capture(host), x + w / 2, y + h / 2);
+      assert.ok(!near(rest, fill, 30), `at rest the row above is the page: ${rest}`);
+      assert.ok(
+        near(lifted, fill, 30),
+        `hovered, the button is drawn over it: ${lifted} as ${fill}`,
+      );
+    } finally {
+      host.dispose();
+    }
+  }
   // A code, kbd or mark in a paragraph is kept whole, on one line: one with a space in it is as
   // tall as one without, at a font size that does not fall on a whole pixel.
   {

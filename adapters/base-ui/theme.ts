@@ -24,8 +24,8 @@ import {
 
 const light: ColorTokens = {
   primary: hex(0x0a0a0a),
-  primaryHover: hex(0x262626),
-  primaryActive: hex(0x404040),
+  primaryHover: hex(0x383838),
+  primaryActive: hex(0x262626),
   secondary: hex(0x595959),
   secondaryHover: hex(0x2e2e2e),
   secondaryActive: hex(0x0a0a0a),
@@ -65,8 +65,8 @@ const light: ColorTokens = {
 
 const dark: ColorTokens = {
   primary: hex(0xffffff),
-  primaryHover: hex(0xe6e6e6),
-  primaryActive: hex(0xcccccc),
+  primaryHover: hex(0xdedede),
+  primaryActive: hex(0xc7c7c7),
   secondary: hex(0xb3b3b3),
   secondaryHover: hex(0xe6e6e6),
   secondaryActive: hex(0xffffff),
@@ -113,31 +113,14 @@ const shadow = (y: number, blur: number, spread: number, alpha: string): ShadowL
   color: ink(alpha),
 });
 
-/** Soft stacked shadows in light; dark separates by border and has none. */
+/** Soft shadows in light, a close one and a far one, deeper with height; dark separates by border. */
 const lightShadows: ShadowTokens = Object.freeze({
-  sm: [shadow(1, 1, 0, '0a'), shadow(2, 1, -1, '0a'), shadow(1, 3, 0, '0a')],
-  default: [shadow(1, 1, 0, '0a'), shadow(2, 1, -1, '0a'), shadow(1, 3, 0, '0a')],
-  md: [shadow(1, 1, 0, '0a'), shadow(1, 3, -1, '0a'), shadow(4, 8, -2, '0a')],
-  lg: [
-    shadow(1, 1, 0, '0a'),
-    shadow(2, 6, -1, '0a'),
-    shadow(6, 12, -3, '0a'),
-    shadow(8, 16, -4, '0a'),
-  ],
-  xl: [
-    shadow(1, 1, 0, '0a'),
-    shadow(2, 4, -1, '0a'),
-    shadow(4, 8, -2, '0a'),
-    shadow(12, 32, -6, '1f'),
-    shadow(20, 48, -10, '0a'),
-  ],
-  '2xl': [
-    shadow(10, 32, 0, '3d'),
-    shadow(1, 1, 0, '0a'),
-    shadow(4, 6, 0, '14'),
-    shadow(1, 1, 0, '14'),
-    shadow(24, 68, 0, '29'),
-  ],
+  sm: [shadow(1, 2, 0, '14'), shadow(1, 3, 0, '0f')],
+  default: [shadow(1, 2, 0, '14'), shadow(2, 4, -1, '14')],
+  md: [shadow(2, 4, -1, '17'), shadow(4, 10, -2, '1f')],
+  lg: [shadow(4, 8, -2, '17'), shadow(12, 24, -6, '29')],
+  xl: [shadow(8, 16, -4, '1a'), shadow(24, 48, -12, '38')],
+  '2xl': [shadow(12, 24, -6, '1f'), shadow(32, 64, -12, '47')],
   inner: [{ ...shadow(1, 2, 0, '14'), inset: true }],
   none: [],
 });
