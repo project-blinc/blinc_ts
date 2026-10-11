@@ -1,1 +1,1 @@
-{"author":{"id":"a51b5961cc6de343a64125d8eb6a0f965aa434020b9c46ed932a1bbf143eb532"},"ops":[{"type":5,"timestamp":1791696002,"nonce":"yMLWmROpc4+efIuzTBy7XSd4QLg=","added":["bug","area:layout","area:ui"],"removed":null}]}
+{"author":{"id":"a51b5961cc6de343a64125d8eb6a0f965aa434020b9c46ed932a1bbf143eb532"},"ops":[{"type":3,"timestamp":1791696012,"nonce":"BJi+oheFzqKxlUbZWrCVRvtUJJ4=","message":"Fixed in 4948f3d for the flow tags (li, p, td and the rest). A div or span of several texts is still not a flow; the wiki's examples use single texts there.","files":null}]}
