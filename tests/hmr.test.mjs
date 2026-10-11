@@ -73,10 +73,13 @@ if (import.meta.hot) {
       server: {
         host: '127.0.0.1',
         port: 0,
-        watch: { usePolling: process.platform === 'darwin', interval: 20 },
+        // No file watcher: each save is reported to Vite as its watcher would, so the test is of
+        // what HMR does with a change, not of how promptly a platform's watcher sees one.
+        watch: null,
       },
     });
     await server.listen();
+    assert.equal(server.watcher.constructor.name, 'NoopWatcher', 'the plugin keeps watching off');
     const environment = server.environments.blinc;
     assert.ok(isRunnableDevEnvironment(environment));
     await environment.runner.import(entry);
@@ -87,6 +90,7 @@ if (import.meta.hot) {
       ['third', 2],
     ]) {
       await save(entry, source(label));
+      server.watcher.emit('change', entry);
       await waitFor(
         () => state.labels.at(-1) === label && state.updates >= cleanupCount,
         label + ' completed HMR update',
@@ -98,9 +102,6 @@ if (import.meta.hot) {
       assert.equal(state.listeners.size, 1);
       assert.equal([...state.listeners][0](), label);
       assert.equal(state.session.host, initialHost);
-      // Vite's watcher suppresses duplicate change events for 50 ms.
-      // Separate synthetic editor saves after the update has completed.
-      await delay(75);
     }
 
     environment.hot.send({ type: 'full-reload', path: '*' });

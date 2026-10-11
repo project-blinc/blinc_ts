@@ -21,16 +21,19 @@ export function blinc(options: BlincViteOptions = {}): Plugin {
       // The app's own build settings for this environment stand; these fill in what it leaves out.
       const own = user.environments?.[environment]?.build ?? {};
       return {
-        server: {
-          watch: {
-            ignored: [
-              '**/.blinc/**',
-              '**/.shader-build/**',
-              '**/native/target/**',
-              '**/native/*.node',
-            ],
+        // What the SDK builds is not watched; an app that turns watching off keeps it off.
+        ...(user.server?.watch !== null && {
+          server: {
+            watch: {
+              ignored: [
+                '**/.blinc/**',
+                '**/.shader-build/**',
+                '**/native/target/**',
+                '**/native/*.node',
+              ],
+            },
           },
-        },
+        }),
         environments: {
           [environment]: {
             consumer: 'server',
