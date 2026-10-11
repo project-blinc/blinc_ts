@@ -10,11 +10,11 @@ import { save } from './save.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
-async function waitFor(predicate, description) {
+async function waitFor(predicate, description, detail = () => '') {
   const deadline = Date.now() + 8000;
   while (!predicate()) {
     if (Date.now() > deadline) {
-      throw new Error('Timed out waiting for ' + description);
+      throw new Error(`Timed out waiting for ${description} ${detail()}`);
     }
     await delay(20);
   }
@@ -90,6 +90,7 @@ if (import.meta.hot) {
       await waitFor(
         () => state.labels.at(-1) === label && state.updates >= cleanupCount,
         label + ' completed HMR update',
+        () => JSON.stringify({ ...state, listeners: state.listeners.size, session: undefined }),
       );
       assert.equal(state.created, 1);
       assert.equal(state.closed, 0);
