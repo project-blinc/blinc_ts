@@ -40,6 +40,7 @@ function fixture(options = {}) {
     queue: () => queue,
     configureSurfaceWith: (_, config) => configured.push(config),
     takeError: () => null,
+    poll() {},
     encoder: () =>
       resource('encoder', { submit() {}, passColour() {}, passBegin() {}, renderEnd() {} }),
   });
