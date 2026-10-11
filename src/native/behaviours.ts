@@ -523,6 +523,7 @@ export class Behaviours {
   /** The host is going: nothing may fire after it. */
   dispose(): void {
     this.textFields.dispose();
+    this.tables.dispose();
   }
 
   /** Before the tick's writes go: put right what changed. */

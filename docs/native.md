@@ -805,15 +805,23 @@ doing, so it updates `:valid` and `:invalid` but not the user states.
 
 **Tables.** Every row of a `table`, its own and those in `thead`, `tbody` and `tfoot`, is a
 grid of the same columns, so cells line up down the table: as many as the widest row has
-counting each cell's `colspan`, or as the table's `col`s and `colgroup`s stand for, if more.
+counting occupied slots from `colspan` and `rowspan`, or as the table's `col`s and
+`colgroup`s stand for, if more.
 A column a `col` gives a width has it: `width="120"` (pixels), `width="25%"` or `width="2*"` (twice
 a share of what is left), a `col`'s `span` and a `colgroup`'s `span` without `col`s standing for
 that many. Any other column is sized by its cells, as a browser's automatic table layout does:
 never narrower than the widest thing in it that cannot break, and sharing the rest of the width in
 proportion to what its cells would take on one line, or, beside columns given shares, taking up to
 that and leaving the rest to them. Every cell is an inline flow, which measures what it holds.
-A cell's `colspan` spans columns. Rows and cells that come or go, and `colspan`, `span` and
-`width` that change, lay the columns out again before the next frame. `rowspan` is not supported.
+A cell's `colspan` spans columns. `rowspan` shares tracks across rows of its section;
+`rowspan="0"` reaches the section's last row, and larger spans stop there. Cells beside a
+span occupy the next free columns. Their content contributes to the combined row height.
+The native layout shares a grid while cells keep their original row parents for CSS selectors,
+hover, focus and event bubbling. Ordinary row backgrounds stay below spanning cells; row
+clips, transforms and group opacity still apply through their authored ancestry.
+Rows and cells that come or go, become hidden, and `colspan`, `rowspan`, `span` and `width`
+that change, lay the columns out again before the next frame. `tests/native-table-rowspan.mjs`
+checks runtime and compiled CSS pixels at 1x/2x, hits, live edits, row groups and cleanup.
 
 **Selects.** A `select` shows the label of its chosen option (its `label` attribute, else
 its text) with an owned `.value` and `.chevron`, and keeps its `option`s, and the ones in

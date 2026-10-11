@@ -286,8 +286,9 @@ export const elementsPages: readonly WikiPage[] = [
       <Page title="Tables and lists" lead="Columns line up, and markers keep count.">
         <p>
           Every row of a table is a grid of the table's columns, so they line up, with{' '}
-          <code>colspan</code>. A list item has a marker by depth, or a number from{' '}
-          <code>start</code>, kept right as items come and go.
+          <code>colspan</code> across columns and <code>rowspan</code> across rows of a section. A
+          list item has a marker by depth, or a number from <code>start</code>, kept right as items
+          come and go.
         </p>
         <Example name="tables" view={Tables} />
       </Page>

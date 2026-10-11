@@ -207,6 +207,7 @@ export interface NativeLayoutNode {
 }
 /** @internal */
 export interface NativeLayout extends BrushFactory {
+  setGridRows(group: NativeLayoutNode, rows: NativeLayoutNode[]): void;
   setImageSource(source: string, fit: ImageFit, slot: number | null): void;
   createText(content: string, text: TextStyle, style: NativeLayoutStyle): NativeLayoutNode;
   applyCommands(
@@ -683,6 +684,16 @@ export class Layout {
         return;
       }
     }
+  }
+
+  /** @internal Shared native grid projection, retaining authored row/cell ancestry. */
+  setGridRows(group: LayoutNode, rows: readonly LayoutNode[]): void {
+    this.flush();
+    this.#native.setGridRows(
+      LayoutNode.unwrap(group, this),
+      rows.map((row) => LayoutNode.unwrap(row, this)),
+    );
+    this.changed('layout');
   }
 
   // --- CSS, run by the native engine ---

@@ -174,6 +174,16 @@ impl NativeLayout {
         Ok(styles.motion.pending())
     }
     #[napi]
+    pub fn set_grid_rows(
+        &self,
+        group: &NativeLayoutNode,
+        rows: Vec<ClassInstance<NativeLayoutNode>>,
+    ) -> Result<()> {
+        self.owner.check()?;
+        let rows: Vec<_> = rows.iter().map(|row| row.node).collect();
+        self.owner.tree.borrow_mut().set_grid_rows(group.node, &rows).map_err(error)
+    }
+    #[napi]
     /// Forget the layouts layout animations have measured, so the next one is where each starts.
     pub fn rebase_motion(&self) -> Result<()> {
         self.owner.check()?;

@@ -14,11 +14,14 @@ export default function Tables() {
             <td>value</td>
           </tr>
           <tr>
-            <td colspan="2">A cell can span columns</td>
+            <td rowspan="2">Dialog</td>
+            <td>open</td>
           </tr>
           <tr>
-            <td>Dialog</td>
-            <td>open</td>
+            <td>focus returns to its trigger</td>
+          </tr>
+          <tr>
+            <td colspan="2">A cell can span columns</td>
           </tr>
         </tbody>
       </table>

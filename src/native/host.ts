@@ -1437,6 +1437,7 @@ export class Host {
       if (!(node instanceof HostElement)) {
         continue;
       }
+      this.behaviours.tables.restyled(node, before, now);
       if (node === this.root) {
         this.#rootShape(now);
       }
