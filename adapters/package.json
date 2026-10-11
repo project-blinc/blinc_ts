@@ -13,7 +13,7 @@
   },
   "scripts": {
     "build": "tsc -p .",
-    "test": "npm run build && node test/adapters.mjs && node test/jsx-reactive.mjs && node test/base-ui-theme.mjs && node test/base-ui-components.mjs && node test/base-ui-overlays.mjs && node test/base-ui-showcase.mjs && node test/base-ui-tokens.mjs && node test/base-ui-motion.mjs && node test/wiki.mjs && node test/wiki-hmr.mjs",
+    "test": "npm run build && node test/adapters.mjs && node test/jsx-reactive.mjs && node test/base-ui-theme.mjs && node test/base-ui-components.mjs && node test/base-ui-overlays.mjs && node test/base-ui-showcase.mjs && node test/base-ui-tokens.mjs && node test/base-ui-motion.mjs && node test/wiki.mjs && node test/wiki-hmr.mjs && node --expose-gc test/wiki-stress.mjs",
     "wiki": "npm run build && node dist/wiki/main.js",
     "wiki:dev": "npm run build && node wiki/dev.mjs"
   },
