@@ -207,6 +207,13 @@ export const elementsPages: readonly WikiPage[] = [
           and they take input: a press anywhere on a wrapped link is a press on the link.
         </p>
         <p>
+          A word too long for its line runs past the box. <code>overflow-wrap: anywhere</code> or{' '}
+          <code>break-word</code> (also written <code>word-wrap</code>), or{' '}
+          <code>word-break: break-all</code>, breaks it inside, however many lines it takes, and
+          lets the box be narrower than its longest word. They are inherited, and text under one is
+          laid out as a flow so it can break.
+        </p>
+        <p>
           Not done yet: hyphenation, <code>white-space: pre-wrap</code> inside a paragraph,{' '}
           <code>float</code>, and the raised baseline of <code>sub</code> and <code>sup</code>.
         </p>

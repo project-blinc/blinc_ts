@@ -125,6 +125,28 @@ function placing(host: Host, element: HostElement): 'atomic' | 'block' | 'inline
   return display === 'inline' ? 'inline' : undefined;
 }
 
+/**
+ * Whether a word too long for its line breaks inside, where `element` is: `overflow-wrap`
+ * (or its old name `word-wrap`) of `anywhere` or `break-word`, or `word-break` of `break-all` or
+ * `break-word`, from the nearest element that says either, as they are inherited.
+ */
+export function breaksWords(host: Host, element: HostElement): boolean {
+  for (let node: HostNode | null = element; node; node = node.parentNode) {
+    if (!(node instanceof ElementClass)) {
+      continue;
+    }
+    const declared = host.declaredOf(node);
+    const wrap = (declared.get('overflow-wrap') ?? declared.get('word-wrap'))?.trim().toLowerCase();
+    const brk = declared.get('word-break')?.trim().toLowerCase();
+    if (wrap !== undefined || brk !== undefined) {
+      return (
+        wrap === 'anywhere' || wrap === 'break-word' || brk === 'break-all' || brk === 'break-word'
+      );
+    }
+  }
+  return false;
+}
+
 /** Where a line of a flow's text starts: wide enough that nothing wraps. */
 const UNBOUNDED = 1_000_000;
 
@@ -430,10 +452,11 @@ class Flow {
     const { native } = this.#flows;
     const items = this.#items();
     const align = this.#align();
-    const key = JSON.stringify([items, align]);
+    const breakWords = breaksWords(this.#flows.host, this.root);
+    const key = JSON.stringify([items, align, breakWords]);
     let natural = this.#natural;
     if (key !== this.#key) {
-      const n = native.layoutInline(items, UNBOUNDED, { align: 'left' });
+      const n = native.layoutInline(items, UNBOUNDED, { align: 'left', breakWords });
       natural = { max: n.maxContent, min: n.minContent };
     }
     const width = round(natural.max);
@@ -456,7 +479,7 @@ class Flow {
     const laidKey = `${key}@${laidWidth}`;
     let laid = this.#laid;
     if (laidKey !== this.#laidFor) {
-      laid = native.layoutInline(items, laidWidth, { align });
+      laid = native.layoutInline(items, laidWidth, { align, breakWords });
     }
     const height = round(laid?.height ?? 0);
     const left = at[0]! - origin[0]!;
@@ -677,6 +700,22 @@ export class InlineFlows {
     }
   }
 
+  /**
+   * What `node` and everything under it is laid out by changed, as a property they inherit is: each
+   * element under it may be a flow now, or no longer be.
+   */
+  touchTree(node: HostElement): void {
+    const walk = (n: HostElement) => {
+      this.touch(n);
+      for (let child = n.firstChild; child; child = child.nextSibling) {
+        if (child instanceof ElementClass) {
+          walk(child);
+        }
+      }
+    };
+    walk(node);
+  }
+
   /** A style changed at `node`, which a flow around it may lay out by; nothing to do where there are none. */
   restyled(node: HostNode | null): void {
     if (this.#flows.size > 0) {
@@ -760,8 +799,10 @@ export class InlineFlows {
     if (root.tag === 'td' || root.tag === 'th') {
       return root.firstChild !== null;
     }
+    // A word that may break inside is the flow's to break: plain text wraps at spaces only.
+    const breaks = texts >= 1 && breaksWords(this.host, root);
     if (FLOW_TAGS.has(root.tag)) {
-      return inline || texts >= 2;
+      return inline || texts >= 2 || breaks;
     }
     // Any other block that holds text mixed with more text or an inline element is a paragraph
     // too, as a div of prose is. One that holds elements alone, or an inline element or a control
@@ -769,7 +810,11 @@ export class InlineFlows {
     const how = placing(this.host, root);
     const blocky = !INLINE_TAGS.has(root.tag) || how === 'atomic' || how === 'block';
     return (
-      !NOT_FLOWS.has(root.tag) && blocky && how !== 'inline' && texts >= 1 && (inline || texts >= 2)
+      !NOT_FLOWS.has(root.tag) &&
+      blocky &&
+      how !== 'inline' &&
+      texts >= 1 &&
+      (inline || texts >= 2 || breaks)
     );
   }
 

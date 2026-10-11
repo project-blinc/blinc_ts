@@ -143,6 +143,9 @@ const otherProperties: ReadonlySet<string> = new Set([
   'text-align',
   'list-style-type',
   'object-fit',
+  'overflow-wrap',
+  'word-wrap',
+  'word-break',
   ...Object.keys(shapeProperties),
 ]);
 
@@ -1322,6 +1325,14 @@ export class Host {
         this.#scrollbar(node, now);
       }
       this.inlineFlows?.restyled(node);
+      // What decides whether an element is a flow, or how its words break, changed: it may now be one.
+      if (
+        ['display', 'overflow-wrap', 'word-wrap', 'word-break'].some(
+          (name) => now.get(name) !== before.get(name),
+        )
+      ) {
+        this.inlineFlows?.touchTree(node);
+      }
       this.behaviours.restyled(node);
       for (const name of ['overflow', 'overflow-x', 'overflow-y']) {
         if (now.get(name) !== before.get(name)) {
