@@ -1,1 +1,1 @@
-{"author":{"id":"a51b5961cc6de343a64125d8eb6a0f965aa434020b9c46ed932a1bbf143eb532"},"ops":[{"type":5,"timestamp":1791727863,"nonce":"kED9MzYyxpQjht0cGRSPKwJSVVY=","added":["debt","priority:high","area:layout","area:abi"],"removed":null}]}
+{"author":{"id":"a51b5961cc6de343a64125d8eb6a0f965aa434020b9c46ed932a1bbf143eb532"},"ops":[{"type":3,"timestamp":1791731097,"nonce":"zZmsAAgkyTR3diyoligfY6YLSCI=","message":"Built: blinc_abi branch inline-display (2328cca) and blinc_ts's side, committed locally, not pushed until the engine branches land.","files":null}]}
