@@ -53,6 +53,24 @@ interface Region {
   width: number;
   height: number;
 }
+/** A layer of the frame: its records, how deep it is, and where it is drawn. */
+interface Layer {
+  /** Its records: the one that opens it and the one that composites it. */
+  begin: number;
+  end: number;
+  /** How many layers hold it, itself included. */
+  level: number;
+  /** It holds glass or a canvas, so it is drawn in its place, as large as the frame. */
+  full: boolean;
+  /** What it covers on screen. */
+  region: Region;
+  /** Where screen pixels start in the texture it is packed into, and where it sits there. */
+  into: Region;
+  place: Region;
+  blurred: boolean;
+  shadowed: boolean;
+}
+const whole = (width: number, height: number): Region => ({ x: 0, y: 0, width, height });
 interface Texture {
   texture: gpu.GpuTexture;
   view: gpu.GpuTextureView;
@@ -70,6 +88,8 @@ const BOUNDS = fields.bounds * 4;
 const COLOR = fields.color * 4;
 const COLOR2 = fields.color2 * 4;
 /** Image sizes are bucketed at twelve steps an octave of scale, so a zoom reuses rasterizations. */
+/** The tallest texture packed layers are drawn into, within what every GPU allows. */
+const MAX_PACK = 8192;
 /** Floats between uniform slots: 256 bytes, the alignment a dynamic offset needs. */
 const SLOT_FLOATS = 64;
 /** Layer textures grow in steps of this many pixels, so a moving layer does not remake one a frame. */
@@ -138,6 +158,9 @@ export class SceneRenderer {
     Map<gpu.GpuTextureView, gpu.GpuBindGroup>
   >();
   readonly #layers: Texture[] = [];
+  /** Packed layers at each depth: their content, their shadows and their blurred rows. */
+  readonly #packed: [Texture[], Texture[], Texture[]] = [[], [], []];
+  readonly #packedUsed: number[] = [];
   readonly #dummy: Texture;
   readonly #glyphs: [GlyphTexture, GlyphTexture];
   #records = new Float32Array(0);
@@ -594,14 +617,16 @@ export class SceneRenderer {
       this.#layout.readDisplayList(this.#records);
       this.#resolveImages(info.count);
     }
-    // Each layer is drawn into a texture the size of what it covers, from where it starts on
-    // screen; one that holds glass or a canvas, which read or draw the screen, covers it all.
-    const layers = new Map<number, Region>();
-    const open: { index: number; full: boolean }[] = [];
+    // Each layer is drawn into a texture the size of what it covers. One that holds glass or a
+    // canvas reads or draws the screen, so it is drawn in its place, into a texture as large as
+    // the frame. Every other layer is drawn before the frame, packed beside the others at its
+    // depth: one pass a depth for them all, and one for their shadows and one for their blur.
+    const layers = new Map<number, Layer>();
+    const open: Layer[] = [];
     const deepest: [number, number][] = [];
     let rowsSize: [number, number] = [0, 0];
     let shadowSize: [number, number] = [0, 0];
-    let slots = 2;
+    let slots = 4;
     for (let i = 0; i < info.count; i++) {
       const at = i * R;
       const kind = this.#records[at + KIND]!;
@@ -618,30 +643,31 @@ export class SceneRenderer {
         throw new Error(`Unsupported display-list primitive ${kind}`);
       }
       if (kind === 40) {
-        open.push({ index: i, full: false });
-        slots++;
+        const layer: Layer = {
+          begin: i,
+          end: -1,
+          level: open.length + 1,
+          full: false,
+          region: whole(width, height),
+          into: whole(width, height),
+          place: whole(width, height),
+          blurred: false,
+          shadowed: false,
+        };
+        layers.set(i, layer);
+        open.push(layer);
       } else if (kind === 41) {
         const layer = open.pop();
         if (!layer) {
           throw new Error('Unbalanced display-list layers');
         }
-        const region = layer.full
-          ? { x: 0, y: 0, width, height }
-          : this.#region(at, width, height, scale);
-        layers.set(layer.index, region);
-        const d = open.length;
-        const need = deepest[d] ?? [0, 0];
-        deepest[d] = [Math.max(need[0], region.width), Math.max(need[1], region.height)];
-        if (this.#records[at + fields.color * 4]! > 0) {
-          rowsSize = [Math.max(rowsSize[0], region.width), Math.max(rowsSize[1], region.height)];
+        layer.end = i;
+        layer.blurred = this.#records[at + fields.color * 4]! > 0;
+        layer.shadowed = this.#records[at + fields.via * 4 + 3]! > 0;
+        slots += 7;
+        if (!layer.full) {
+          layer.region = this.#region(at, width, height, scale);
         }
-        if (this.#records[at + fields.via * 4 + 3]! > 0) {
-          shadowSize = [
-            Math.max(shadowSize[0], region.width),
-            Math.max(shadowSize[1], region.height),
-          ];
-        }
-        slots += 3;
       } else if (kind === 42 || kind === 33) {
         for (const layer of open) {
           layer.full = true;
@@ -655,6 +681,75 @@ export class SceneRenderer {
     if (open.length !== 0) {
       throw new Error('Unbalanced display-list layers');
     }
+    // Shelves of packed layers, a texture a depth as wide as the frame.
+    let packs: {
+      layers: Layer[];
+      width: number;
+      height: number;
+      x: number;
+      y: number;
+      shelf: number;
+    }[] = [];
+    const tallest = Math.min(MAX_PACK, height * 4);
+    // As wide as the widest layer at a depth, and about as wide as tall for many small ones.
+    const across: number[] = [];
+    for (const layer of layers.values()) {
+      if (!layer.full) {
+        const d = layer.level - 1;
+        const { width: w, height: h } = layer.region;
+        across[d] = Math.max(
+          across[d] ?? 0,
+          w,
+          Math.ceil(Math.sqrt((across[d] ?? 0) ** 2 + w * h)),
+        );
+      }
+    }
+    for (const layer of layers.values()) {
+      if (layer.full) {
+        continue;
+      }
+      const wide = Math.min(width, Math.ceil(across[layer.level - 1]! / LAYER_STEP) * LAYER_STEP);
+      const pack = (packs[layer.level - 1] ??= {
+        layers: [],
+        width: wide,
+        height: 0,
+        x: 0,
+        y: 0,
+        shelf: 0,
+      });
+      const { width: w, height: h } = layer.region;
+      if (pack.x + w > pack.width) {
+        pack.y += pack.shelf + 1;
+        pack.x = 0;
+        pack.shelf = 0;
+      }
+      layer.place = { x: pack.x, y: pack.y, width: w, height: h };
+      layer.into = { x: layer.region.x - pack.x, y: layer.region.y - pack.y, width: w, height: h };
+      pack.x += w + 1;
+      pack.shelf = Math.max(pack.shelf, h);
+      pack.height = Math.max(pack.height, pack.y + h);
+      pack.layers.push(layer);
+    }
+    if (packs.some((pack) => pack && pack.height > tallest)) {
+      // More than a texture holds: every layer is drawn in its place instead.
+      packs = [];
+      for (const layer of layers.values()) {
+        layer.full = true;
+      }
+    }
+    for (const layer of layers.values()) {
+      if (layer.full) {
+        const d = layer.level - 1;
+        const need = deepest[d] ?? [0, 0];
+        deepest[d] = [Math.max(need[0], width), Math.max(need[1], height)];
+        if (layer.blurred) {
+          rowsSize = [width, height];
+        }
+        if (layer.shadowed) {
+          shadowSize = [width, height];
+        }
+      }
+    }
     const atlasBytes = this.#syncGlyphs();
     if (this.#frame?.width !== width || this.#frame.height !== height) {
       this.#clearGroups();
@@ -665,6 +760,12 @@ export class SceneRenderer {
         this.#drop(layer);
       }
       this.#layers.length = 0;
+      for (const set of this.#packed) {
+        for (const texture of set) {
+          this.#drop(texture);
+        }
+        set.length = 0;
+      }
       this.#rows = undefined;
       this.#shadow = undefined;
       this.#frame = this.#texture(width, height, gpu.TextureFormat.Rgba8unorm, true);
@@ -681,8 +782,26 @@ export class SceneRenderer {
       this.#shadowUsed = now;
     }
     for (let d = 0; d < deepest.length; d++) {
-      this.#layers[d] = this.#fit(this.#layers[d], deepest[d]!, width, height);
-      this.#layerUsed[d] = now;
+      if (deepest[d]) {
+        this.#layers[d] = this.#fit(this.#layers[d], deepest[d]!, width, height);
+        this.#layerUsed[d] = now;
+      }
+    }
+    const [content, shadows, rows] = this.#packed;
+    for (let d = 0; d < packs.length; d++) {
+      const pack = packs[d];
+      if (!pack) {
+        continue;
+      }
+      const size: [number, number] = [pack.width, pack.height];
+      content[d] = this.#fit(content[d], size, width, tallest);
+      if (pack.layers.some((l) => l.shadowed)) {
+        shadows[d] = this.#fit(shadows[d], size, width, tallest);
+      }
+      if (pack.layers.some((l) => l.blurred)) {
+        rows[d] = this.#fit(rows[d], size, width, tallest);
+      }
+      this.#packedUsed[d] = now;
     }
     // What no recent frame needed goes; a frame that needs it again makes it again.
     this.#release(now - KEEP_FRAMES);
@@ -696,9 +815,9 @@ export class SceneRenderer {
       );
     }
     const frame = this.#frame;
-    const whole: Region = { x: 0, y: 0, width, height };
+    const screen = whole(width, height);
     let used = 0;
-    /** A uniform slot for a pass into `texture` at `into`, reading what lies at `from`. */
+    /** A uniform slot for drawing into `texture` at `into`, reading what lies at `from`. */
     const slot = (texture: Texture, into: Region, from: Region = into): number => {
       const data = this.#slotData;
       const o = used * SLOT_FLOATS;
@@ -712,25 +831,102 @@ export class SceneRenderer {
       data[o + 7] = into.y - from.y;
       return used++;
     };
-    const stack: { texture: Texture; region: Region }[] = [{ texture: frame, region: whole }];
-    let current = stack[0]!;
-    const clear = options.clear ?? [0, 0, 0, 0];
-    this.#begin(encoder, frame.view, slot(frame, whole), clear);
     let drawCalls = 0;
     let canvasCalls = 0;
     this.#canvasState.drawCalls = 0;
+    /** Draw a packed layer's composite, `child`, into what is being drawn at `into`. */
+    const composite = (texture: Texture, into: Region, child: Layer) => {
+      const d = child.level - 1;
+      this.#use(slot(texture, into, child.into));
+      this.#draw(
+        encoder,
+        41,
+        child.end,
+        1,
+        child.blurred ? rows[d]!.view : content[d]!.view,
+        child.shadowed ? shadows[d]!.view : this.#dummy.view,
+      );
+      drawCalls++;
+    };
+    /** Draw records from `i` to `end`, where only packed layers are nested, into `texture` at `into`. */
+    const run = (i: number, end: number, texture: Texture, into: Region, base: number) => {
+      while (i < end) {
+        const kind = this.#records[i * R + KIND]!;
+        if (kind === 40) {
+          const child = layers.get(i)!;
+          composite(texture, into, child);
+          this.#use(base);
+          i = child.end + 1;
+          continue;
+        }
+        let stop = i + 1;
+        while (stop < end && this.#records[stop * R + KIND] === kind) {
+          stop++;
+        }
+        this.#draw(encoder, kind, i, stop - i, this.#dummy.view);
+        drawCalls++;
+        i = stop;
+      }
+    };
+    // Packed layers first, the deepest first, so each is ready before what holds it is drawn.
+    for (let d = packs.length - 1; d >= 0; d--) {
+      const pack = packs[d];
+      if (!pack) {
+        continue;
+      }
+      const texture = content[d]!;
+      this.#begin(encoder, texture.view, slot(texture, screen), [0, 0, 0, 0]);
+      for (const layer of pack.layers) {
+        const base = slot(texture, layer.into);
+        this.#use(base);
+        const p = layer.place;
+        encoder.renderSetScissorRect(p.x, p.y, p.width, p.height);
+        run(layer.begin + 1, layer.end, texture, layer.into, base);
+      }
+      encoder.renderEnd();
+      for (const [kind, scratch, flag] of [
+        [-4, shadows[d], 'shadowed'],
+        [-3, rows[d], 'blurred'],
+      ] as const) {
+        const due = pack.layers.filter((l) => l[flag]);
+        if (due.length === 0) {
+          continue;
+        }
+        this.#begin(encoder, scratch!.view, slot(scratch!, screen), [0, 0, 0, 0]);
+        for (const layer of due) {
+          this.#use(slot(scratch!, layer.into));
+          const p = layer.place;
+          encoder.renderSetScissorRect(p.x, p.y, p.width, p.height);
+          this.#draw(encoder, kind, layer.end, 1, texture.view);
+          drawCalls++;
+        }
+        encoder.renderEnd();
+      }
+    }
+    // Then the frame, with layers that hold glass or a canvas drawn in their place.
+    const stack: { texture: Texture; region: Region; base: number }[] = [];
+    let current = { texture: frame, region: screen, base: slot(frame, screen) };
+    const clear = options.clear ?? [0, 0, 0, 0];
+    this.#begin(encoder, frame.view, current.base, clear);
     for (let i = 0; i < info.count;) {
       const kind = this.#records[i * R + KIND]!;
       if (kind === 40) {
+        const layer = layers.get(i)!;
+        if (!layer.full) {
+          composite(current.texture, current.region, layer);
+          this.#use(current.base);
+          i = layer.end + 1;
+          continue;
+        }
         encoder.renderEnd();
-        const region = layers.get(i)!;
-        current = { texture: this.#layers[stack.length - 1]!, region };
         stack.push(current);
-        this.#begin(encoder, current.texture.view, slot(current.texture, region), [0, 0, 0, 0]);
+        const texture = this.#layers[layer.level - 1]!;
+        current = { texture, region: screen, base: slot(texture, screen) };
+        this.#begin(encoder, texture.view, current.base, [0, 0, 0, 0]);
         i++;
       } else if (kind === 41) {
         encoder.renderEnd();
-        const inner = stack.pop()!;
+        const inner = current;
         const blurred = this.#records[i * R + fields.color * 4]! > 0;
         const shadowed = this.#records[i * R + fields.via * 4 + 3]! > 0;
         if (shadowed) {
@@ -745,7 +941,7 @@ export class SceneRenderer {
           encoder.renderEnd();
           drawCalls++;
         }
-        current = stack[stack.length - 1]!;
+        current = stack.pop()!;
         this.#begin(
           encoder,
           current.texture.view,
@@ -759,14 +955,15 @@ export class SceneRenderer {
           blurred ? this.#rows!.view : inner.texture.view,
           shadowed ? this.#shadow!.view : this.#dummy.view,
         );
+        this.#use(current.base);
         drawCalls++;
         i++;
       } else if (kind === 42) {
         encoder.renderEnd();
-        this.#begin(encoder, this.#rows!.view, slot(this.#rows!, whole), [0, 0, 0, 0]);
+        this.#begin(encoder, this.#rows!.view, slot(this.#rows!, screen), [0, 0, 0, 0]);
         this.#draw(encoder, -1, i, 1, current.texture.view);
         encoder.renderEnd();
-        this.#begin(encoder, current.texture.view, slot(current.texture, current.region));
+        this.#begin(encoder, current.texture.view, current.base);
         this.#draw(encoder, 42, i, 1, this.#rows!.view);
         drawCalls += 2;
         i++;
@@ -784,7 +981,7 @@ export class SceneRenderer {
       }
     }
     encoder.renderEnd();
-    this.#begin(encoder, target, slot(frame, whole), [0, 0, 0, 0]);
+    this.#begin(encoder, target, slot(frame, screen), [0, 0, 0, 0]);
     this.#draw(encoder, -2, 0, 1, frame.view);
     encoder.renderEnd();
     this.#queue.writeBuffer(
@@ -810,6 +1007,11 @@ export class SceneRenderer {
     let bytes = rgba(this.#frame) + rgba(this.#rows) + rgba(this.#shadow);
     for (const layer of this.#layers) {
       bytes += rgba(layer);
+    }
+    for (const set of this.#packed) {
+      for (const texture of set) {
+        bytes += rgba(texture);
+      }
     }
     bytes += this.#glyphs[0].width * this.#glyphs[0].height + rgba(this.#glyphs[1]);
     return bytes + this.#images.width * this.#images.height * 4;
@@ -1072,14 +1274,18 @@ export class SceneRenderer {
     });
     return { texture, view: texture.createView({}), width, height };
   }
+  /** Draw what follows with uniform slot `slot`. */
+  #use(slot: number): void {
+    this.#slot = slot;
+    new DataView(this.#slotOffset.buffer).setUint32(0, slot * SLOT_FLOATS * 4, true);
+  }
   #begin(
     encoder: gpu.GpuEncoder,
     view: gpu.GpuTextureView,
     slot: number,
     clear?: readonly number[],
   ): void {
-    this.#slot = slot;
-    new DataView(this.#slotOffset.buffer).setUint32(0, slot * SLOT_FLOATS * 4, true);
+    this.#use(slot);
     encoder.beginRenderPass({
       colorAttachments: [
         {
@@ -1229,6 +1435,17 @@ export class SceneRenderer {
       this.#shadow = undefined;
       dropped = true;
     }
+    for (let d = 0; d < this.#packedUsed.length; d++) {
+      if ((this.#packedUsed[d] ?? 0) <= before) {
+        for (const set of this.#packed) {
+          if (set[d]) {
+            this.#drop(set[d]);
+            set[d] = undefined!;
+            dropped = true;
+          }
+        }
+      }
+    }
     if (dropped) {
       this.#clearGroups();
     }
@@ -1282,6 +1499,11 @@ export class SceneRenderer {
       this.#drop(layer);
     }
     this.#layers.length = 0;
+    for (const set of this.#packed) {
+      for (const texture of set) {
+        this.#drop(texture);
+      }
+    }
     this.#drop(this.#dummy);
     for (const glyph of this.#glyphs) {
       this.#drop(glyph);
