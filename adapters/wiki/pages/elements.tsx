@@ -197,9 +197,14 @@ export const elementsPages: readonly WikiPage[] = [
           <code>span</code>, <code>code</code>, <code>kbd</code>, …) lays its content out as one
           paragraph: wrapped together at its width, each line on one baseline whatever its fonts,
           whitespace collapsing as HTML's does, and <code>text-align</code> read from it or above.
-          An element that paints a box, <code>code</code> or <code>kbd</code>, is kept whole; a
-          block takes a line. The elements stay in the tree, so CSS styles them and they take input:
-          a press anywhere on a wrapped link is a press on the link.
+          An element that paints a box, <code>code</code> or <code>kbd</code>, is kept whole. So is
+          one that says <code>display: inline-block</code>, <code>inline-flex</code> or{' '}
+          <code>inline-grid</code>, whatever its tag: a badge or a chip is a box in the line, as big
+          as its own layout makes it, on the baseline of its first text, wrapping with the words
+          around it. <code>display: inline</code> makes any element part of the line, as a{' '}
+          <code>span</code> is, and <code>display: block</code> on a <code>span</code> takes a line
+          of its own, as a <code>div</code> does. The elements stay in the tree, so CSS styles them
+          and they take input: a press anywhere on a wrapped link is a press on the link.
         </p>
         <p>
           Not done yet: hyphenation, <code>white-space: pre-wrap</code> inside a paragraph,{' '}

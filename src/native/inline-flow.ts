@@ -105,6 +105,26 @@ export const INLINE_TAGS: ReadonlySet<string> = new Set([
 /** Inline elements that paint a box of their own, kept whole. */
 const BOX_TAGS: ReadonlySet<string> = new Set(['code', 'kbd', 'mark']);
 
+/** The `display` values that make a box of its own that sits in a line, as an image does. */
+const ATOMIC_INLINE: ReadonlySet<string> = new Set(['inline-block', 'inline-flex', 'inline-grid']);
+/** The `display` values that make a box of its own that starts a line. */
+const BLOCK_LEVEL: ReadonlySet<string> = new Set(['block', 'flex', 'grid']);
+
+/** How `element`'s `display` puts it in a flow: in a line, as a line of its own, or by its tag. */
+function placing(host: Host, element: HostElement): 'atomic' | 'block' | 'inline' | undefined {
+  const display = host.declaredOf(element).get('display')?.trim().toLowerCase();
+  if (display === undefined) {
+    return undefined;
+  }
+  if (ATOMIC_INLINE.has(display)) {
+    return 'atomic';
+  }
+  if (BLOCK_LEVEL.has(display)) {
+    return 'block';
+  }
+  return display === 'inline' ? 'inline' : undefined;
+}
+
 /** Where a line of a flow's text starts: wide enough that nothing wraps. */
 const UNBOUNDED = 1_000_000;
 
@@ -261,7 +281,12 @@ class Flow {
               styled = true;
             }
             entries.push({ kind: 'break' });
-          } else if (INLINE_TAGS.has(child.tag) && !BOX_TAGS.has(child.tag)) {
+          } else if (
+            placing(this.#flows.host, child) === 'inline' ||
+            (placing(this.#flows.host, child) === undefined &&
+              INLINE_TAGS.has(child.tag) &&
+              !BOX_TAGS.has(child.tag))
+          ) {
             frames.add(child);
             if (!this.#frames.has(child)) {
               style(child, frame);
@@ -276,7 +301,15 @@ class Flow {
                 ['top', 0],
               ]);
             }
-            entries.push({ kind: 'box', element: child, block: !INLINE_TAGS.has(child.tag) });
+            // Its own display decides whether it starts a line; else its tag does, as an image
+            // sits in one and a div does not.
+            const how = placing(this.#flows.host, child);
+            entries.push({
+              kind: 'box',
+              element: child,
+              block:
+                how === 'atomic' ? false : how === 'block' ? true : !INLINE_TAGS.has(child.tag),
+            });
           }
         }
       }
@@ -697,13 +730,31 @@ export class InlineFlows {
     let texts = 0;
     let inline = false;
     for (let child = root.firstChild; child; child = child.nextSibling) {
-      if (child instanceof ElementClass && (INLINE_TAGS.has(child.tag) || child.tag === 'br')) {
-        inline = true;
+      if (child instanceof ElementClass) {
+        const how = placing(this.host, child);
+        if (
+          how === 'atomic' ||
+          how === 'inline' ||
+          child.tag === 'br' ||
+          (how === undefined && INLINE_TAGS.has(child.tag))
+        ) {
+          inline = true;
+        }
       }
       // Two pieces of text are a line made of both, as `Count: {n}` is, not two lines.
       if (child instanceof TextClass && child.data.trim() !== '') {
         texts++;
       }
+    }
+    // Its children are flex or grid items, each a box laid out by its style, not words in a line.
+    const display = this.host.declaredOf(root).get('display')?.trim().toLowerCase();
+    if (
+      display === 'flex' ||
+      display === 'inline-flex' ||
+      display === 'grid' ||
+      display === 'inline-grid'
+    ) {
+      return false;
     }
     // A table's cell is always one, so its table can size its column by what it holds.
     if (root.tag === 'td' || root.tag === 'th') {
@@ -715,8 +766,10 @@ export class InlineFlows {
     // Any other block that holds text mixed with more text or an inline element is a paragraph
     // too, as a div of prose is. One that holds elements alone, or an inline element or a control
     // by itself, is laid out as its style says: a row of controls is a row.
+    const how = placing(this.host, root);
+    const blocky = !INLINE_TAGS.has(root.tag) || how === 'atomic' || how === 'block';
     return (
-      !NOT_FLOWS.has(root.tag) && !INLINE_TAGS.has(root.tag) && texts >= 1 && (inline || texts >= 2)
+      !NOT_FLOWS.has(root.tag) && blocky && how !== 'inline' && texts >= 1 && (inline || texts >= 2)
     );
   }
 

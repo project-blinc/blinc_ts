@@ -44,7 +44,34 @@ export default function InlineFlow() {
       >
         Text with <strong>strong</strong> and <em>emphasised</em> words, <code>inline code</code>, a
         key like <kbd>Esc</kbd>, a <mark>highlight</mark>,{' '}
-        <span style={{ fontSize: 22, fontWeight: 700 }}>larger type</span> on the same baseline, and{' '}
+        <span style={{ fontSize: 22, fontWeight: 700 }}>larger type</span> on the same baseline, a{' '}
+        <span
+          style={{
+            display: 'inline-block',
+            padding: '2px 10px',
+            borderRadius: 'var(--radius-full)',
+            background: 'var(--primary)',
+            color: 'var(--text-inverse)',
+            fontSize: 12,
+          }}
+        >
+          badge
+        </span>{' '}
+        that is a box in the line, a{' '}
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '2px 8px',
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--accent-subtle)',
+          }}
+        >
+          <span style={{ width: 8, height: 8, borderRadius: 4, background: 'var(--success)' }} />
+          chip
+        </span>{' '}
+        with a flex inside, and{' '}
         <a
           href="#text"
           onClick={(e: { preventDefault(): void }) => (

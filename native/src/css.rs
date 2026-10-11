@@ -436,7 +436,7 @@ pub fn css_states() -> Vec<String> {
 }
 
 /// Layout declarations the host also reads: which elements scroll.
-const HOST_READS: &[&str] = &["overflow", "overflow-x", "overflow-y"];
+const HOST_READS: &[&str] = &["overflow", "overflow-x", "overflow-y", "display"];
 
 /// Whether `name` is a property the layout router writes.
 #[napi]
