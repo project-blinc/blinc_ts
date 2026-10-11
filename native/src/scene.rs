@@ -385,6 +385,8 @@ pub(crate) fn apply_paint(
     let mut backdrop = None;
     let mut decoration = None;
     let mut text_shadow = None;
+    let mut text_overflow = None;
+    let mut line_clamp = None;
     for write in writes {
         match write {
             PaintWrite::Background(background) => {
@@ -480,6 +482,8 @@ pub(crate) fn apply_paint(
             }
             PaintWrite::TextDecoration(d) => decoration = Some(*d),
             PaintWrite::TextShadow(s) => text_shadow = Some(s.clone()),
+            PaintWrite::TextOverflow(o) => text_overflow = Some(*o),
+            PaintWrite::LineClamp(n) => line_clamp = Some(*n),
             PaintWrite::BackdropFilter(f) => {
                 backdrop = Some((*f != BACKDROP_IDENTITY).then_some(*f));
             }
@@ -512,6 +516,12 @@ pub(crate) fn apply_paint(
     }
     if let Some(s) = text_shadow {
         tree.set_text_shadow(node, s)?;
+    }
+    if let Some(o) = text_overflow {
+        tree.set_text_overflow(node, o)?;
+    }
+    if let Some(n) = line_clamp {
+        tree.set_line_clamp(node, n)?;
     }
     Ok(())
 }

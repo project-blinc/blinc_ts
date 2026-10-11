@@ -72,6 +72,8 @@ pub(crate) enum Field {
     BackdropFilter,
     TextDecoration,
     TextShadow,
+    TextOverflow,
+    LineClamp,
     /// A layout property, by its router id; a length's percentage id is its pixel id's slot.
     Layout(i32),
     /// Where a layout animation draws it.
@@ -158,6 +160,8 @@ impl Field {
             PaintWrite::BackdropFilter(_) => Field::BackdropFilter,
             PaintWrite::TextDecoration(_) => Field::TextDecoration,
             PaintWrite::TextShadow(_) => Field::TextShadow,
+            PaintWrite::TextOverflow(_) => Field::TextOverflow,
+            PaintWrite::LineClamp(_) => Field::LineClamp,
         }
     }
 
@@ -193,6 +197,8 @@ impl Field {
             Field::BackdropFilter => PaintWrite::BackdropFilter(BACKDROP_IDENTITY),
             Field::TextDecoration => PaintWrite::TextDecoration(None),
             Field::TextShadow => PaintWrite::TextShadow(None),
+            Field::TextOverflow => PaintWrite::TextOverflow(None),
+            Field::LineClamp => PaintWrite::LineClamp(None),
             Field::Layout(slot) => return Write::Layout(slot, Value::Unset),
             Field::Visual => return Write::Visual(None),
         })
@@ -205,7 +211,7 @@ impl Field {
     }
 
     /// The paint slots `all` names, besides every layout one.
-    pub(crate) const ALL: [Field; 22] = [
+    pub(crate) const ALL: [Field; 24] = [
         Field::Background,
         Field::TextColor,
         Field::Opacity,
@@ -228,6 +234,8 @@ impl Field {
         Field::BackdropFilter,
         Field::TextDecoration,
         Field::TextShadow,
+        Field::TextOverflow,
+        Field::LineClamp,
     ];
 }
 
@@ -256,6 +264,8 @@ pub(crate) fn fields_of(property: &str) -> Vec<Field> {
         "outline-offset" => &[Field::OutlineOffset],
         "box-shadow" => &[Field::Shadows],
         "text-shadow" => &[Field::TextShadow],
+        "text-overflow" => &[Field::TextOverflow],
+        "line-clamp" | "-webkit-line-clamp" => &[Field::LineClamp],
         "transform" => &[Field::Transform],
         "filter" => &[Field::Filter],
         "mask-image" | "-webkit-mask-image" => &[Field::Mask],

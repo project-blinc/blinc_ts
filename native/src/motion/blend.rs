@@ -593,6 +593,8 @@ fn blend_paint(a: &PaintWrite, b: &PaintWrite, t: f64) -> PaintWrite {
         // Lists blend shadow by shadow, as box-shadow's do; one left to an ancestor flips.
         (W::TextShadow(Some(x)), W::TextShadow(Some(y))) => W::TextShadow(Some(shadows(x, y, t))),
         (W::TextShadow(x), W::TextShadow(y)) => W::TextShadow(flip(x, y, t).clone()),
+        (W::TextOverflow(x), W::TextOverflow(y)) => W::TextOverflow(*flip(x, y, t)),
+        (W::LineClamp(x), W::LineClamp(y)) => W::LineClamp(*flip(x, y, t)),
         (W::TextDecoration(x), W::TextDecoration(y)) => W::TextDecoration(
             x.zip(*y)
                 .and_then(|(x, y)| decoration(&x, &y, t))

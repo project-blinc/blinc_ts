@@ -33,6 +33,7 @@ import PaintFilters from '../examples/paint-filters.js';
 import PaintGradients from '../examples/paint-gradients.js';
 import PaintShadows from '../examples/paint-shadows.js';
 import PaintText from '../examples/paint-text.js';
+import PaintTextOverflow from '../examples/paint-text-overflow.js';
 import PaintTextShadow from '../examples/paint-text-shadow.js';
 import PaintTransforms from '../examples/paint-transforms.js';
 import GlassGallery from '../examples/glass-gallery.js';
@@ -445,6 +446,18 @@ export const stylingPages: readonly WikiPage[] = [
           <code>dashed</code>, in a colour and a thickness, with <code>text-underline-offset</code>,
           under every line of the text; its colour, thickness and offset transition.{' '}
           <code>wavy</code> is not drawn yet.
+        </p>
+        <h2>Text overflow and line clamp</h2>
+        <Example name="paint-text-overflow" view={PaintTextOverflow} />
+        <p>
+          A line of text wider than its container ends with an ellipsis when the container says{' '}
+          <code>text-overflow: ellipsis</code>, which wants <code>white-space: nowrap</code> and an{' '}
+          <code>overflow</code> that clips. <code>line-clamp: 2</code>, or{' '}
+          <code>-webkit-line-clamp</code>, holds the text under a container to that many lines, the
+          box as tall as they are, and ends the last with an ellipsis; <code>none</code> lets go.
+          Both are read on the container and found by its text through any boxes between, and the
+          text itself, <code>textContent</code> and selection, is untouched. Text in an inline flow
+          (spans, links) is the host's, and not ellipsized.
         </p>
         <h2>Text shadow</h2>
         <Example name="paint-text-shadow" view={PaintTextShadow} />
