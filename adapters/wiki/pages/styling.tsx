@@ -19,6 +19,7 @@ import CornerShapes from '../examples/corner-shapes.js';
 import CssEditor from '../examples/css-editor.js';
 import CssFeatures from '../examples/css-features.js';
 import CssMath from '../examples/css-math.js';
+import GeneratedContent from '../examples/generated-content.js';
 import ImagesBackgrounds from '../examples/images-backgrounds.js';
 import ImagesEffects from '../examples/images-effects.js';
 import ImagesFit from '../examples/images-fit.js';
@@ -122,10 +123,24 @@ export const stylingPages: readonly WikiPage[] = [
           ]}
         />
         <p>
-          Pseudo-elements (<code>::before</code>, <code>::after</code>) are not supported: a part an
-          element needs is an element the host owns, which a sheet styles by its class, as a list
-          item's marker is. Units are px, <code>em</code>, <code>rem</code>, percentages and
-          viewport units.
+          Units are px, <code>em</code>, <code>rem</code>, percentages and viewport units.
+        </p>
+        <h2>Generated content</h2>
+        <p>
+          <code>::before</code> and <code>::after</code> create parts when their{' '}
+          <code>content</code>
+          is a string, <code>attr(name)</code> or a single <code>url()</code>. They inherit the
+          element’s text styles; selectors and states match the element that owns them.
+          <code>content: none</code> removes them. Counters remain unsupported.
+        </p>
+        <Example
+          name="generated-content"
+          title="Content from an attribute"
+          view={GeneratedContent}
+        />
+        <p>
+          The generated parts take space and draw in order, while the element’s authored children
+          and text stay the same.
         </p>
         <h2>Lengths as expressions</h2>
         <p>

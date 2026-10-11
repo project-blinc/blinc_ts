@@ -254,6 +254,29 @@ reason to `host.onStyleErrors` listeners, or logged as a warning when there
 are none, and the rest of its rule still applies. A property the cascade does
 not know is skipped without a report.
 
+### Generated content
+
+`::before` and `::after` rules match their originating element, including its
+classes, attributes, states and structural position. `content: "text"` creates
+a host-owned text box; adjacent strings and `attr(name)` concatenate. A missing
+attribute contributes an empty string. CSS string escapes are decoded natively.
+A single `content: url("icon.svg")` creates an image using the host's normal loader,
+with intrinsic dimensions unless CSS sets its size. Generated text inherits its
+owner's color and font properties, and can flow with authored prose.
+
+`content: none`, `normal`, or removing the matching rule destroys the generated
+part. An empty quoted string creates a box for decoration. Generated parts live
+outside `childNodes` and `textContent`; selectors such as `:empty`, `:has()` and
+`:first-child` see authored content. They are released when their owner is
+destroyed. Counters, quote keywords, mixed image/text content and mapping
+`::marker` or `::placeholder` to built-in parts remain unsupported. Invalid
+content values report through `host.onStyleErrors`.
+
+`tests/native-generated-content.mjs` compares runtime and compiled sheets against
+explicit text/image parts at 1x and 2x, and covers state changes, attributes,
+inheritance, ordering, inline flow and removal. `tests/native-destroy.mjs` verifies
+that generated parts of destroyed pages become collectable.
+
 ### Length expressions
 
 `calc()`, `min()`, `max()` and `clamp()` read lengths in layout and paint,

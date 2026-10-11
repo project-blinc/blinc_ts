@@ -231,6 +231,9 @@ export class Behaviours {
       if (element.destroyed || entry?.status !== 'loaded' || entry.width <= 0) {
         continue;
       }
+      if (this.host.generatedImageSize(element, entry.width, entry.height)) {
+        continue;
+      }
       if (element.getAttribute('data-blinc-image') !== String(picture.serial)) {
         element.setAttribute('data-blinc-image', String(picture.serial));
       }

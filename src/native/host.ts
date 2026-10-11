@@ -23,7 +23,14 @@ import {
 } from './events.js';
 import { window as win } from './index.js';
 import { Input, WHEEL_LINE } from './input.js';
-import type { HitCache, Layout, LayoutAnimationOptions, LayoutNode, Restyled } from './layout.js';
+import type {
+  HitCache,
+  Layout,
+  LayoutAnimationOptions,
+  LayoutNode,
+  Restyled,
+  GeneratedContent,
+} from './layout.js';
 import { MemoryClipboard, SystemClipboard, type Clipboard } from './clipboard.js';
 import type { Computed, Disposable, ReactiveContext, Signal } from './reactive.js';
 import type { AffineTransform, Color, PaintStyle, TextStyle } from './scene.js';
@@ -782,7 +789,10 @@ export class HostElement extends HostNode {
       throw new Error('Host edit would create a cycle');
     }
     this.host.assertOwn(child);
-    this.layoutNode.queueInsertBefore(child.layoutNode, reference?.layoutNode ?? null);
+    this.layoutNode.queueInsertBefore(
+      child.layoutNode,
+      this.host.insertionReference(this, reference),
+    );
     const before = child.parentNode;
     child.parentNode?.unlink(child);
     const previous = reference ? reference.previousSibling : this.#last;
@@ -971,6 +981,14 @@ export class Host {
   readonly native: NativeBindings | undefined;
   /** Elements the host made for another to hold, which frameworks do not see among its children. */
   readonly #owned = new WeakMap<HostElement, HostElement[]>();
+  readonly #generated = new Map<
+    HostElement,
+    Map<'before' | 'after', { element: HostElement; text: HostText | null }>
+  >();
+  readonly #generatedOwners = new WeakMap<
+    HostElement,
+    { owner: HostElement; pseudo: 'before' | 'after'; size?: readonly [number, number] }
+  >();
   readonly #anonymous = new WeakSet<HostElement>();
 
   constructor(layout: Layout, scope?: Scope, native?: NativeBindings) {
@@ -1046,6 +1064,87 @@ export class Host {
     this.#owned.set(parent, list);
     parent.layoutNode.queueInsertBefore(element.layoutNode, before?.layoutNode ?? null);
     return element;
+  }
+  /** @internal Children participating in authored content flow, including generated ends. */
+  *contentNodes(element: HostElement): Generator<HostNode, undefined, undefined> {
+    const parts = this.#generated.get(element);
+    const before = parts?.get('before')?.element;
+    if (before && !before.destroyed) {
+      yield before;
+    }
+    for (let child = element.firstChild; child; child = child.nextSibling) {
+      yield child;
+    }
+    const after = parts?.get('after')?.element;
+    if (after && !after.destroyed) {
+      yield after;
+    }
+  }
+  /** @internal Keep authored appends before generated ::after. */
+  insertionReference(element: HostElement, reference: HostNode | null): LayoutNode | null {
+    return (
+      reference?.layoutNode ??
+      this.#generated.get(element)?.get('after')?.element.layoutNode ??
+      null
+    );
+  }
+  /** @internal Intrinsic image defaults for a generated replacement; CSS dimensions win. */
+  generatedImageSize(element: HostElement, width: number, height: number): boolean {
+    const target = this.#generatedOwners.get(element);
+    if (!target) {
+      return false;
+    }
+    if (target.size?.[0] !== width || target.size[1] !== height) {
+      target.size = [width, height];
+      this.layout.setGenerated(element.layoutNode, target.owner.layoutNode, target.pseudo, [
+        width,
+        height,
+      ]);
+    }
+    return true;
+  }
+  #syncGenerated(changes: readonly GeneratedContent[]): void {
+    for (const change of changes) {
+      const owner = this.#nodes.get(change.owner);
+      if (!(owner instanceof HostElement) || owner.destroyed) {
+        continue;
+      }
+      let parts = this.#generated.get(owner);
+      let part = parts?.get(change.pseudo);
+      const image = change.content?.kind === 'image';
+      if (part && (change.content === null || (part.element.tag === 'img') !== image)) {
+        this.destroyNode(part.element);
+        parts!.delete(change.pseudo);
+        part = undefined;
+      }
+      if (change.content !== null) {
+        if (!part) {
+          const before =
+            change.pseudo === 'before'
+              ? (owner.firstChild ?? parts?.get('after')?.element ?? null)
+              : null;
+          const element = this.ownedElement(owner, image ? 'img' : 'span', [], before);
+          this.#generatedOwners.set(element, { owner, pseudo: change.pseudo });
+          part = { element, text: image ? null : this.createTextNode(change.content.value) };
+          if (part.text) {
+            element.appendChild(part.text);
+          }
+          parts ??= new Map();
+          parts.set(change.pseudo, part);
+          this.#generated.set(owner, parts);
+          this.layout.setGenerated(element.layoutNode, owner.layoutNode, change.pseudo);
+        }
+        if (image) {
+          part.element.setAttribute('src', change.content.value);
+        } else if (part.text) {
+          part.text.data = change.content.value;
+        }
+      }
+      if (parts?.size === 0) {
+        this.#generated.delete(owner);
+      }
+      this.inlineFlows?.touch(owner);
+    }
   }
   createTextNode(data: string): HostText {
     const layoutNode = this.layout.createText(data, {}, data === '' ? { display: 'none' } : {});
@@ -1254,6 +1353,7 @@ export class Host {
   }
   /** Apply what a restyle hands back: paint and text, by node. */
   #restyled(restyled: Restyled): void {
+    this.#syncGenerated(restyled.generated);
     if (restyled.errors.length > 0) {
       if (this.#styleErrorListeners.size === 0) {
         for (const error of restyled.errors) {
@@ -1506,7 +1606,7 @@ export class Host {
       const node = this.#nodes.get(id);
       const element = node instanceof HostText ? node.parentNode : node;
       if (element instanceof HostElement) {
-        return element;
+        return this.#generatedOwners.get(element)?.owner ?? element;
       }
     }
     return null;
@@ -1806,6 +1906,13 @@ export class Host {
     if (node.destroyed) {
       return;
     }
+    if (node instanceof HostElement && node.owner) {
+      const siblings = this.#owned.get(node.owner);
+      const index = siblings?.indexOf(node) ?? -1;
+      if (index >= 0) {
+        siblings!.splice(index, 1);
+      }
+    }
     // What a flow made for it goes first, while it is still where it was.
     this.inlineFlows?.forget(node);
     this.canvases.forget(node);
@@ -1819,10 +1926,11 @@ export class Host {
         for (let child = current.firstChild; child; child = child.nextSibling) {
           forget(child);
         }
-        for (const owned of this.#owned.get(current) ?? []) {
+        for (const owned of [...(this.#owned.get(current) ?? [])]) {
           this.destroyNode(owned);
         }
         this.#owned.delete(current);
+        this.#generated.delete(current);
         this.#backgrounds.get(current)?.release();
         this.#backgrounds.delete(current);
         current.disposeBindings();
@@ -1852,6 +1960,7 @@ export class Host {
     this.images?.dispose();
     this.#text.clear();
     this.#nodes.clear();
+    this.#generated.clear();
     this.layout.dispose();
   }
 }

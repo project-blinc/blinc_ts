@@ -7,6 +7,7 @@ use crate::layout::{NativeLayout, OwnedLayout};
 use crate::motion::{Context as MotionContext, LayoutAnimation, Motion, Spec, Value, Write};
 use blinc_abi::context::{LayoutContext, Node, PropValue};
 use blinc_abi::css::cascade::{Element, SheetId, States};
+use blinc_abi::css::generated::{Content, PseudoElement};
 use blinc_abi::css::layout::{Units, is_layout_property, layout_writes};
 use blinc_abi::css::paint::is_paint_property;
 use blinc_abi::css::quantity::PaintUnits;
@@ -300,6 +301,7 @@ pub struct NativeSheet {
 pub struct NativeRestyle {
     /// Declarations that could not be applied, as `property: value: reason`.
     pub errors: Vec<String>,
+    pub generated: Vec<NativeGenerated>,
     /// How many nodes the restyle matched again.
     pub restyled: u32,
     /// Nodes whose paint was written natively: raw ids, low then high word.
@@ -316,6 +318,16 @@ pub struct NativeRestyle {
     /// empty when it has none now.
     pub image_nodes: Uint32Array,
     pub image_sources: Vec<String>,
+}
+
+/// Content changes for one originating element's generated box.
+#[napi(object)]
+pub struct NativeGenerated {
+    pub owner_low: u32,
+    pub owner_high: u32,
+    pub pseudo: String,
+    pub text: Option<String>,
+    pub image: Option<String>,
 }
 
 /// How a node's layout changes animate: its place, its size, over what time and curve.
@@ -563,6 +575,43 @@ impl NativeLayout {
             names.iter().map(|n| state.styles.intern(n).0).collect(),
         ))
     }
+    /// Register a host-owned generated box; intrinsic dimensions are optional image defaults.
+    #[napi]
+    pub fn css_set_generated(
+        &self,
+        node: &crate::layout::NativeLayoutNode,
+        owner: &crate::layout::NativeLayoutNode,
+        pseudo: String,
+        intrinsic: Vec<f64>,
+    ) -> Result<()> {
+        self.owner.check()?;
+        let tree = self.owner.tree.borrow();
+        tree.style(node.node).map_err(error)?;
+        tree.style(owner.node).map_err(error)?;
+        if tree.parent(node.node).map_err(error)? != Some(owner.node) {
+            return Err(error("Generated box must be a child of its owner"));
+        }
+        let pseudo = match pseudo.as_str() {
+            "before" => PseudoElement::Before,
+            "after" => PseudoElement::After,
+            _ => return Err(error("Expected before or after")),
+        };
+        let size = match intrinsic.as_slice() {
+            [] => None,
+            [w, h]
+                if *w > 0.0 && *h > 0.0 && (*w as f32).is_finite() && (*h as f32).is_finite() =>
+            {
+                Some((*w as f32, *h as f32))
+            }
+            _ => return Err(error("Expected finite positive image dimensions")),
+        };
+        self.owner
+            .styles
+            .borrow_mut()
+            .styles
+            .set_generated(node.node, owner.node, pseudo, size);
+        Ok(())
+    }
     /// Match what changed under `root` and apply its layout declarations;
     /// return the paint and text declarations of every node whose changed,
     /// with its overflow, which the host reads to know what scrolls.
@@ -775,8 +824,28 @@ impl NativeLayout {
             }
         }
         let (image_nodes, image_sources) = image_uses(&mut tree);
+        let generated = state
+            .styles
+            .take_generated()
+            .into_iter()
+            .map(|(owner, pseudo, content)| {
+                let (text, image) = match content {
+                    Some(Content::Text(t)) => (Some(t), None),
+                    Some(Content::Image(i)) => (None, Some(i)),
+                    None => (None, None),
+                };
+                NativeGenerated {
+                    owner_low: owner as u32,
+                    owner_high: (owner >> 32) as u32,
+                    pseudo: pseudo.name().into(),
+                    text,
+                    image,
+                }
+            })
+            .collect();
         Ok(NativeRestyle {
             errors,
+            generated,
             restyled: state.styles.last_restyled() as u32,
             painted: Uint32Array::new(painted),
             nodes: Uint32Array::new(nodes),
@@ -914,6 +983,7 @@ pub(crate) fn element(
         inline,
         states: States::default(),
         anonymous,
+        generated: false,
     })
 }
 

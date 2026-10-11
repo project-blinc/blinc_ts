@@ -15,6 +15,9 @@ try {
   new ThemeState(context, neutralTheme, { scheme: 'light' }).attach(host.layout);
   addUserAgent(host.layout);
   const pixel = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4" fill="red"/></svg>')}`;
+  host.layout.addStyleSheet(
+    `p::before { content: "Before "; } p::after { content: url("${pixel}"); }`,
+  );
   const el = (tag, children = [], attributes = {}) => {
     const e = host.createElement(tag);
     for (const [k, v] of Object.entries(attributes)) {
@@ -57,7 +60,7 @@ try {
     host.root.appendChild(root);
     await settle();
     const walk = (n) => {
-      for (let c = n.firstChild; c; c = c.nextSibling) {
+      for (const c of host.contentNodes(n)) {
         refs.push(new WeakRef(c));
         walk(c);
       }
@@ -77,6 +80,29 @@ try {
     `every node of a destroyed page is collectable: ${kept} of ${refs.length} kept`,
   );
   assert.equal(host.layout.size, 1, 'and no native node is left but the root');
+  // Removed pseudo-elements must also collect while their originating element remains alive.
+  host.layout.addStyleSheet(
+    '.transient::before {content:"Generated"} .transient.off::before {content:none}',
+  );
+  const owner = el('div', [], { class: 'transient' });
+  host.root.appendChild(owner);
+  const removeGenerated = async () => {
+    await settle();
+    const parts = [...host.contentNodes(owner)];
+    assert.equal(parts.length, 1);
+    const removed = [new WeakRef(parts[0]), new WeakRef(parts[0].firstChild)];
+    owner.classList.add('off');
+    await settle();
+    return removed;
+  };
+  assert.equal(
+    await collected(await removeGenerated()),
+    0,
+    'content:none releases parts while owner lives',
+  );
+  owner.destroy();
+  await settle();
+  assert.equal(host.layout.size, 1);
 } finally {
   host.dispose();
   context.dispose();

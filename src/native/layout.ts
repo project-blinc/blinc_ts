@@ -243,9 +243,22 @@ export interface NativeLayout extends BrushFactory {
   cssSetRootFontSize(px: number): void;
   cssIntern(names: string[]): Uint32Array;
   cssRepaint(node: NativeLayoutNode): void;
+  cssSetGenerated(
+    node: NativeLayoutNode,
+    owner: NativeLayoutNode,
+    pseudo: string,
+    intrinsic: number[],
+  ): void;
   cssRestyle(root: NativeLayoutNode): {
     errors: string[];
     restyled: number;
+    generated: {
+      ownerLow: number;
+      ownerHigh: number;
+      pseudo: string;
+      text?: string | null;
+      image?: string | null;
+    }[];
     painted: Uint32Array;
     nodes: Uint32Array;
     counts: Uint32Array;
@@ -297,8 +310,15 @@ export interface LayoutAnimationOptions {
   /** The curve; the theme's `ease-out` by default. */
   readonly easing?: Easing;
 }
+/** Generated content changes from the native cascade. */
+export interface GeneratedContent {
+  readonly owner: bigint;
+  readonly pseudo: 'before' | 'after';
+  readonly content: { readonly kind: 'text' | 'image'; readonly value: string } | null;
+}
 /** What a restyle changed beyond layout. */
 export interface Restyled {
+  readonly generated: readonly GeneratedContent[];
   /** Declarations that could not be applied, as `property: value: reason`. */
   readonly errors: readonly string[];
   /** How many nodes the restyle matched again. */
@@ -755,6 +775,25 @@ export class Layout {
       }
     }
   }
+  #generatedDirty = false;
+  /** @internal Register a host-owned pseudo-element, with optional intrinsic image dimensions. */
+  setGenerated(
+    node: LayoutNode,
+    owner: LayoutNode,
+    pseudo: 'before' | 'after',
+    intrinsic: number[] = [],
+  ): void {
+    this.flush();
+    this.#native.cssSetGenerated(
+      LayoutNode.unwrap(node, this),
+      LayoutNode.unwrap(owner, this),
+      pseudo,
+      intrinsic,
+    );
+    this.#generatedDirty = true;
+    this.changed('layout');
+  }
+
   /** Listen for restyles: the paint and text declarations of each node whose changed. */
   onRestyle(listener: (restyled: Restyled) => void, scope?: Scope): () => void {
     const callback = (restyled: Restyled) => listener(restyled);
@@ -772,6 +811,23 @@ export class Layout {
    * warnings when there are none.
    */
   restyle(root: LayoutNode): Restyled {
+    const all: Restyled[] = [];
+    do {
+      this.#generatedDirty = false;
+      all.push(this.#restyle(root));
+    } while (this.#generatedDirty);
+    if (all.length === 1) {
+      return all[0]!;
+    }
+    return {
+      errors: all.flatMap((r) => r.errors),
+      generated: all.flatMap((r) => r.generated),
+      matched: all.reduce((n, r) => n + r.matched, 0),
+      painted: [...new Set(all.flatMap((r) => r.painted))],
+      nodes: new Map(all.flatMap((r) => [...r.nodes])),
+    };
+  }
+  #restyle(root: LayoutNode): Restyled {
     this.flush();
     const r = this.#native.cssRestyle(LayoutNode.unwrap(root, this));
     this.#motion ||= r.motion;
@@ -790,7 +846,22 @@ export class Layout {
     for (let i = 0; i < r.painted.length; i += 2) {
       painted.push(BigInt(r.painted[i]!) | (BigInt(r.painted[i + 1]!) << 32n));
     }
-    const restyled: Restyled = { errors: r.errors, painted, nodes, matched: r.restyled };
+    const generated: GeneratedContent[] = r.generated.map((g) => {
+      if (g.pseudo !== 'before' && g.pseudo !== 'after') {
+        throw new Error('Invalid native pseudo-element');
+      }
+      return {
+        owner: BigInt(g.ownerLow) | (BigInt(g.ownerHigh) << 32n),
+        pseudo: g.pseudo,
+        content:
+          g.text !== null && g.text !== undefined
+            ? { kind: 'text', value: g.text }
+            : g.image !== null && g.image !== undefined
+              ? { kind: 'image', value: g.image }
+              : null,
+      };
+    });
+    const restyled: Restyled = { errors: r.errors, painted, nodes, matched: r.restyled, generated };
     if (this.#restyleListeners.size === 0) {
       for (const error of r.errors) {
         console.warn(`CSS: ${error}`);

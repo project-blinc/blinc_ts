@@ -144,6 +144,30 @@ try {
       wiki.close();
     }
   }
+  // Generated content follows reactive attributes and leaves authored JSX children intact.
+  {
+    const wiki = await open('light');
+    try {
+      wiki.page.set('css');
+      await wiki.settle();
+      const owner = findAll(wiki.host.root, 'generated-label')[0];
+      const authored = owner.childNodes[0];
+      assert.equal([...wiki.host.contentNodes(owner)][0].textContent, '[Ready]');
+      findAll(wiki.host.root, 'generated-change')[0].click();
+      await wiki.settle();
+      assert.equal([...wiki.host.contentNodes(owner)][0].textContent, '[Done]');
+      findAll(wiki.host.root, 'generated-hide')[0].click();
+      await wiki.settle();
+      assert.deepEqual([...wiki.host.contentNodes(owner)], [authored]);
+      findAll(wiki.host.root, 'generated-hide')[0].click();
+      await wiki.settle();
+      assert.equal([...wiki.host.contentNodes(owner)].length, 3);
+      assert.deepEqual(owner.childNodes, [authored]);
+      assert.deepEqual(wiki.errors, []);
+    } finally {
+      wiki.close();
+    }
+  }
   // The header is fixed with the theme switch in it, whatever the page does under it.
   {
     const wiki = await open('light');

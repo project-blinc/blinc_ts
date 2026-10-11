@@ -131,7 +131,7 @@ function placing(host: Host, element: HostElement): 'atomic' | 'block' | 'inline
  * `break-word`, from the nearest element that says either, as they are inherited.
  */
 export function breaksWords(host: Host, element: HostElement): boolean {
-  for (let node: HostNode | null = element; node; node = node.parentNode) {
+  for (let node: HostNode | null = element; node; node = node.composedParent) {
     if (!(node instanceof ElementClass)) {
       continue;
     }
@@ -216,7 +216,7 @@ class Flow {
     register(this.#anchor);
     register(this.#spacer);
     // First, so they are under everything for the hit test.
-    const first = root.firstChild?.layoutNode ?? null;
+    const first = host.contentNodes(root).next().value?.layoutNode ?? null;
     root.layoutNode.queueInsertBefore(this.#anchor, first);
     root.layoutNode.queueInsertBefore(this.#spacer, first);
   }
@@ -244,7 +244,7 @@ class Flow {
       if (member.text === node || member.owner === node) {
         return true;
       }
-      for (let n: HostNode | null = member.owner; n; n = n.parentNode) {
+      for (let n: HostNode | null = member.owner; n; n = n.composedParent) {
         if (n === node) {
           return true;
         }
@@ -277,7 +277,7 @@ class Flow {
     const boxes = new Set<HostElement>();
     const kept = new Map(this.#members.map((m) => [m.text, m]));
     const walk = (owner: HostElement) => {
-      for (let child = owner.firstChild; child; child = child.nextSibling) {
+      for (const child of this.#flows.host.contentNodes(owner)) {
         if (child instanceof TextClass) {
           let member = kept.get(child);
           if (member && member.owner !== owner) {
@@ -422,7 +422,7 @@ class Flow {
   }
 
   #align(): InlineAlign {
-    for (let node: HostNode | null = this.root; node; node = node.parentNode) {
+    for (let node: HostNode | null = this.root; node; node = node.composedParent) {
       const value =
         node instanceof ElementClass
           ? this.#flows.host.declaredOf(node).get('text-align')
@@ -599,7 +599,7 @@ function firstBaseline(
   element: HostElement,
 ): number | undefined {
   const find = (parent: HostElement): HostText | undefined => {
-    for (let child = parent.firstChild; child; child = child.nextSibling) {
+    for (const child of host.contentNodes(parent)) {
       if (child instanceof TextClass && child.data.trim() !== '') {
         return child;
       }
@@ -685,7 +685,7 @@ export class InlineFlows {
    */
   touch(node: HostNode | null): void {
     let nearest = true;
-    for (let n: HostNode | null = node; n; n = n.parentNode) {
+    for (let n: HostNode | null = node; n; n = n.composedParent) {
       if (n instanceof ElementClass) {
         // The nearest element may become a flow whatever it is called; further out, only what
         // is one already, or is called for one.
@@ -707,7 +707,7 @@ export class InlineFlows {
   touchTree(node: HostElement): void {
     const walk = (n: HostElement) => {
       this.touch(n);
-      for (let child = n.firstChild; child; child = child.nextSibling) {
+      for (const child of this.host.contentNodes(n)) {
         if (child instanceof ElementClass) {
           walk(child);
         }
@@ -750,11 +750,11 @@ export class InlineFlows {
     for (const flow of this.#flows.values()) {
       flow.forgetNode(node);
     }
-    this.touch(node.parentNode);
+    this.touch(node.composedParent);
   }
 
   #attached(element: HostElement): boolean {
-    for (let n: HostNode | null = element; n; n = n.parentNode) {
+    for (let n: HostNode | null = element; n; n = n.composedParent) {
       if (n === this.host.root) {
         return true;
       }
@@ -768,7 +768,7 @@ export class InlineFlows {
     }
     let texts = 0;
     let inline = false;
-    for (let child = root.firstChild; child; child = child.nextSibling) {
+    for (const child of this.host.contentNodes(root)) {
       if (child instanceof ElementClass) {
         const how = placing(this.host, child);
         if (
@@ -797,7 +797,7 @@ export class InlineFlows {
     }
     // A table's cell is always one, so its table can size its column by what it holds.
     if (root.tag === 'td' || root.tag === 'th') {
-      return root.firstChild !== null;
+      return !this.host.contentNodes(root).next().done;
     }
     // A word that may break inside is the flow's to break: plain text wraps at spaces only.
     const breaks = texts >= 1 && breaksWords(this.host, root);
