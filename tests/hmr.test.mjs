@@ -73,7 +73,7 @@ if (import.meta.hot) {
       server: {
         host: '127.0.0.1',
         port: 0,
-        watch: { usePolling: true, interval: 20 },
+        watch: { usePolling: process.platform === 'darwin', interval: 20 },
       },
     });
     await server.listen();
