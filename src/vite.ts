@@ -34,8 +34,7 @@ export function blinc(options: BlincViteOptions = {}): Plugin {
         environments: {
           [environment]: {
             consumer: 'server',
-            // The SDK loads its native addon from beside its own files, so it is never bundled.
-            resolve: { conditions: ['node'], external: ['blinc_ts'] },
+            resolve: { conditions: ['node'] },
             dev: {
               createEnvironment(name, config) {
                 return createRunnableDevEnvironment(name, config);
@@ -45,6 +44,9 @@ export function blinc(options: BlincViteOptions = {}): Plugin {
               ssr: own.ssr ?? true,
               target: own.target ?? 'node22',
               outDir: own.outDir ?? 'dist/native',
+              // The SDK loads its native addon from beside its own files, so a bundle imports it
+              // rather than holding a copy. Only the build: the dev runner loads it as it is.
+              rollupOptions: { external: [/^blinc_ts(\/|$)/] },
             },
           },
         },
