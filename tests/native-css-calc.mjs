@@ -15,20 +15,25 @@ const output = new URL('../.blinc/css-calc/', import.meta.url);
 await mkdir(output, { recursive: true });
 
 function sheet(math, width, pad) {
+  const contentWidth = width - 32 - 2 * pad;
+  const contentHeight = 160 - 2 * pad;
   return `
     :root { background: #101722; color: #ffffff; font-size: 16px; }
     .app { position: absolute; left: 16px; top: 16px; display: flex;
       flex-direction: column; width: ${math ? 'calc(100vw - 2rem)' : `${width - 32}px`};
-      padding: ${math ? 'calc(var(--pad) / 1)' : `${pad}px`};
-      gap: ${math ? 'max(2px, calc(1rem / 2))' : '8px'};
+      height: 160px; padding: ${math ? 'calc(var(--pad) / 1)' : `${pad}px`};
+      gap: ${math ? 'calc(2% + 3px)' : `${contentHeight * 0.02 + 3}px`};
       font-size: ${math ? 'calc(1em + 2px)' : '18px'}; }
     .card { display: flex; flex-direction: column; flex-shrink: 0;
-      width: ${math ? 'calc(100% / 2)' : '50%'};
-      height: ${math ? 'min(80px, calc(3rem + 12px))' : '60px'};
+      width: ${math ? 'clamp(70px, calc(50% - 8px), 128px)' : `${Math.max(70, Math.min(128, contentWidth * 0.5 - 8))}px`};
+      height: ${math ? 'calc(50% - 12px)' : `${contentHeight * 0.5 - 12}px`};
       border: ${math ? 'calc(1px + 2px)' : '3px'} solid #4488ff;
       border-radius: ${math ? 'min(12px, 1rem)' : '12px'};
-      padding: ${math ? 'calc(1px + 2px) calc(1rem / 4)' : '3px 4px'};
+      padding: ${math ? 'calc(1% + 2px) calc(1rem / 4)' : `${contentWidth * 0.01 + 2}px 4px`};
       background: #243447; }
+    .spacer { flex: 0 0 ${math ? 'clamp(10px, calc(10% + 4px), 24px)' : `${Math.max(10, Math.min(24, contentHeight * 0.1 + 4))}px`};
+      margin-left: ${math ? 'calc(2% - 2px)' : `${contentWidth * 0.02 - 2}px`};
+      background: #4488ff; }
     .label { font-size: ${math ? 'calc(150% + 1px)' : '28px'}; }
     .own text { font-size: ${math ? 'clamp(14px, 5vw, 20px)' : `${Math.max(14, Math.min(20, width * 0.05))}px`}; }
     @media (max-width: ${math ? 'calc(20rem - 20px)' : '300px'}) {
@@ -57,6 +62,9 @@ function build(css, pad) {
   card.appendChild(label);
   app.appendChild(card);
   app.appendChild(own);
+  const spacer = host.createElement('div');
+  spacer.className = 'spacer';
+  app.appendChild(spacer);
   host.root.appendChild(app);
   return { host, errors, app, card, label, own, added };
 }
@@ -128,12 +136,23 @@ for (const scale of [1, 2]) {
   }
 }
 
+// A deferred overflow must fail the layout call, even inside an unselected min() branch.
+{
+  const host = Host.create(native);
+  try {
+    const bad = host.createElement('div');
+    bad.setAttribute('style', 'width: min(calc(max(50%, 10px) * 1e308), 1px)');
+    host.root.appendChild(bad);
+    assert.throws(() => host.compute(W, H), /non-finite CSS length/i);
+  } finally {
+    host.dispose();
+  }
+}
+
 // A bad expression is reported, and other declarations still apply.
 for (const [property, value] of [
   ['width', 'calc(1px / 0)'],
   ['width', 'calc(1e308px * 1e308)'],
-  ['width', 'calc(100% - 32px)'],
-  ['width', 'min(50%, 20px)'],
   ['font-size', 'calc(1px / 0)'],
   ['font-size', 'calc(-1px)'],
   ['font-size', 'calc(1px) extra'],

@@ -76,8 +76,7 @@ compile-time CSS, and [offscreen visual and motion inspection](docs/snapshots.md
 trails, pixel and geometry diffs, and per-element curve sheets.
 
 **Not yet.** A published package (the commands here are for contributors), an accessibility tree,
-a 2D canvas context, mixed percentage/pixel length expressions, `rowspan`, and a select with
-`multiple`. The package is
+a 2D canvas context, `rowspan`, and a select with `multiple`. The package is
 private, and comparative framework measurements remain in progress;
 [full-scene benchmarks](docs/performance.md#full-scene-renderer-benchmark) cover text lists,
 image cards and layered glass.

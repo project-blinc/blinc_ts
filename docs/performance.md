@@ -37,6 +37,36 @@ Absolute bounds are resolved once after layout and cached for subsequent reads.
 Bulk moves update each old parent's child list once. Styles and tree edits
 invalidate bounds until layout is recomputed.
 
+## CSS length math benchmark
+
+CSS length math has a separate comparison:
+
+```sh
+npm run bench:css:calc -- --output .blinc/benchmarks/css-calc.json
+```
+
+It compares `50%` with `max(50%, 1px)` over 100, 1,000 and 10,000-row native
+hosts. Both widths produce identical geometry at the two alternating viewport
+sizes, checked before timing. Five warm-ups and 31 samples retain median/p95
+and raw timings for the whole host compute call, including CSS invalidation,
+restyling and layout. Construction and rendering are outside timing. This measures
+deferred math against ordinary percentages in one build, rather than a historical
+regression or complete rendered frame.
+
+On the Apple M1 Pro with Node 24.2.0 and the release addon using ABI `7dc3b36`,
+one run recorded these medians:
+
+| Rows   | Ordinary `50%` | Deferred `max(50%, 1px)` |
+| ------ | -------------- | ------------------------ |
+| 100    | 0.27 ms        | 0.37 ms                  |
+| 1,000  | 2.65 ms        | 4.19 ms                  |
+| 10,000 | 33.09 ms       | 50.96 ms                 |
+
+Deferred math costs about 1.54 times the ordinary-percentage call at 10,000 rows
+in this workload. [Raw samples, source revisions and binary hash](../benchmarks/results/2026-10-11-css-calc.json.gz)
+retain the p95 values and environment. This comparison does not measure a change
+in the cost of ordinary layout between revisions.
+
 ## Large-tree mutation and frame benchmark
 
 ```sh

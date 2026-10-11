@@ -122,7 +122,8 @@
     "bench:renderer": "node benchmarks/renderer.mjs",
     "bench:renderer:compare": "node benchmarks/compare-renderer.mjs",
     "wiki": "npm run build && npm --prefix adapters install --no-audit --no-fund && npm --prefix adapters run wiki",
-    "wiki:dev": "npm run build && npm --prefix adapters install --no-audit --no-fund && npm --prefix adapters run wiki:dev"
+    "wiki:dev": "npm run build && npm --prefix adapters install --no-audit --no-fund && npm --prefix adapters run wiki:dev",
+    "bench:css:calc": "node benchmarks/css-calc.mjs"
   },
   "peerDependencies": {
     "vite": "^8.0.0",

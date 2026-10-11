@@ -8,6 +8,7 @@ const css = `
   border-radius: min(12px, 1rem);
   background: var(--primary);
 }
+.math-fluid { width: calc(100% - 32px); max-width: min(80%, 320px); }
 .math-caption { font-family: var(--font-mono); font-size: var(--text-xs); }
 `;
 
@@ -30,6 +31,8 @@ export default function CssMath() {
       <div class="math-bar" style={{ '--math-step': () => String(step.get()) }} />
       <span class="math-caption">clamp(64px, calc(1rem * var(--math-step)), 160px)</span>
       <p>The variable changes the length; the bar stays between its two bounds.</p>
+      <div class="math-bar math-fluid" />
+      <span class="math-caption">calc(100% - 32px), capped by min(80%, 320px)</span>
     </div>
   );
 }

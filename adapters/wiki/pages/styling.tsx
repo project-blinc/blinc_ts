@@ -137,10 +137,9 @@ export const stylingPages: readonly WikiPage[] = [
         </p>
         <Example name="css-math" title="A variable, held between two bounds" view={CssMath} />
         <Note>
-          Layout cannot yet mix percentages and pixels in one size, so{' '}
-          <code>calc(100% - 32px)</code> and <code>min(50%, 200px)</code> are reported. A font size
-          has a known percentage basis, its inherited font size, so it can mix them. Media-query
-          lengths accept expressions in px, em and rem.
+          Mixed lengths such as <code>calc(100% - 32px)</code> and <code>min(50%, 200px)</code>
+          resolve during layout, using the property's percentage basis. Font-size percentages use
+          the inherited font size. Media-query lengths accept expressions in px, em and rem.
         </Note>
         <h2>Variables and the theme</h2>
         <p>

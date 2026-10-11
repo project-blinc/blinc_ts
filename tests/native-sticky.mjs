@@ -7,7 +7,7 @@ import { SceneRenderer } from '../dist/native/renderer.js';
 import { OffscreenRenderer } from '../dist/native/offscreen.js';
 import { probeShader } from '../dist/renderer/shaders.js';
 
-const native = loadNative();
+const native = loadNative(process.env.BLINC_CALC_ADDON);
 const W = 200;
 const H = 160;
 const host = Host.create(native);
@@ -88,9 +88,20 @@ try {
   await frame();
   assert.equal(header2.viewBounds()[1], 20 + 200, 'unscrolled, the second is below');
 
-  // Taken out of sticky, it scrolls away like any other.
-  header.setAttribute('style', 'position: relative');
+  // A calculated inset uses its containing block and follows a resize while held.
+  header.setAttribute('style', 'top: calc(10% + 2px)');
   box.scrollBy(0, 60);
+  await frame();
+  assert.equal(header.viewBounds()[1], 42, '10% of the 200px section, plus 2px');
+  assert.ok(red(100, 47), 'the calculated inset is used by the paint walk');
+  first.setAttribute('style', 'height: 240px');
+  await frame();
+  assert.equal(header.viewBounds()[1], 46, 'the inset follows its containing block');
+  first.setAttribute('style', '');
+  await frame();
+
+  // Taken out of sticky, it scrolls away like any other.
+  header.setAttribute('style', 'position: relative; top: calc(10% + 2px)');
   await frame();
   assert.ok(header.viewBounds()[1] < 20, 'no longer held');
   assert.deepEqual(errors, []);

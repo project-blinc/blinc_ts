@@ -13,6 +13,7 @@ use blinc_abi::css::transform::IDENTITY;
 pub(crate) enum Value {
     /// `auto` is NaN.
     Number(f32),
+    Math(String, Units),
     Enum(i32),
     Text(Option<String>),
     /// Back to a new node's value.
@@ -23,6 +24,7 @@ impl Value {
     pub(crate) fn of(value: &PropValue<'_>) -> Value {
         match *value {
             PropValue::Number(v) => Value::Number(v),
+            PropValue::Math { source, units } => Value::Math(source.into(), units),
             PropValue::Enum(v) => Value::Enum(v),
             PropValue::Text(t) => Value::Text(t.map(str::to_string)),
             PropValue::Unset => Value::Unset,
@@ -32,6 +34,10 @@ impl Value {
     pub(crate) fn prop(&self) -> PropValue<'_> {
         match self {
             Value::Number(v) => PropValue::Number(*v),
+            Value::Math(source, units) => PropValue::Math {
+                source,
+                units: *units,
+            },
             Value::Enum(v) => PropValue::Enum(*v),
             Value::Text(t) => PropValue::Text(t.as_deref()),
             Value::Unset => PropValue::Unset,

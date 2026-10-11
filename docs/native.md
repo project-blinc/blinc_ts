@@ -265,11 +265,18 @@ is a pixel length, and `calc(100% / 3)` stays a percentage. Theme and
 viewport changes re-evaluate them. Media-query expressions accept px, em
 and rem, using the initial 16px font as ordinary media-query lengths do.
 
-Layout sizes cannot yet combine a percentage with pixels: `calc(100% - 32px)`
-and `min(50%, 200px)` report errors. A font size's percentage basis is known,
-the inherited font size, so `calc(150% + 2px)` and `clamp(12px, 120%, 24px)`
-work there. Invalid expressions, division by zero and non-finite results
+Layout keeps mixed pixel/percentage lengths until the layout engine knows their basis,
+so `calc(100% - 32px)`, `min(50%, 200px)` and nested `clamp()` work in sizes,
+padding, margins, gaps, flex basis and insets. Percentages use the same basis as an
+ordinary percentage for that property. Parent resize re-evaluates them without a
+child restyle; sticky insets follow their containing block. Font-size percentages
+resolve during the cascade from the inherited font size, so `calc(150% + 2px)`
+and `clamp(12px, 120%, 24px)` work there too.
+
+Invalid expressions, division by zero and non-finite results
 are reported through `host.onStyleErrors`; the rest of the rule still applies.
+A deferred result that exceeds native layout's finite range fails the layout call.
+Mixed layout expressions currently change discretely during CSS transitions.
 Grid templates keep their existing length grammar.
 
 `tests/native-css-calc.mjs` compares expressions with explicit lengths in
