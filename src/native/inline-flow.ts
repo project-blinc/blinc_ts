@@ -651,6 +651,20 @@ export class InlineFlows {
     }
   }
 
+  /** Drop the flows whose root was destroyed, with what they kept of it. */
+  forgetDestroyed(): void {
+    for (const root of this.#flows.keys()) {
+      if (root.destroyed) {
+        this.#flows.delete(root);
+      }
+    }
+    for (const root of this.#pending) {
+      if (root.destroyed) {
+        this.#pending.delete(root);
+      }
+    }
+  }
+
   /** A node is destroyed: its flow forgets it. */
   forget(node: HostNode): void {
     if (node instanceof ElementClass) {

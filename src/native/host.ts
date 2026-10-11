@@ -1795,22 +1795,23 @@ export class Host {
     }
     // What a flow made for it goes first, while it is still where it was.
     this.inlineFlows?.forget(node);
-    this.behaviours.forget(node);
     this.canvases.forget(node);
-    if (node instanceof HostElement) {
-      this.#backgrounds.get(node)?.release();
-      this.#backgrounds.delete(node);
-      for (const owned of this.#owned.get(node) ?? []) {
-        this.destroyNode(owned);
-      }
-      this.#owned.delete(node);
-    }
+    // Its behaviours see it where it was, so a list numbers its other items again.
+    this.behaviours.forget(node);
     node.parentNode?.unlink(node);
+    // Every node under it is let go of as it is: what the host and its behaviours keep for it,
+    // and the parts the host made for it, which are not among its children.
     const forget = (current: HostNode) => {
       if (current instanceof HostElement) {
         for (let child = current.firstChild; child; child = child.nextSibling) {
           forget(child);
         }
+        for (const owned of this.#owned.get(current) ?? []) {
+          this.destroyNode(owned);
+        }
+        this.#owned.delete(current);
+        this.#backgrounds.get(current)?.release();
+        this.#backgrounds.delete(current);
         current.disposeBindings();
         this.#paintOverrides.delete(current);
         this.#cursors.delete(current);
@@ -1820,11 +1821,16 @@ export class Host {
       } else if (current instanceof HostText) {
         this.#text.delete(current);
       }
+      if (current !== node) {
+        this.behaviours.forget(current);
+      }
       current.clearListeners();
       this.#nodes.delete(current.layoutNode.id);
       HostNode.markDestroyed(current);
     };
     forget(node);
+    // A flow rooted under it goes with it.
+    this.inlineFlows?.forgetDestroyed();
     node.layoutNode.queueRemove();
   }
 
