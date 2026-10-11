@@ -45,7 +45,7 @@ export function Wiki(props: WikiProps): JsxNode {
         <nav class="wiki-nav">
           {sections(pages).map((group) => (
             <div style={{ gap: 2 }}>
-              <div class="wiki-section">{group.name}</div>
+              <div class="wiki-section">{group.name.toUpperCase()}</div>
               {group.pages.map((entry) => (
                 <button
                   class="wiki-link"

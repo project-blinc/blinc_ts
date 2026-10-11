@@ -39,7 +39,7 @@ export const wikiCss = `
 }
 .wiki-brand { font-size: var(--text-lg); font-weight: var(--font-bold); letter-spacing: var(--tracking-tight); }
 .wiki-tagline { font-size: var(--text-sm); color: var(--text-tertiary); }
-.wiki-section { padding: var(--space-4) var(--space-2-5) var(--space-1) var(--space-2-5); font-size: var(--text-xs); font-weight: var(--font-semibold); color: var(--text-tertiary); }
+.wiki-section { padding: var(--space-5) var(--space-2-5) var(--space-1-5) var(--space-2-5); font-size: var(--text-xs); font-weight: var(--font-bold); letter-spacing: var(--tracking-wider); color: var(--text-primary); }
 .wiki-link {
   min-height: var(--space-8);
   flex-direction: row;
@@ -51,12 +51,12 @@ export const wikiCss = `
   background: transparent;
   color: var(--text-secondary);
   font-size: var(--text-sm);
-  font-weight: var(--font-medium);
+  font-weight: var(--font-normal);
   transition: background ${STATE}, color ${STATE}, outline-width ${RING};
 }
 .wiki-link, .wiki-link:hover, .wiki-link:active { box-shadow: none; }
 .wiki-link:hover, .wiki-link:active { background: var(--input-bg-hover); color: var(--text-primary); transform: none; }
-.wiki-link[data-active] { background: var(--accent-subtle); color: var(--text-primary); }
+.wiki-link[data-active] { background: var(--accent-subtle); color: var(--text-primary); font-weight: var(--font-medium); }
 
 .wiki-main { flex: 1; min-width: 0; padding: var(--space-9) var(--space-11) var(--space-16) var(--space-11); overflow-y: auto; }
 .wiki-page { width: 100%; max-width: 780px; gap: var(--space-1-5); font-size: var(--text-base); }
