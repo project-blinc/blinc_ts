@@ -30,6 +30,7 @@ import type { AffineTransform, Color, PaintStyle, TextStyle } from './scene.js';
 import type { ShapeTokens } from '../theme/shape.js';
 import { ScrollThumb, words } from './scrollbar.js';
 import { InlineFlows } from './inline-flow.js';
+import { HostCanvases } from './canvases.js';
 import { HostImages } from './host-images.js';
 import { Behaviours } from './behaviours.js';
 import type { ValidityFlags } from './validity.js';
@@ -961,6 +962,8 @@ export class Host {
   readonly behaviours: Behaviours;
   /** The images elements name, loaded once each, which a mounted window draws. */
   readonly images: HostImages | undefined;
+  /** What `canvas` elements draw, through the renderers that draw the host. */
+  readonly canvases: HostCanvases;
   /** The native bindings this host measures text with, when it was given them. */
   readonly native: NativeBindings | undefined;
   /** Elements the host made for another to hold, which frameworks do not see among its children. */
@@ -973,6 +976,7 @@ export class Host {
     this.inlineFlows = native ? new InlineFlows(this, native) : undefined;
     this.images = native ? new HostImages(native, layout) : undefined;
     this.behaviours = new Behaviours(this);
+    this.canvases = new HostCanvases(this);
     this.#stateBits = new Map(layout.stateNames.map((name, i) => [name, 1 << i]));
     this.root = this.#register(new HostElement(this, layout.createNode(), 'root'));
     this.styleChanged(this.root);
@@ -1673,12 +1677,13 @@ export class Host {
   mount(window: NativeWindowHost, options: HostMountOptions = {}): () => void {
     const { scope, ...scene } = options;
     this.flush();
-    window.attachScene(
+    const renderer = window.attachScene(
       this.layout,
       this.root.layoutNode,
       this.images ? { ...scene, images: this.images.library } : scene,
       scope,
     );
+    const detachCanvases = this.canvases.attach(renderer);
     this.clipboard = new SystemClipboard(window.bindings.window);
     // The input method is on while text has focus, its candidates by the caret.
     let methodOn = false;
@@ -1769,6 +1774,7 @@ export class Host {
     const unmount = () => {
       if (mounted) {
         mounted = false;
+        detachCanvases();
         off();
         offCursor();
         this.inputArea?.(null);
@@ -1790,6 +1796,7 @@ export class Host {
     // What a flow made for it goes first, while it is still where it was.
     this.inlineFlows?.forget(node);
     this.behaviours.forget(node);
+    this.canvases.forget(node);
     if (node instanceof HostElement) {
       this.#backgrounds.get(node)?.release();
       this.#backgrounds.delete(node);
@@ -1930,3 +1937,4 @@ export {
   type HostPointerEventInit,
   type ListenerOptions,
 } from './events.js';
+export type { CanvasDrawing } from './canvases.js';

@@ -233,6 +233,11 @@ export class SceneRenderer {
     }
   }
 
+  /** The device it draws with, on which a canvas makes the buffers and bind groups it paints with. */
+  get device(): gpu.GpuDevice {
+    return this.#device;
+  }
+
   /** Register a canvas slot. Cleanup removes only this registration, including after replacement. */
   registerCanvas(slot: number, paint: CanvasPaint, scope?: Scope): () => void {
     this.#assertLive();

@@ -1281,6 +1281,17 @@ use the function returned by `registerCanvas` to unregister, and call
 `program.dispose()` when finished. Disposing the renderer releases its remaining
 pipelines. Caller-created buffers, bind groups and extra layouts remain caller-owned.
 
+### Canvas elements
+
+A host's `canvas` element is drawn the same way, without slots: `host.canvases.draw(canvas,
+drawing)` draws it until the returned function is called or the element is destroyed. A drawing's
+`prepare(renderer, scope)` makes its pipelines and resources on `renderer.device` and returns the
+paint; it runs once for each renderer that draws the host, which `Host.mount` gives for its
+window and `host.canvases.attach(renderer)` gives for one made by hand, and what it made is
+released with `scope` when the canvas stops or the renderer goes. A canvas that animates calls
+`host.canvases.requestFrame()` from its paint. `tests/native-canvas-element.mjs` checks one drawn
+in place, clipped to its corners, through two renderers, stopped and destroyed.
+
 `tests/native-canvas.mjs` checks paint order, transformed clipping, layers,
 state restoration, suspension, callback failures and replacement/disposal, with
 independent reference captures at 1× and 2×.
