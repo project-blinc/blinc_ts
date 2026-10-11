@@ -3,7 +3,6 @@
  * Space come with it, that holds its state, shared with the user as `checked` or `pressed`
  * (see ./state) and shown as `data-checked`/`data-unchecked`, `data-pressed`, `data-disabled`.
  */
-import type { HostElement } from 'blinc_ts/native/host';
 import { createContext, Show } from '#jsx/flow';
 import { read, useContext, type Source } from '#jsx/owner';
 import type { Child, JsxNode } from '#jsx/jsx-runtime';
@@ -128,8 +127,6 @@ function SwitchThumb(props: PartProps): JsxNode {
           'data-checked': flag(state.checked),
           'data-unchecked': flag(() => !state.checked()),
           'data-disabled': flag(state.disabled),
-          // The sheet moves it by putting it at the other end, and it eases across.
-          ref: (e: HostElement) => e.animateLayout({ size: false }),
         },
         props,
       )}

@@ -106,9 +106,11 @@ try {
   await caught('and out', refs.checkbox, () => refs.checkbox.click(), 30);
   await caught('a pill follows the chosen tab', refs.tray, () => refs.b.click());
   await caught('and goes back', refs.tray, () => refs.a.click());
-  // A panel is revealed by the size easing: what is below it is on its way down.
+  // A panel is revealed and folded away by its size easing: it is seen part of its height, in the
+  // strip from its top to below what follows it.
   const [bx, by, bw, bh] = refs.below.bounds();
-  const strip = [bx, by, bw, bh + 80];
+  const top = refs.panel.bounds()[1];
+  const strip = [bx, top, bw, by - top + bh + 80];
   await caught('a panel is revealed', strip, () => refs.trigger.click());
   await caught('and folded away', strip, () => refs.trigger.click());
 

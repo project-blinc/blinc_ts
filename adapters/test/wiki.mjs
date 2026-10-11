@@ -214,17 +214,16 @@ try {
       await frame();
       wiki.page.set('toggles');
       await frame();
-      const [thumb] = findAll(host.root, 'bui-switch-thumb');
       const [track] = findAll(host.root, 'bui-switch');
       const luma = (x, y) => {
         const i = (Math.round(y) * W + Math.round(x)) * 4;
         return pixels[i] + pixels[i + 1] + pixels[i + 2];
       };
-      const [tx, ty, tw, th] = thumb.bounds();
-      // That switch is on: its knob is at the right end, light on the dark track that shows at the left.
-      const [rx, ,] = track.bounds();
+      // That switch is on: its knob is drawn at the right end, light on the dark track at the left.
+      const [rx, ry, rw, rh] = track.bounds();
+      const middle = ry + rh / 2;
       assert.ok(
-        luma(tx + tw / 2, ty + th / 2) > luma(rx + 5, ty + th / 2) + 300,
+        luma(rx + rw - rh / 2, middle) > luma(rx + rh / 2, middle) + 300,
         'the knob is drawn where it is, in the first frame of its page',
       );
     } finally {
@@ -279,6 +278,58 @@ try {
           assert.equal(knobs(), rest, `round ${round}, frame ${n}: the knobs are at rest`);
         }
       }
+      // Pressed, a knob slides across while its track's colour eases, frame by frame, and is not
+      // drawn at its end at once.
+      const first = () => Number(knobs().split(' ')[0]);
+      const from = first();
+      const [sx, sy, sw, sh] = findAll(host.root, 'bui-switch')[0].viewBounds();
+      host.input.pointerMove(sx + sw / 2, sy + sh / 2);
+      await frame();
+      host.input.pointerDown();
+      await frame();
+      host.input.pointerUp();
+      const drawn = [];
+      for (let n = 0; n < 30; n++) {
+        await frame();
+        drawn.push(first());
+      }
+      const to = drawn.at(-1);
+      assert.ok(Math.abs(to - from) > 10, `the knob went to the other end: ${from} to ${to}`);
+      assert.ok(
+        drawn.some((x) => Math.min(from, to) + 2 < x && x < Math.max(from, to) - 2),
+        `and was drawn on its way: ${drawn.join(' ')}`,
+      );
+    } finally {
+      wiki.close();
+    }
+  }
+  // Closed in a window, a panel folds away with its content in it, frame by frame: the move starts
+  // at the frame's layout, after the click, and what waits for it to end waits for it to begin.
+  {
+    const wiki = await open('light');
+    try {
+      const { host } = wiki;
+      const { frame, settle, press } = windowed(host, target, W, H);
+      await frame();
+      wiki.page.set('disclosure');
+      await settle();
+      const panel = () => findAll(host.root, 'bui-collapsible-panel')[0];
+      await press(buttonNamed(host.root, 'Show more'));
+      assert.match(panel().textContent, /builds it only while it is open/, 'opened');
+      const open = panel().bounds()[3];
+      assert.ok(open > 0, 'with a height');
+      const [x, y, w, h] = buttonNamed(host.root, 'Show more').viewBounds();
+      host.input.pointerMove(x + w / 2, y + h / 2);
+      await frame();
+      host.input.pointerDown();
+      await frame();
+      host.input.pointerUp();
+      await frame();
+      await frame();
+      assert.match(panel().textContent, /builds it only/, 'two frames into closing, it is there');
+      await settle();
+      assert.equal(panel().textContent, '', 'and once folded it is let go');
+      assert.equal(panel().bounds()[3], 0, 'laid out at no height');
     } finally {
       wiki.close();
     }

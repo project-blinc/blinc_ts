@@ -89,8 +89,8 @@ ${flat.flatMap((s) => [s, `${s}:hover`, `${s}:active`]).join(', ')} { box-shadow
 .bui-switch[data-checked]:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
 .bui-switch[data-disabled] { background: var(--input-bg-disabled); border-color: var(--border-secondary); opacity: 0.5; }
 .bui-switch[data-disabled] > .bui-switch-thumb { box-shadow: none; border: 1px solid var(--border-secondary); }
-.bui-switch[data-checked] { justify-content: flex-end; }
-.bui-switch[data-size="lg"] { width: var(--space-12); height: var(--space-7); }
+/* The knob travels by a transform, as ashui's does: paint only, nothing laid out again. */
+.bui-switch[data-size="lg"] { width: 46px; height: var(--space-7); }
 .bui-switch-thumb {
   position: relative;
   width: var(--space-3-5);
@@ -101,10 +101,14 @@ ${flat.flatMap((s) => [s, `${s}:hover`, `${s}:active`]).join(', ')} { box-shadow
   background: var(--text-inverse);
   color: var(--text-primary);
   box-shadow: var(--shadow-sm);
-  transition: transform ${PRESS};
+  transition: transform var(--duration-normal) var(--ease-spring);
 }
 .bui-switch[data-size="lg"] > .bui-switch-thumb { width: var(--space-5); height: var(--space-5); }
+.bui-switch[data-checked] > .bui-switch-thumb { transform: translateX(var(--space-4)); }
+.bui-switch[data-size="lg"][data-checked] > .bui-switch-thumb { transform: translateX(var(--space-5)); }
 .bui-switch:active > .bui-switch-thumb { transform: scale(0.92); }
+.bui-switch[data-checked]:active > .bui-switch-thumb { transform: translateX(var(--space-4)) scale(0.92); }
+.bui-switch[data-size="lg"][data-checked]:active > .bui-switch-thumb { transform: translateX(var(--space-5)) scale(0.92); }
 /* An icon on the knob: the one for the other state turns away as this one turns in. */
 .bui-icon { width: var(--space-3); height: var(--space-3); }
 .bui-switch[data-size="lg"] .bui-icon { width: var(--space-3-5); height: var(--space-3-5); }
@@ -162,6 +166,9 @@ ${flat.flatMap((s) => [s, `${s}:hover`, `${s}:active`]).join(', ')} { box-shadow
 .bui-collapsible-trigger[data-panel-open] { border-color: var(--border-hover); }
 .bui-collapsible-panel { gap: var(--space-2); padding: 0 var(--space-0-5); overflow: hidden; }
 .bui-collapsible-panel[data-closed] { height: 0; }
+/* Hidden, a panel is still laid out, at no height, as ashui's is: opening and closing are a change
+   of size that layout animation eases, never a box appearing from nothing. */
+.bui-collapsible-panel[hidden], .bui-accordion-panel[hidden] { display: flex; }
 .bui-accordion {
   width: 100%;
   border: 1px solid var(--border);

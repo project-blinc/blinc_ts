@@ -6,6 +6,7 @@ import { ThemeState } from 'blinc_ts/theme';
 import { addUserAgent } from 'blinc_ts/theme/user-agent';
 import { mount } from '../dist/jsx/jsx-runtime.js';
 import { baseUiTheme } from '../dist/base-ui/theme.js';
+import { addBaseUi } from '../dist/base-ui/sheet.js';
 import * as views from '../dist/scene/base-ui-components.js';
 
 const native = loadNative();
@@ -17,6 +18,8 @@ try {
   const state = new ThemeState(context, baseUiTheme, { scheme: 'light' });
   state.attach(host.layout);
   addUserAgent(host.layout);
+  // The sheet is what folds a panel away, so a closing panel is seen going.
+  addBaseUi(host.layout);
   const W = 500;
   const H = 400;
   const shared = () => ({
