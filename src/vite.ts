@@ -17,7 +17,9 @@ export function blinc(options: BlincViteOptions = {}): Plugin {
   }
   return {
     name: 'blinc_ts',
-    config() {
+    config(user) {
+      // The app's own build settings for this environment stand; these fill in what it leaves out.
+      const own = user.environments?.[environment]?.build ?? {};
       return {
         server: {
           watch: {
@@ -32,13 +34,18 @@ export function blinc(options: BlincViteOptions = {}): Plugin {
         environments: {
           [environment]: {
             consumer: 'server',
-            resolve: { conditions: ['node'] },
+            // The SDK loads its native addon from beside its own files, so it is never bundled.
+            resolve: { conditions: ['node'], external: ['blinc_ts'] },
             dev: {
               createEnvironment(name, config) {
                 return createRunnableDevEnvironment(name, config);
               },
             },
-            build: { ssr: true, target: 'node22', outDir: 'dist/native' },
+            build: {
+              ssr: own.ssr ?? true,
+              target: own.target ?? 'node22',
+              outDir: own.outDir ?? 'dist/native',
+            },
           },
         },
       };
@@ -73,11 +80,18 @@ export function blincCss(options: BlincCssOptions = {}): Plugin {
         return null;
       }
       const resolved = await this.resolve(source, importer, { skipSelf: true });
-      if (!resolved || resolved.external || !(options.include?.(resolved.id) ?? true)) {
+      if (!resolved || resolved.external) {
+        return null;
+      }
+      // TypeScript's resolver answers a sheet's import with the declarations written beside it.
+      const file = resolved.id.endsWith('.d.css.ts')
+        ? resolved.id.slice(0, -'.d.css.ts'.length) + '.css'
+        : resolved.id;
+      if (!file.endsWith('.css') || !(options.include?.(file) ?? true)) {
         return null;
       }
       // A virtual id that does not end in .css, so the bundler's own CSS handling leaves it alone.
-      return `${VIRTUAL}${resolved.id}.js`;
+      return `${VIRTUAL}${file}.js`;
     },
     async load(id) {
       if (!id.startsWith(VIRTUAL)) {
