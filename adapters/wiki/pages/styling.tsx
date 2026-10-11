@@ -35,6 +35,7 @@ import PaintShadows from '../examples/paint-shadows.js';
 import PaintText from '../examples/paint-text.js';
 import PaintTransforms from '../examples/paint-transforms.js';
 import GlassGallery from '../examples/glass-gallery.js';
+import LayoutLab from '../examples/layout-lab.js';
 import GlassLens from '../examples/glass-lens.js';
 import GlassScroll from '../examples/glass-scroll.js';
 import ThemeEditor from '../examples/theme-editor.js';
@@ -146,6 +147,32 @@ export const stylingPages: readonly WikiPage[] = [
           A sheet can also be compiled when the app is built, so the app loads bytes and never
           parses CSS at run time. <b>Builders and bundlers</b> under Tooling shows how.
         </Note>
+      </Page>
+    ),
+  },
+  {
+    id: 'layout',
+    title: 'Flexbox and grid',
+    section: 'Styling',
+    view: () => (
+      <Page
+        title="Flexbox and grid"
+        lead="CSS's layout, computed natively: the box model, flexbox and grid."
+      >
+        <p>
+          Every element is a flexbox row unless a sheet says otherwise, and the user-agent sheet
+          stacks the flow containers in columns. Grid takes its templates and placement as CSS text.
+          Sizes take pixels, percentages, <code>auto</code>, <code>min-content</code> and{' '}
+          <code>max-content</code>, with their minimums and maximums; borders take room as CSS's box
+          model has it. A change to layout is laid out before the next frame, and a transition of a
+          length lays out at each value between.
+        </p>
+        <Example name="layout-lab" title="One property at a time" view={LayoutLab} />
+        <p>
+          Margins do not collapse between flex items, which is why the user-agent sheet gives half a
+          browser's. <code>position: absolute</code> places a box against its nearest positioned
+          ancestor, and paint order is tree order: what comes later is drawn on top.
+        </p>
       </Page>
     ),
   },

@@ -731,6 +731,57 @@ try {
       wiki.close();
     }
   }
+  // Drawing: a batch runs an effect once; a narrower width measures more lines; grid moves boxes.
+  {
+    const wiki = await open('light');
+    try {
+      const { host } = wiki;
+      const { frame, settle } = windowed(host, target, W, H);
+      await frame();
+      const readouts = () => findAll(host.root, 'wiki-readout').map((e) => e.textContent);
+      wiki.page.set('reactive-contexts');
+      await settle();
+      await new Promise((r) => setTimeout(r, 0));
+      buttonNamed(host.root, 'Add two').click();
+      await settle();
+      assert.deepEqual(readouts(), ['count 2, doubled 4', 'the effect has run 3 times'], 'twice');
+      buttonNamed(host.root, 'Add two in a batch').click();
+      await settle();
+      assert.deepEqual(readouts(), ['count 4, doubled 8', 'the effect has run 4 times'], 'once');
+      wiki.page.set('measure');
+      await settle();
+      const lines = () => Number(/^(\d+) lines/.exec(readouts()[0])[1]);
+      const wide = lines();
+      const range = [];
+      const walk = (n) => {
+        for (let c = n.firstChild; c; c = c.nextSibling) {
+          if (c.tag === 'input' && c.getAttribute('type') === 'range') range.push(c);
+          walk(c);
+        }
+      };
+      walk(findAll(host.root, 'wiki-example-preview')[0]);
+      range[0].value = '120';
+      range[0].dispatchEvent(
+        new (await import('blinc_ts/native/host')).HostEvent('input', { bubbles: true }),
+      );
+      await settle();
+      assert.ok(lines() > wide, `narrower, more lines: ${wide} then ${lines()}`);
+      wiki.page.set('layout');
+      await settle();
+      const first = findAll(host.root, 'lab-item')[3];
+      const before = first.bounds().map(Math.round).join(',');
+      buttonNamed(host.root, 'grid').click();
+      await settle();
+      assert.notEqual(
+        first.bounds().map(Math.round).join(','),
+        before,
+        'grid places the boxes anew',
+      );
+      assert.deepEqual(wiki.errors, []);
+    } finally {
+      wiki.close();
+    }
+  }
 } finally {
   target.dispose();
 }
