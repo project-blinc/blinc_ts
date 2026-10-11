@@ -46,7 +46,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: rayzor-blade/x-idl
-          ref: ef7b2453997177e98e14e828a9bdd5b3ded07cf4
+          ref: d748d767fbaf9273e8c3fe3231ca94bb0716c59d
           path: deps/x-idl
       - uses: actions/checkout@v4
         with:
@@ -56,7 +56,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: rayzor-blade/xwindow
-          ref: f039beb9679c62df42d4331607d388bfd0821eb7
+          ref: 074097ce4ed614485e9738fca2885f88fd19930e
           path: deps/xwindow
       - uses: actions/setup-node@v4
         with:
@@ -72,7 +72,7 @@ jobs:
       - name: Native window and software GPU dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-0 libwayland-dev libx11-dev libxrandr-dev libxi-dev libxcursor-dev mesa-vulkan-drivers xvfb xauth openbox sway
+          sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-0 libwayland-dev libx11-dev libxrandr-dev libxi-dev libxcursor-dev libudev-dev mesa-vulkan-drivers xvfb xauth openbox sway
       - run: npm ci
       - run: npm run build
       - run: npm run build:native
