@@ -40,47 +40,51 @@ export function Wiki(props: WikiProps): JsxNode {
   });
   return (
     <div class="wiki">
-      <nav class="wiki-nav">
+      <div class="wiki-body">
+        <nav class="wiki-nav">
+          {sections(pages).map((group) => (
+            <div style={{ gap: 2 }}>
+              <div class="wiki-section">{group.name}</div>
+              {group.pages.map((entry) => (
+                <button
+                  class="wiki-link"
+                  type="button"
+                  data-page={entry.id}
+                  data-active={() => (page.get() === entry.id ? '' : undefined)}
+                  onClick={() => page.set(entry.id)}
+                >
+                  {entry.title}
+                </button>
+              ))}
+            </div>
+          ))}
+        </nav>
+        <main
+          class="wiki-main"
+          ref={(element: HostElement) => {
+            main = element;
+          }}
+        >
+          {() => pages.find((entry) => entry.id === page.get())?.view()}
+        </main>
+      </div>
+      {/* Last, so its shadow is drawn over the page that scrolls under it. */}
+      <header class="wiki-header">
         <div class="wiki-brand">blinc_ts</div>
         <div class="wiki-tagline">Live examples, running on Blinc</div>
-        {sections(pages).map((group) => (
-          <div style={{ gap: 2 }}>
-            <div class="wiki-section">{group.name}</div>
-            {group.pages.map((entry) => (
-              <button
-                class="wiki-link"
-                type="button"
-                data-page={entry.id}
-                data-active={() => (page.get() === entry.id ? '' : undefined)}
-                onClick={() => page.set(entry.id)}
-              >
-                {entry.title}
-              </button>
-            ))}
-          </div>
-        ))}
-        <div class="wiki-scheme">
-          <Switch.Root
-            size="lg"
-            defaultChecked={props.theme.preference === 'dark'}
-            onCheckedChange={(dark) => props.theme.setScheme(dark ? 'dark' : 'light')}
-          >
-            <Switch.Thumb>
-              <Sun class="bui-thumb-unchecked" />
-              <Moon class="bui-thumb-checked" />
-            </Switch.Thumb>
-          </Switch.Root>
-          <span>Theme</span>
-        </div>
-      </nav>
-      <main
-        class="wiki-main"
-        ref={(element: HostElement) => {
-          main = element;
-        }}
-      >
-        {() => pages.find((entry) => entry.id === page.get())?.view()}
-      </main>
+        <div class="wiki-spacer" />
+        <Switch.Root
+          size="lg"
+          aria-label="Dark theme"
+          defaultChecked={props.theme.preference === 'dark'}
+          onCheckedChange={(dark) => props.theme.setScheme(dark ? 'dark' : 'light')}
+        >
+          <Switch.Thumb>
+            <Sun class="bui-thumb-unchecked" />
+            <Moon class="bui-thumb-checked" />
+          </Switch.Thumb>
+        </Switch.Root>
+      </header>
     </div>
   );
 }

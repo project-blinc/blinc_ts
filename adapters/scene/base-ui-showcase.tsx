@@ -21,7 +21,7 @@ export const showcase = (s: Showcase): Child => (
     }}
   >
     <div style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
-      <Toggle>Bold</Toggle>
+      <Toggle ref={(e: HostElement) => (s.refs.bold = e)}>Bold</Toggle>
       <Toggle defaultPressed>Italic</Toggle>
       <Toggle disabled>Disabled</Toggle>
       <Switch.Root ref={(e: HostElement) => (s.refs.off = e)}>
@@ -81,13 +81,17 @@ export const showcase = (s: Showcase): Child => (
       </Accordion.Item>
       <Accordion.Item value="two">
         <Accordion.Header>
-          <Accordion.Trigger>How is it styled?</Accordion.Trigger>
+          <Accordion.Trigger ref={(e: HostElement) => (s.refs.styled = e)}>
+            How is it styled?
+          </Accordion.Trigger>
         </Accordion.Header>
         <Accordion.Panel>By the sheet, from the theme's variables.</Accordion.Panel>
       </Accordion.Item>
     </Accordion.Root>
     <Collapsible.Root defaultOpen>
-      <Collapsible.Trigger>Details</Collapsible.Trigger>
+      <Collapsible.Trigger ref={(e: HostElement) => (s.refs.details = e)}>
+        Details
+      </Collapsible.Trigger>
       <Collapsible.Panel>Shown while open.</Collapsible.Panel>
     </Collapsible.Root>
   </div>

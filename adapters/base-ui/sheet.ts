@@ -228,10 +228,10 @@ ${flat.flatMap((s) => [s, `${s}:hover`, `${s}:active`]).join(', ')} { box-shadow
   font-weight: var(--font-medium);
   transition: color ${STATE}, background ${STATE}, outline-width ${RING};
 }
+/* The chosen tab is marked by what slides under it, so a tab has no fill of its own to compete: hovering only darkens its text. */
+.bui-tabs-tab, .bui-tabs-tab:hover, .bui-tabs-tab:active { background: transparent; }
 .bui-tabs-tab:hover, .bui-tabs-tab:active { color: var(--text-primary); transform: none; }
 .bui-tabs-list[data-variant="underline"] .bui-tabs-tab { height: var(--space-9); border-radius: var(--radius-none); }
-.bui-tabs-list[data-variant="underline"] .bui-tabs-tab:hover { background: var(--input-bg-hover); }
-.bui-tabs-list[data-variant="underline"] .bui-tabs-tab[data-active]:hover { background: transparent; }
 .bui-tabs-tab[data-active] { color: var(--text-primary); }
 .bui-tabs-tab[data-disabled] { opacity: 0.4; }
 .bui-tabs-indicator { position: absolute; z-index: 0; pointer-events: none; }

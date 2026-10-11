@@ -9,13 +9,13 @@ import { SceneRenderer } from 'blinc_ts/native/renderer';
 import { probeShader } from 'blinc_ts/shaders';
 import { ThemeState } from 'blinc_ts/theme';
 import { addUserAgent } from 'blinc_ts/theme/user-agent';
-import { FrameLayout } from '../../dist/native/frame-layout.js';
 import { jsx, mount } from '../dist/jsx/jsx-runtime.js';
 import { baseUiTheme } from '../dist/base-ui/theme.js';
 import { addBaseUi } from '../dist/base-ui/sheet.js';
 import { addWikiSheet } from '../dist/wiki/sheet.js';
 import { pages } from '../dist/wiki/pages.js';
 import { Wiki } from '../dist/wiki/wiki.js';
+import { buttonNamed, findAll, windowed } from './wiki-driver.mjs';
 
 const native = loadNative();
 const W = 1100;
@@ -23,31 +23,6 @@ const H = 760;
 const target = await OffscreenRenderer.create(native, W, H, probeShader);
 const output = new URL('../../.blinc/wiki/', import.meta.url);
 await mkdir(output, { recursive: true });
-
-/** The button under `node` whose text is `text`. */
-function buttonNamed(node, text) {
-  for (let child = node.firstChild; child; child = child.nextSibling) {
-    if (child.tag === 'button' && child.textContent === text) {
-      return child;
-    }
-    const found = buttonNamed(child, text);
-    if (found) {
-      return found;
-    }
-  }
-  return undefined;
-}
-
-/** The elements under `node` with `name` among their classes, in tree order. */
-function findAll(node, name, out = []) {
-  for (let child = node.firstChild; child; child = child.nextSibling) {
-    if (child.classList?.contains(name)) {
-      out.push(child);
-    }
-    findAll(child, name, out);
-  }
-  return out;
-}
 
 async function open(scheme) {
   const context = native.createReactive();
@@ -138,6 +113,45 @@ try {
       wiki.close();
     }
   }
+  // The header is fixed with the theme switch in it, whatever the page does under it.
+  {
+    const wiki = await open('light');
+    try {
+      const { host } = wiki;
+      wiki.page.set('forms');
+      await wiki.draw();
+      const header = findAll(host.root, 'wiki-header')[0];
+      const main = findAll(host.root, 'wiki-main')[0];
+      const toggle = findAll(host.root, 'bui-switch')[0];
+      assert.ok(header && toggle, 'the wiki has a header with a switch in it');
+      const [, hy, hw, hh] = header.viewBounds();
+      assert.equal(hy, 0, 'the header is at the top');
+      assert.equal(hw, W, 'across the window');
+      const [, ty] = toggle.viewBounds();
+      assert.ok(ty >= 0 && ty + toggle.bounds()[3] <= hh, 'and the theme switch is in it');
+      main.scrollBy(0, 300);
+      await wiki.draw();
+      assert.ok(main.scrollTop > 0, 'the page scrolled');
+      assert.equal(header.viewBounds()[1], 0, 'the header did not');
+      assert.ok(toggle.viewBounds()[1] >= 0, 'nor the switch');
+      // A press on the switch changes the scheme, and the window with it.
+      const luma = (pixels, x, y) => {
+        const i = (Math.round(y) * W + Math.round(x)) * 4;
+        return pixels[i] + pixels[i + 1] + pixels[i + 2];
+      };
+      const light = await wiki.draw();
+      const [sx, sy, sw, sh] = toggle.viewBounds();
+      host.input.pointerMove(sx + sw / 2, sy + sh / 2);
+      host.input.pointerDown();
+      host.input.pointerUp();
+      assert.equal(wiki.theme.preference, 'dark', 'the switch set the dark scheme');
+      const dark = await wiki.draw();
+      assert.ok(luma(light, W - 40, 400) > luma(dark, W - 40, 400) + 300, 'and the page went dark');
+    } finally {
+      wiki.close();
+    }
+  }
+
   // A user's session, frame by frame as a window runs them: a frame follows each event at once, so
   // what an event changed is still queued when it begins. Clicking through the reactive page is
   // what crashed a window.
@@ -145,42 +159,8 @@ try {
     const wiki = await open('light');
     try {
       const { host } = wiki;
-      host.compute(W, H);
-      const frames = new FrameLayout(host.layout, host.root.layoutNode);
-      host.layout.onChange((change) => frames.changed(change));
-      let clock = 0;
-      const frame = async () => {
-        frames.prepare(W, H, 1, () => (clock += 16));
-        const renderer = new SceneRenderer(target.device, host.layout);
-        try {
-          renderer.useImages(host.images.library);
-          await target.captureCommandsInto(
-            new Uint8Array(W * H * 4),
-            (encoder, view) =>
-              renderer.encode(encoder, host.root.layoutNode, view, {
-                width: W,
-                height: H,
-                scale: 1,
-              }).drawCalls,
-          );
-        } finally {
-          renderer.dispose();
-        }
-      };
-      const named = (text) =>
-        findAll(host.root, 'wiki-readout').length >= 0 && buttonNamed(host.root, text);
-      const press = async (button) => {
-        const [x, y, w, h] = button.viewBounds();
-        host.input.pointerMove(x + w / 2, y + h / 2);
-        await frame();
-        host.input.pointerDown();
-        await frame();
-        host.input.pointerUp();
-        await frame();
-        for (let i = 0; i < 6; i++) {
-          await frame();
-        }
-      };
+      const { frame, press } = windowed(host, target, W, H);
+      const named = (text) => buttonNamed(host.root, text);
       await frame();
       await press(named('Reactive views'));
       assert.equal(wiki.page.get(), 'reactive');
@@ -197,6 +177,33 @@ try {
       // Two items were added and reversed and one removed: the first of what is left is first.
       assert.match(list.textContent, /Two, number 1One, number 2/);
       assert.deepEqual(wiki.errors, []);
+    } finally {
+      wiki.close();
+    }
+  }
+  // Knobs are where they belong the moment a page is built, and do not fly in from where layout had
+  // them while the page settled.
+  {
+    const wiki = await open('light');
+    try {
+      const { host } = wiki;
+      const { frame, pixels } = windowed(host, target, W, H);
+      await frame();
+      wiki.page.set('toggles');
+      await frame();
+      const [thumb] = findAll(host.root, 'bui-switch-thumb');
+      const [track] = findAll(host.root, 'bui-switch');
+      const luma = (x, y) => {
+        const i = (Math.round(y) * W + Math.round(x)) * 4;
+        return pixels[i] + pixels[i + 1] + pixels[i + 2];
+      };
+      const [tx, ty, tw, th] = thumb.bounds();
+      // That switch is on: its knob is at the right end, light on the dark track that shows at the left.
+      const [rx, ,] = track.bounds();
+      assert.ok(
+        luma(tx + tw / 2, ty + th / 2) > luma(rx + 5, ty + th / 2) + 300,
+        'the knob is drawn where it is, in the first frame of its page',
+      );
     } finally {
       wiki.close();
     }

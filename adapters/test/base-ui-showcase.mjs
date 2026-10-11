@@ -136,6 +136,48 @@ try {
           `${scheme}: an inactive tab has no shadow or corner of its own`,
         );
       }
+      // Hover and press change a part a little and never turn it into something else: what a pointer
+      // over it shows is its own fill, not the user-agent's for a button. A tab has none to change,
+      // since what slides under the chosen one is what marks it.
+      {
+        const sampleAt = (frame, element) => {
+          const [ex, ey, , eh] = element.bounds();
+          return luma(at(frame, ex + 4, ey + eh / 2));
+        };
+        const mostly = new Map([
+          ['first', 3],
+          ['api', 3],
+          ['bold', 90],
+          ['details', 90],
+          ['styled', 90],
+          ['off', 110],
+          ['unchecked', 90],
+        ]);
+        const away = () => host.input.pointerMove(W - 2, H - 2);
+        for (const [name, allowed] of mostly) {
+          away();
+          settle();
+          const rest = sampleAt(await draw(), s.refs[name]);
+          const [ex, ey, ew, eh] = s.refs[name].bounds();
+          host.input.pointerMove(ex + ew / 2, ey + eh / 2);
+          settle();
+          const hovered = sampleAt(await draw(), s.refs[name]);
+          host.input.pointerDown();
+          settle();
+          const pressed = sampleAt(await draw(), s.refs[name]);
+          host.input.pointerUp();
+          assert.ok(
+            Math.abs(hovered - rest) <= allowed,
+            `${scheme}: ${name} hovered goes from ${rest} to ${hovered}`,
+          );
+          assert.ok(
+            Math.abs(pressed - rest) <= allowed,
+            `${scheme}: ${name} pressed goes from ${rest} to ${pressed}`,
+          );
+        }
+        away();
+        settle();
+      }
       // The theme's shape reaches the parts: with smoothing off, an accordion's corner is a circle's.
       const [gx, gy] = s.refs.accordion.bounds();
       const corner = (frame) => {
