@@ -65,6 +65,10 @@
       "types": "./dist/native/image-library.d.ts",
       "import": "./dist/native/image-library.js"
     },
+    "./native/frame-layout": {
+      "types": "./dist/native/frame-layout.d.ts",
+      "import": "./dist/native/frame-layout.js"
+    },
     "./native/placement": {
       "types": "./dist/native/placement.d.ts",
       "import": "./dist/native/placement.js"

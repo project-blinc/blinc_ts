@@ -782,6 +782,11 @@ try {
       wiki.close();
     }
   }
+  // The Testing page's example is a test, and it passes.
+  {
+    const { buttonTurnsRed } = await import('../dist/wiki/snippets/testing.js');
+    await buttonTurnsRed();
+  }
 } finally {
   target.dispose();
 }

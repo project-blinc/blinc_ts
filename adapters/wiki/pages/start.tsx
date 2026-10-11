@@ -169,6 +169,10 @@ npm run wiki:dev       # the same, reloading as you edit it`}</Code>
             ],
             [<code>blinc_ts/native/placement</code>, 'Where a floating box goes against an anchor'],
             [
+              <code>blinc_ts/native/frame-layout</code>,
+              "FrameLayout: a window's frame sequence, for hosts and tests that make frames",
+            ],
+            [
               <code>blinc_ts/theme</code>,
               'Tokens, themes, bundles, ThemeState, colours, easings and shape',
             ],

@@ -1,5 +1,5 @@
 // Driving the wiki as a window does: a frame after each event, and pointer travel between them.
-import { FrameLayout } from '../../dist/native/frame-layout.js';
+import { FrameLayout } from 'blinc_ts/native/frame-layout';
 import { SceneRenderer } from 'blinc_ts/native/renderer';
 
 /** The button under `node` whose text is `text`. */
