@@ -112,8 +112,8 @@ try {
   renderer.trim();
   const trimmed = await draw();
   assert.ok(
-    trimmed.bytes < large / 2,
-    `trim shrinks the atlas: ${large / MB} MB then ${trimmed.bytes / MB} MB`,
+    trimmed.bytes - plain < (large - plain) / 4,
+    `trim shrinks the atlas: ${(large - plain) / MB} MB then ${(trimmed.bytes - plain) / MB} MB`,
   );
   assert.deepEqual(trimmed.pixels, small, 'and the image is drawn as it was');
 

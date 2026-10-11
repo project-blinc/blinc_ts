@@ -429,9 +429,9 @@ export class SceneRenderer {
   }
 
   /** Empty the image atlas, putting the fixed slots back. */
-  #resetImages(size?: number): void {
+  #resetImages(width?: number): void {
     const revision = this.#images.revision;
-    this.#images.reset(size);
+    this.#images.reset(width);
     if (revision !== this.#images.revision) {
       this.#clearGroups();
     }
@@ -808,7 +808,7 @@ export class SceneRenderer {
       bytes += rgba(layer);
     }
     bytes += this.#glyphs[0].width * this.#glyphs[0].height + rgba(this.#glyphs[1]);
-    return bytes + this.#images.size * this.#images.size * 4;
+    return bytes + this.#images.width * this.#images.height * 4;
   }
 
   #paintCanvas(
@@ -1183,22 +1183,28 @@ export class SceneRenderer {
     this.#release(this.#frameCount - 1);
     this.#scratch = new Uint8Array(0);
     let live = 0;
+    let widest = 0;
+    const take = (width: number, height: number) => {
+      live += (width + 1) * (height + 1);
+      widest = Math.max(widest, width + 1);
+    };
     for (const [key, used] of this.#imageUsed) {
       const rect = this.#imageRects.get(key);
       if (used === this.#frameCount && rect) {
-        live += (rect.width + 1) * (rect.height + 1);
+        take(rect.width, rect.height);
       }
     }
     for (const { width, height } of this.#fixedImages.values()) {
-      live += (width + 1) * (height + 1);
+      take(width, height);
     }
-    // Room for what is shown, with half again for shelves to waste; a quarter used or less shrinks it.
-    let size = 256;
-    while (size < 4096 && size * size < live * 1.5) {
-      size *= 2;
+    // As wide as the widest image shown; when it holds four times what is shown, start it again.
+    let width = 256;
+    while (width < widest) {
+      width *= 2;
     }
-    if (size < this.#images.size || this.#images.used > live * 4) {
-      this.#resetImages(size);
+    const held = this.#images.width * this.#images.height;
+    if (held > Math.max(live * 4, width * 256)) {
+      this.#resetImages(width);
     }
   }
   /** Drop the scratch textures last needed at or before frame `before`. */

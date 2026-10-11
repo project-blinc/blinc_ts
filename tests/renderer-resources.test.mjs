@@ -118,25 +118,25 @@ test('a failed lazy pipeline is released and can be rebuilt on a later frame', (
   assert(f.resources.every((r) => r.released === 1));
 });
 
-test('image atlas grows directly to the needed size and releases replaced views', () => {
+test('image atlas grows only as wide and tall as its entries need and releases replaced views', () => {
   const f = fixture(),
     atlas = new TextureAtlas(f.device);
-  assert.deepEqual(
-    f.textures.map((s) => s.width),
-    [1],
-  );
+  const sizes = () => f.textures.map((s) => [s.width, s.height]);
+  assert.deepEqual(sizes(), [[1, 1]]);
   atlas.add(700, 500, new Uint8Array(700 * 500 * 4));
-  assert.deepEqual(
-    f.textures.map((s) => s.width),
-    [1, 1024],
-  );
+  assert.deepEqual(sizes(), [
+    [1, 1],
+    [1024, 512],
+  ]);
   const first = atlas.view;
+  // Too wide to sit beside the first: a shelf below it, taller rather than wider.
   atlas.add(800, 800, new Uint8Array(800 * 800 * 4));
   assert.equal(first.released, 1);
-  assert.deepEqual(
-    f.textures.map((s) => s.width),
-    [1, 1024, 2048],
-  );
+  assert.deepEqual(sizes(), [
+    [1, 1],
+    [1024, 512],
+    [1024, 1536],
+  ]);
   atlas.dispose();
   assert(f.resources.every((r) => r.released === 1));
 });
