@@ -1,1 +1,1 @@
-{"author":{"id":"a51b5961cc6de343a64125d8eb6a0f965aa434020b9c46ed932a1bbf143eb532"},"ops":[{"type":4,"timestamp":1791705563,"nonce":"BJZ9xAU8Hd2EAfjNp0bc8VIZ+9g=","status":2}]}
+{"author":{"id":"a51b5961cc6de343a64125d8eb6a0f965aa434020b9c46ed932a1bbf143eb532"},"ops":[{"type":3,"timestamp":1791705570,"nonce":"I2LinWHLfLkmDghkXOwj0kyvT+k=","message":"Amended to 50955892c86ed4674b5bb401ba69c3e3f1b2373d (formatting); that is the landed commit.","files":null}]}
