@@ -122,8 +122,13 @@ export function Table(props: {
  * made of it. An example with a look of its own brings its sheet this way.
  */
 export function useSheet(css: string, file: string): readonly CssDiagnostic[] {
-  const layout = useHost().layout;
+  const host = useHost();
+  const layout = host.layout;
   const sheet = layout.addStyleSheet(css, { file });
+  // What the parser could not read goes where the host reports what it could not apply.
+  for (const d of sheet.diagnostics) {
+    host.reportStyleError(`${file}:${d.line}:${d.column}: ${d.message}`);
+  }
   onCleanup(() => {
     if (!layout.disposed) {
       layout.removeStyleSheet(sheet);

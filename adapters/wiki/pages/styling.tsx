@@ -23,7 +23,14 @@ import ImagesEffects from '../examples/images-effects.js';
 import ImagesFit from '../examples/images-fit.js';
 import ImagesPeople from '../examples/images-people.js';
 import Motion from '../examples/motion.js';
-import Paint from '../examples/paint.js';
+import PaintBorders from '../examples/paint-borders.js';
+import PaintClips from '../examples/paint-clips.js';
+import PaintFade from '../examples/paint-fade.js';
+import PaintFilters from '../examples/paint-filters.js';
+import PaintGradients from '../examples/paint-gradients.js';
+import PaintShadows from '../examples/paint-shadows.js';
+import PaintText from '../examples/paint-text.js';
+import PaintTransforms from '../examples/paint-transforms.js';
 import GlassGallery from '../examples/glass-gallery.js';
 import GlassLens from '../examples/glass-lens.js';
 import GlassScroll from '../examples/glass-scroll.js';
@@ -318,12 +325,83 @@ export const stylingPages: readonly WikiPage[] = [
     title: 'Paint',
     section: 'Styling',
     view: () => (
-      <Page title="Paint" lead="CSS is parsed in Rust and drawn by the GPU.">
+      <Page
+        title="Paint"
+        lead="What a box is drawn with: CSS read by the native engine and drawn by the GPU."
+      >
         <p>
-          Gradients, shadows, transforms, filters, masks, clips, glass and text decoration are
-          written as CSS and drawn natively.
+          Paint properties are read by the same engine as the rest of a sheet, so a value means the
+          same in a sheet, an inline <code>style</code> and a compiled sheet. They are written to
+          the node's paint, not its layout: a change to paint alone draws again without laying out.
+          Every example here is CSS; its sheet is on the Source tab.
         </p>
-        <Example name="paint" view={Paint} />
+        <h2>Backgrounds and gradients</h2>
+        <Example name="paint-gradients" view={PaintGradients} />
+        <p>
+          <code>background</code> takes a colour, <code>linear-gradient()</code>,{' '}
+          <code>radial-gradient()</code> (a circle or an ellipse reaching the farthest corner),{' '}
+          <code>glass</code>, or a <code>url()</code>. Colours are hex, named, <code>rgb()</code>,{' '}
+          <code>hsl()</code>, <code>color-mix(in srgb, …)</code>, <code>transparent</code> and{' '}
+          <code>currentcolor</code>. A gradient is drawn from its first, middle and last stops;
+          conic gradients are not drawn yet.
+        </p>
+        <h2>Borders and outlines</h2>
+        <Example name="paint-borders" view={PaintBorders} />
+        <p>
+          A border takes layout space, as CSS's box model has it; <code>none</code> and{' '}
+          <code>hidden</code> take it away and every other style draws solid. Widths and colours are
+          per side, radii per corner. An outline is drawn outside the border and takes no space, so
+          it can grow and move out without moving anything.
+        </p>
+        <h2>Shadows</h2>
+        <Example name="paint-shadows" view={PaintShadows} />
+        <p>
+          <code>box-shadow</code> takes outer and <code>inset</code> layers, the first drawn on top.
+          Shadows follow the box's radius and corner shape, and blend layer by layer in a
+          transition.
+        </p>
+        <h2>Transforms</h2>
+        <Example name="paint-transforms" view={PaintTransforms} />
+        <p>
+          <code>transform</code> takes the 2D functions, about the box's centre. A transformed box
+          is hit where it is drawn, and what it holds turns with it. A transition blends by
+          translation, rotation (the short way round), scale and skew.
+        </p>
+        <h2>Filters and masks</h2>
+        <Example name="paint-filters" view={PaintFilters} />
+        <p>
+          <code>filter</code> takes <code>blur()</code>, <code>brightness()</code>,{' '}
+          <code>contrast()</code>, <code>grayscale()</code>, <code>hue-rotate()</code>,{' '}
+          <code>invert()</code>, <code>saturate()</code>, <code>sepia()</code> and{' '}
+          <code>drop-shadow()</code>, which falls around what is drawn rather than the box.{' '}
+          <code>mask-image</code> takes a gradient's alpha. A filter or a mask works on the box and
+          everything in it as one layer, as <code>opacity</code> does, so overlapping children do
+          not show through each other.
+        </p>
+        <h2>Clip paths</h2>
+        <Example name="paint-clips" view={PaintClips} />
+        <p>
+          <code>clip-path</code> takes <code>circle()</code>, <code>ellipse()</code>,{' '}
+          <code>inset()</code>, <code>rect()</code>, <code>xywh()</code>, <code>polygon()</code> and{' '}
+          <code>path()</code> with SVG path data, in the box's own coordinates, so the shape turns
+          with it. It clips what the box holds and where the pointer reaches it. Shapes of one kind
+          blend in a transition.
+        </p>
+        <h2>Fading an edge</h2>
+        <Example name="paint-fade" view={PaintFade} />
+        <h2>Text decoration</h2>
+        <Example name="paint-text" view={PaintText} />
+        <p>
+          <code>text-decoration</code> draws <code>underline</code>, <code>overline</code> and{' '}
+          <code>line-through</code>, <code>solid</code>, <code>double</code>, <code>dotted</code> or{' '}
+          <code>dashed</code>, in a colour and a thickness, with <code>text-underline-offset</code>,
+          under every line of the text; its colour, thickness and offset transition.{' '}
+          <code>wavy</code> is not drawn yet.
+        </p>
+        <Note>
+          Glass and <code>backdrop-filter</code>, which draw from what is behind a box, have a page
+          of their own: <b>Liquid glass</b>.
+        </Note>
       </Page>
     ),
   },
