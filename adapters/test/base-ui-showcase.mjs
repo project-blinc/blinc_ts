@@ -119,6 +119,23 @@ try {
       assert.ok(Math.abs(under(after) - none) > 60, 'it moved under the other tab');
       assert.ok(!Buffer.from(between).equals(Buffer.from(after)), 'it was still on its way');
       assert.ok(!Buffer.from(between).equals(Buffer.from(pixels)), 'and had left where it was');
+      // What is only a place to press lies flat, whatever the user-agent sheet gives a button: the
+      // pixel under it is the one over it, where a shadow would have darkened it.
+      for (const name of ['off', 'unchecked', 'first']) {
+        const [ex, ey, ew, eh] = s.refs[name].bounds();
+        const under = at(pixels, ex + ew / 2, ey + eh + 1);
+        const over = at(pixels, ex + ew / 2, ey - 2);
+        assert.deepEqual(under, over, `${scheme}: ${name} stands on no shadow`);
+      }
+      // A line of tabs is flat as well: nothing beside an inactive one but the bar's ground.
+      {
+        const [ex, ey, , eh] = s.refs.api.bounds();
+        assert.deepEqual(
+          at(pixels, ex - 2, ey + eh / 2),
+          at(pixels, ex + 4, ey - 2),
+          `${scheme}: an inactive tab has no shadow or corner of its own`,
+        );
+      }
       // The theme's shape reaches the parts: with smoothing off, an accordion's corner is a circle's.
       const [gx, gy] = s.refs.accordion.bounds();
       const corner = (frame) => {

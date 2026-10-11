@@ -15,9 +15,7 @@ export default function Reactive() {
     <div class="wiki-col">
       <div class="wiki-row">
         <button onClick={() => count.set(count.get() + 1)}>Count</button>
-        <span class="wiki-readout">
-          {count} doubled is {double}
-        </span>
+        <span class="wiki-readout">{() => `${count.get()} doubled is ${double.get()}`}</span>
         <Show
           when={() => count.get() > 2}
           fallback={<span class="wiki-hint">Press it three times</span>}
@@ -34,11 +32,7 @@ export default function Reactive() {
       </div>
       <ul>
         <For each={items} fallback={<li>Empty</li>}>
-          {(item, index) => (
-            <li>
-              {() => index() + 1}. {item.label}
-            </li>
-          )}
+          {(item, index) => <li>{() => `${item.label}, number ${index() + 1}`}</li>}
         </For>
       </ul>
     </div>

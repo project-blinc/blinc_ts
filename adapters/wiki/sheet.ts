@@ -36,6 +36,7 @@ export const wikiCss = `
   font-weight: var(--font-medium);
   transition: background ${STATE}, color ${STATE}, outline-width ${RING};
 }
+.wiki-link, .wiki-link:hover, .wiki-link:active { box-shadow: none; }
 .wiki-link:hover, .wiki-link:active { background: var(--input-bg-hover); color: var(--text-primary); transform: none; }
 .wiki-link[data-active] { background: var(--accent-subtle); color: var(--text-primary); }
 .wiki-scheme { flex-direction: row; align-items: center; gap: var(--space-2-5); padding: var(--space-4) var(--space-2-5) 0 var(--space-2-5); color: var(--text-secondary); font-size: var(--text-sm); }

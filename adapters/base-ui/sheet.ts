@@ -28,6 +28,8 @@ const plain = [
   '.bui-dialog-close',
 ];
 const each = (suffix: string): string => plain.map((s) => s + suffix).join(', ');
+/** Buttons that are only a place to press: a track, a box, a tab, a row. */
+const flat = ['.bui-switch', '.bui-checkbox', '.bui-tabs-tab', '.bui-accordion-trigger'];
 
 export const baseUiCss = `
 ${each('')} {
@@ -51,6 +53,9 @@ ${each(':active')} { background: var(--input-bg-hover); border-color: var(--bord
 ${each(':disabled')} { opacity: 0.5; transform: none; box-shadow: none; }
 .bui-toggle[data-pressed] { background: var(--accent-subtle); border-color: var(--border-hover); }
 .bui-popover-trigger[data-popup-open], .bui-dialog-trigger[data-popup-open], .bui-tooltip-trigger[data-popup-open] { border-color: var(--border-hover); }
+
+/* Buttons that are not a surface of their own lie flat, as ashui's ghost buttons do, whatever the user-agent sheet gives a button. */
+${flat.flatMap((s) => [s, `${s}:hover`, `${s}:active`]).join(', ')} { box-shadow: none; }
 
 /* A chevron turns over as what it belongs to opens. */
 .bui-chevron {
@@ -224,7 +229,7 @@ ${each(':disabled')} { opacity: 0.5; transform: none; box-shadow: none; }
   transition: color ${STATE}, background ${STATE}, outline-width ${RING};
 }
 .bui-tabs-tab:hover, .bui-tabs-tab:active { color: var(--text-primary); transform: none; }
-.bui-tabs-list[data-variant="underline"] .bui-tabs-tab { height: var(--space-9); }
+.bui-tabs-list[data-variant="underline"] .bui-tabs-tab { height: var(--space-9); border-radius: var(--radius-none); }
 .bui-tabs-list[data-variant="underline"] .bui-tabs-tab:hover { background: var(--input-bg-hover); }
 .bui-tabs-list[data-variant="underline"] .bui-tabs-tab[data-active]:hover { background: transparent; }
 .bui-tabs-tab[data-active] { color: var(--text-primary); }

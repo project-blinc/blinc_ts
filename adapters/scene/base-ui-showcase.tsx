@@ -64,7 +64,9 @@ export const showcase = (s: Showcase): Child => (
     </Tabs.Root>
     <Tabs.Root defaultValue="b">
       <Tabs.List ref={(e: HostElement) => (s.refs.tray = e)}>
-        <Tabs.Tab value="a">First</Tabs.Tab>
+        <Tabs.Tab value="a" ref={(e: HostElement) => (s.refs.first = e)}>
+          First
+        </Tabs.Tab>
         <Tabs.Tab value="b" ref={(e: HostElement) => (s.refs.pill = e)}>
           Second
         </Tabs.Tab>
