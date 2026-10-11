@@ -570,6 +570,9 @@ export class NativeWindowHost {
         height,
         alphaMode: state.alpha,
         presentMode: gpu.PresentMode.Fifo,
+        // Two drawables rather than three: a frame here takes far less than a vsync to encode,
+        // and each drawable is a window-sized texture.
+        desiredMaximumFrameLatency: 1,
       });
       this.#width = width;
       this.#height = height;
