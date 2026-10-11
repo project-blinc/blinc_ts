@@ -1,6 +1,7 @@
 import type { Scope } from '../hmr.js';
 import { gpu, window, LayoutNode, type Layout, type NativeBindings } from './index.js';
 import { SceneRenderer, type RenderOptions, type SceneRenderStats } from './renderer.js';
+import { FrameLayout } from './frame-layout.js';
 import { FrameTap, type CapturedFrame } from './frame-tap.js';
 import type { ImageLibrary } from './image-library.js';
 
@@ -286,28 +287,11 @@ export class NativeWindowHost {
     renderer.useImages(images ?? null);
     const render: RenderOptions = { ...rendering, width: 0, height: 0, scale: 1 };
     const clock = options.now ?? (() => performance.now());
-    let needsLayout = true;
-    let width = -1,
-      height = -1,
-      scale = -1;
+    const frameLayout = new FrameLayout(layout, root);
     const detach = this.setPainter(
       (encoder, target, w, h, ratio) => {
-        if (needsLayout || width !== w || height !== h || scale !== ratio) {
-          // Clear before compute so invalidation during this frame survives for the next one.
-          needsLayout = false;
-          layout.compute(root, w / ratio, h / ratio);
-          width = w;
-          height = h;
-          scale = ratio;
-        }
-        // After layout, which restyles and may have started a transition; before encoding, which draws it.
-        const time = clock();
-        const moving = layout.tickMotion(time);
-        // A transitioned size or place reported a layout change: lay out what it moved.
-        if (needsLayout) {
-          needsLayout = false;
-          layout.compute(root, w / ratio, h / ratio);
-        }
+        let time = 0;
+        const moving = frameLayout.prepare(w, h, ratio, () => (time = clock()));
         render.width = w;
         render.height = h;
         render.scale = ratio;
@@ -340,7 +324,7 @@ export class NativeWindowHost {
         this.detachScene();
         return;
       }
-      needsLayout ||= change === 'layout';
+      frameLayout.changed(change);
       this.requestFrame();
     });
     scope?.onCleanup(detach);
