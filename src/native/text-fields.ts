@@ -12,6 +12,7 @@ import { HostElement as ElementClass, HostText } from './host.js';
 import type { HostCompositionEvent, HostKeyboardEvent, HostTextEvent } from './input.js';
 import type { TextStyle } from './scene.js';
 import { TextEditing, type Measured } from './text-editing.js';
+import { transformText } from './text-transform.js';
 
 /** The `input` types that are not edited as text. */
 const NOT_TEXT: ReadonlySet<string> = new Set([
@@ -95,6 +96,8 @@ export class TextFields {
   #told: InputArea | null = null;
   /** A field lost focus, so the input method is to be turned off unless another takes it. */
   #left = false;
+  /** Casing changed after restyle: the caret's new inline declarations need another pass. */
+  #needsRestyle = false;
 
   constructor(host: Host) {
     this.host = host;
@@ -499,7 +502,25 @@ export class TextFields {
       return { stops: [{ index: 0, x: 0, line: 0 }], lineHeight: 16, lines: 1 };
     }
     const wrap = field.area && field.editing.wrapWidth > 0 ? field.editing.wrapWidth : undefined;
-    const measured = native.measureText(shown, field.style, wrap);
+    const mode = this.host.textTransformOf(field.parts?.shown ?? field.element);
+    const mapped = mode === 'none' ? undefined : transformText(shown, mode);
+    const measured = native.measureText(mapped?.text ?? shown, field.style, wrap);
+    if (mapped) {
+      const sourceAt = new Map<number, number>([[0, 0]]);
+      let index = 0;
+      for (const character of shown) {
+        index += character.length;
+        sourceAt.set(mapped.offsets[index]!, index);
+      }
+      return {
+        stops: measured.carets.flatMap((caret) => {
+          const source = sourceAt.get(caret.index);
+          return source === undefined ? [] : [{ ...caret, index: source }];
+        }),
+        lineHeight: measured.lineHeight,
+        lines: measured.lineCount,
+      };
+    }
     return { stops: measured.carets, lineHeight: measured.lineHeight, lines: measured.lineCount };
   }
 
@@ -508,6 +529,14 @@ export class TextFields {
   #touch(field: Field): void {
     field.stale = true;
     this.host.wake();
+  }
+  /** @internal Inherited presentation casing changed; refresh measurement and caret geometry. */
+  restyled(element: HostElement): void {
+    const field = this.#fields.get(element);
+    if (field?.parts) {
+      this.#touch(field);
+      this.#needsRestyle = true;
+    }
   }
 
   /** Before the tick's writes: show what each field holds. */
@@ -532,7 +561,7 @@ export class TextFields {
     // The text is measured as it is drawn: in the style it has now.
     field.style = this.host.textStyleOf(parts.shown);
     const style = field.style;
-    const key = `${style.fontSize}|${style.fontWeight}|${style.italic}|${style.fontFamily}|${style.letterSpacing}|${style.lineHeight}`;
+    const key = `${style.fontSize}|${style.fontWeight}|${style.italic}|${style.fontFamily}|${style.letterSpacing}|${style.lineHeight}|${this.host.textTransformOf(parts.shown)}`;
     if (key !== field.styleKey) {
       field.styleKey = key;
       e.remeasure();
@@ -619,6 +648,10 @@ export class TextFields {
    * read before anything is written, since a write makes the bounds unreadable until layout runs.
    */
   #laidOut(): boolean {
+    if (this.#needsRestyle) {
+      this.#needsRestyle = false;
+      return true;
+    }
     const reads: { field: Field; width: number; height: number; top: number }[] = [];
     for (const field of this.#live) {
       const parts = field.parts;

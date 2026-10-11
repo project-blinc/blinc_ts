@@ -59,7 +59,7 @@ export const wikiCss = `
 }
 .wiki-brand { font-size: var(--text-lg); font-weight: var(--font-bold); letter-spacing: var(--tracking-tight); }
 .wiki-tagline { font-size: var(--text-sm); color: var(--text-tertiary); }
-.wiki-section { padding: var(--space-5) var(--space-2-5) var(--space-1-5) var(--space-2-5); font-size: var(--text-xs); font-weight: var(--font-bold); letter-spacing: var(--tracking-wider); color: var(--text-primary); }
+.wiki-section { padding: var(--space-5) var(--space-2-5) var(--space-1-5) var(--space-2-5); font-size: var(--text-xs); font-weight: var(--font-bold); letter-spacing: var(--tracking-wider); color: var(--text-primary); text-transform: uppercase; }
 .wiki-link {
   min-height: var(--space-8);
   flex-direction: row;

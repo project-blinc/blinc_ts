@@ -1184,9 +1184,17 @@ host.mount(windowHost, { scope });
   properties go through the property router, paint properties (`background`,
   `color`, `opacity`, `border-radius`, `border-color`, `visibility`) set the
   node's paint, and text properties (`font-size`, `font-family`, `font-weight`,
-  `font-style`, `line-height`, `letter-spacing`, `white-space`) are inherited
+  `font-style`, `line-height`, `letter-spacing`, `white-space`, `text-transform`) are inherited
   by the text nodes inside. Numbers are pixels, and null restores the default.
   The `style` attribute is parsed the same way.
+  `text-transform` takes `none`, `uppercase`, `lowercase` or `capitalize`.
+  The host cases display text before shaping and wrapping, preserving source
+  `data`, `textContent`, editable values and clipboard text. Inline boundaries
+  and soft line wraps do not start new capitalized words. Editing caret positions
+  map back to source UTF-16 indices when casing expands a character, such as
+  `ß` into `SS`. Casing currently uses default Unicode mappings and word
+  segmentation; language-specific mappings, `full-width` and `full-size-kana`
+  remain follow-up work.
 - **Attributes.** `setAttribute`, `id` and `classList` are kept on the node for
   the CSS cascade.
 - **Events.** `addEventListener` and `removeEventListener` take `capture`,

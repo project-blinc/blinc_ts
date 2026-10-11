@@ -36,7 +36,8 @@ import type { Computed, Disposable, ReactiveContext, Signal } from './reactive.j
 import type { AffineTransform, Color, PaintStyle, TextStyle } from './scene.js';
 import type { ShapeTokens } from '../theme/shape.js';
 import { ScrollThumb, words } from './scrollbar.js';
-import { InlineFlows } from './inline-flow.js';
+import { InlineFlows, INLINE_TAGS } from './inline-flow.js';
+import { textTransform, transformText, type TextTransform } from './text-transform.js';
 import { HostCanvases } from './canvases.js';
 import { HostImages } from './host-images.js';
 import { Behaviours } from './behaviours.js';
@@ -148,6 +149,7 @@ const otherProperties: ReadonlySet<string> = new Set([
   'scrollbar-width',
   'scrollbar-visibility',
   'text-align',
+  'text-transform',
   'list-style-type',
   'object-fit',
   'overflow-wrap',
@@ -811,6 +813,11 @@ export class HostElement extends HostNode {
     this.host.inlineFlows?.touch(this);
     this.host.behaviours.childrenChanged(before, child);
     this.host.behaviours.childrenChanged(this, child);
+    this.host.textParentChanged(child);
+    this.host.textSiblingsChanged(this);
+    if (before && before !== this) {
+      this.host.textSiblingsChanged(before);
+    }
     return child;
   }
   appendChild<T extends HostNode>(child: T): T {
@@ -824,6 +831,8 @@ export class HostElement extends HostNode {
     this.unlink(child);
     this.host.inlineFlows?.touch(this);
     this.host.behaviours.childrenChanged(this, child);
+    this.host.textParentChanged(child);
+    this.host.textSiblingsChanged(this);
     return child;
   }
   /** @internal Unlink in JavaScript only; the native edit was already made. */
@@ -943,6 +952,8 @@ export class Host {
   readonly #sentText = new WeakMap<HostText, { data: string; style: TextStyle }>();
   /** Each text node's style, from its last restyle. */
   readonly #textStyles = new WeakMap<HostText, TextStyle>();
+  /** Hosts that never declare casing keep the ordinary text/tree path. */
+  #hasTextTransform = false;
   /** Nodes whose element (names, attributes, inline declarations) changed. */
   readonly #styleDirty = new Set<HostElement | HostText>();
   /** Each element's paint and text declarations from its last restyle. */
@@ -1380,6 +1391,7 @@ export class Host {
       const now = new Map(declarations);
       const before = this.#declared.get(node) ?? new Map<string, string>();
       this.#declared.set(node, now);
+      this.#hasTextTransform ||= now.has('text-transform');
       if (node instanceof HostText) {
         const style: TextStyle = {};
         for (const [name, value] of now) {
@@ -1403,6 +1415,19 @@ export class Host {
       }
       if (node === this.root) {
         this.#rootShape(now);
+      }
+      if (now.get('text-transform') !== before.get('text-transform')) {
+        const value = now.get('text-transform');
+        if (
+          value !== undefined &&
+          textTransform(value) === undefined &&
+          !['inherit', 'initial', 'unset'].includes(value.trim().toLowerCase())
+        ) {
+          this.#reportOne(
+            `text-transform: ${value}: expected none, uppercase, lowercase or capitalize`,
+          );
+        }
+        this.textParentChanged(node);
       }
       const cursor = now.get('cursor');
       if (cursor !== before.get('cursor')) {
@@ -1502,11 +1527,125 @@ export class Host {
     // Text going empty or coming back changes whether its parent holds more than one.
     this.inlineFlows?.touch(node.parentNode);
     this.#text.add(node);
+    if (node.parentNode) {
+      this.textSiblingsChanged(node.parentNode);
+    }
     this.#schedule();
   }
   /** @internal The text style `node` has now, defaults under what the cascade gave it. */
   textStyleOf(node: HostText): TextStyle {
     return { ...defaultText, ...this.#textStyles.get(node) };
+  }
+  /** @internal Presentation casing inherited through the host's composed tree. */
+  textTransformOf(node: HostNode): TextTransform {
+    if (!this.#hasTextTransform) {
+      return 'none';
+    }
+    for (let current: HostNode | null = node; current; current = current.composedParent) {
+      const value = this.#declared.get(current)?.get('text-transform');
+      if (value !== undefined) {
+        if (value.trim().toLowerCase() === 'initial') {
+          return 'none';
+        }
+        const mode = textTransform(value);
+        if (mode !== undefined) {
+          return mode;
+        }
+      }
+    }
+    return 'none';
+  }
+  /** @internal The string to shape; an inline piece was already transformed before wrapping. */
+  displayTextOf(node: HostText): string {
+    if (this.inlineFlows?.isPiece(node)) {
+      return node.data;
+    }
+    const mode = this.textTransformOf(node);
+    if (mode === 'none' || mode === 'uppercase') {
+      return mode === 'none' ? node.data : transformText(node.data, mode).text;
+    }
+    // Controls can lay out separate inline boxes without a paragraph flow. Their inline
+    // boundaries still do not split words or change contextual lowercase forms.
+    let root = node.composedParent;
+    while (root instanceof HostElement && INLINE_TAGS.has(root.tag)) {
+      if (!(root.composedParent instanceof HostElement)) {
+        break;
+      }
+      root = root.composedParent;
+    }
+    if (!(root instanceof HostElement)) {
+      return transformText(node.data, mode).text;
+    }
+    let source = '';
+    let start = -1;
+    const walk = (element: HostElement) => {
+      for (const child of this.contentNodes(element)) {
+        if (child instanceof HostText) {
+          if (child === node) {
+            start = source.length;
+          }
+          source += child.data;
+        } else if (child instanceof HostElement) {
+          const display = this.declaredOf(child).get('display')?.trim().toLowerCase();
+          if (INLINE_TAGS.has(child.tag) && (display === undefined || display === 'inline')) {
+            walk(child);
+          } else {
+            source += '\n';
+          }
+        }
+      }
+    };
+    walk(root);
+    if (start < 0) {
+      return transformText(node.data, mode).text;
+    }
+    const mapped = transformText(source, mode);
+    return mapped.text.slice(mapped.offsets[start], mapped.offsets[start + node.data.length]);
+  }
+  /** @internal Adjacent inline source text changed, so contextual casing may have too. */
+  textSiblingsChanged(element: HostElement): void {
+    if (!this.#hasTextTransform) {
+      return;
+    }
+    while (INLINE_TAGS.has(element.tag) && element.composedParent instanceof HostElement) {
+      element = element.composedParent;
+    }
+    const walk = (parent: HostElement) => {
+      for (const child of this.contentNodes(parent)) {
+        if (child instanceof HostText) {
+          this.#text.add(child);
+        } else if (child instanceof HostElement) {
+          const display = this.declaredOf(child).get('display')?.trim().toLowerCase();
+          if (INLINE_TAGS.has(child.tag) && (display === undefined || display === 'inline')) {
+            walk(child);
+          }
+        }
+      }
+    };
+    walk(element);
+  }
+  /** @internal A moved subtree or an ancestor casing change refreshes presentation text. */
+  textParentChanged(element: HostNode): void {
+    if (!this.#hasTextTransform) {
+      return;
+    }
+    const walk = (node: HostNode) => {
+      if (node instanceof HostText) {
+        this.#text.add(node);
+      } else if (node instanceof HostElement) {
+        this.behaviours.textFields.restyled(node);
+        for (const child of node.childNodes) {
+          walk(child);
+        }
+        for (const child of this.#owned.get(node) ?? []) {
+          walk(child);
+        }
+      }
+    };
+    walk(element);
+    if (element instanceof HostElement) {
+      this.inlineFlows?.touchTree(element);
+    }
   }
   /** @internal The declarations the host reads that `element` has now, as the cascade last gave them. */
   declaredOf(element: HostElement): ReadonlyMap<string, string> {
@@ -1538,13 +1677,14 @@ export class Host {
         ...(flowed ? { wrap: false } : {}),
       };
       const sent = this.#sentText.get(node);
-      if (sent?.data === node.data && sameText(sent.style, style)) {
+      const data = this.displayTextOf(node);
+      if (sent?.data === data && sameText(sent.style, style)) {
         continue;
       }
       // Unchanged text and style are not sent again; crossing text costs per character.
-      this.#sentText.set(node, { data: node.data, style });
-      node.layoutNode.queueText(node.data, style);
-      if (!flowed && (sent?.data === '') !== (node.data === '')) {
+      this.#sentText.set(node, { data, style });
+      node.layoutNode.queueText(data, style);
+      if (!flowed && (sent?.data === '') !== (data === '')) {
         // Empty text, which renderers use as anchors, takes no space, as in the DOM.
         node.layoutNode.setLayoutProperty('display', node.data === '' ? 'none' : null);
       }
@@ -1918,7 +2058,11 @@ export class Host {
     this.canvases.forget(node);
     // Its behaviours see it where it was, so a list numbers its other items again.
     this.behaviours.forget(node);
+    const parent = node.composedParent;
     node.parentNode?.unlink(node);
+    if (parent instanceof HostElement) {
+      this.textSiblingsChanged(parent);
+    }
     // Every node under it is let go of as it is: what the host and its behaviours keep for it,
     // and the parts the host made for it, which are not among its children.
     const forget = (current: HostNode) => {

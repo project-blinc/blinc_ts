@@ -38,6 +38,7 @@ import PaintText from '../examples/paint-text.js';
 import PaintTextOverflow from '../examples/paint-text-overflow.js';
 import PaintTextShadow from '../examples/paint-text-shadow.js';
 import PaintTransforms from '../examples/paint-transforms.js';
+import TextTransform from '../examples/text-transform.js';
 import GlassGallery from '../examples/glass-gallery.js';
 import LayoutLab from '../examples/layout-lab.js';
 import GlassLens from '../examples/glass-lens.js';
@@ -470,6 +471,15 @@ export const stylingPages: readonly WikiPage[] = [
         </p>
         <h2>Fading an edge</h2>
         <Example name="paint-fade" view={PaintFade} />
+        <h2>Text case</h2>
+        <Example name="text-transform" view={TextTransform} />
+        <p>
+          <code>text-transform</code> presents text as <code>uppercase</code>,{' '}
+          <code>lowercase</code> or <code>capitalize</code>, inherited through its parents;{' '}
+          <code>none</code> restores the source case. It runs before shaping and wrapping, including
+          across inline spans. Text content, editable values and copied text keep their original
+          case.
+        </p>
         <h2>Text decoration</h2>
         <Example name="paint-text" view={PaintText} />
         <p>

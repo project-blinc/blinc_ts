@@ -30,6 +30,7 @@ import { HostElement as ElementClass, HostText as TextClass } from './host.js';
 import type { NativeBindings } from './index.js';
 import type { LayoutNode } from './layout.js';
 import type { InlineAlign, InlineItem, InlineLayout } from './text.js';
+import { transformText, type TextTransform, type TransformedText } from './text-transform.js';
 
 /** The elements that hold a flow, when they hold an inline element. */
 const FLOW_TAGS: ReadonlySet<string> = new Set([
@@ -396,17 +397,48 @@ class Flow {
   /** The flow's items for the engine, with the sizes of the boxes in it as laid out now. */
   #items(): InlineItem[] {
     const { host, native } = this.#flows;
-    return this.#entries.map((entry): InlineItem => {
+    // Case words across inline boundaries before shaping and line breaking.
+    const modes = this.#entries.map((entry) =>
+      entry.kind === 'text' ? host.textTransformOf(entry.member.text) : 'none',
+    );
+    const sources = this.#entries.map((entry) => {
+      if (entry.kind === 'text') {
+        return entry.member.text.data;
+      }
+      return entry.kind === 'box' && !entry.block && placing(host, entry.element) !== 'atomic'
+        ? entry.element.textContent
+        : '\n';
+    });
+    const source = modes.some((mode) => mode !== 'none') ? sources.join('') : '';
+    const transformed = new Map<TextTransform, TransformedText>();
+    let offset = 0;
+    return this.#entries.map((entry, i): InlineItem => {
       switch (entry.kind) {
-        case 'text':
+        case 'text': {
+          const raw = entry.member.text.data;
+          const start = offset;
+          offset += raw.length;
+          const mode = modes[i]!;
+          let text = raw;
+          if (mode !== 'none') {
+            let mapped = transformed.get(mode);
+            if (!mapped) {
+              mapped = transformText(source, mode);
+              transformed.set(mode, mapped);
+            }
+            text = mapped.text.slice(mapped.offsets[start], mapped.offsets[offset]);
+          }
           return {
             kind: 'text',
-            text: entry.member.text.data,
+            text,
             style: host.textStyleOf(entry.member.text),
           };
+        }
         case 'break':
+          offset++;
           return { kind: 'break' };
         case 'box': {
+          offset += sources[i]!.length;
           const [, , width = 0, height = 0] = entry.element.bounds();
           const baseline = firstBaseline(host, native, entry.element);
           return {
@@ -537,6 +569,7 @@ class Flow {
       if (!piece) {
         piece = host.createTextNode(fragment.text);
         this.#flows.own(piece);
+        this.#flows.piece(piece);
         for (const [name, value] of [
           ['position', 'absolute'],
           ['left', 0],
@@ -631,6 +664,7 @@ export class InlineFlows {
   readonly #flows = new Map<HostElement, Flow>();
   /** Texts a flow hides, and the pieces it shows: the host leaves their display and wrapping to it. */
   readonly #owned = new WeakSet<HostText>();
+  readonly #pieces = new WeakSet<HostText>();
   readonly #pending = new Set<HostElement>();
   /** What runs after a pass in which no flow had anything to write; true when it wrote. */
   readonly #settled = new Set<() => boolean>();
@@ -644,6 +678,14 @@ export class InlineFlows {
   /** Whether a flow has the text: hidden by it, or shown by it. */
   owns(node: HostText): boolean {
     return this.#owned.has(node);
+  }
+  /** @internal Pieces contain presentation text already shaped by the flow. */
+  isPiece(node: HostText): boolean {
+    return this.#pieces.has(node);
+  }
+  /** @internal */
+  piece(node: HostText): void {
+    this.#pieces.add(node);
   }
   /** @internal */
   own(node: HostText): void {
