@@ -358,9 +358,12 @@ means the same in a stylesheet, an inline `style` and a compiled sheet:
 - `border` and `border-top`, `-right`, `-bottom` and `-left` take a width
   (`thin`, `medium`, `thick` or a length), a style and a colour in any order.
   The width takes layout space, as CSS's box model does, and a style of `none`
-  or `hidden` takes it away; every other style draws solid. `border-width`,
+  or `hidden` takes it away. `dashed` and `dotted` use the same native patterns
+  as text decorations, following square or round corners; dots are round at
+  the border width. Patterns around custom corner shapes remain follow-up work.
+  Other visible styles currently draw solid. `border-width`,
   `border-style` and `border-color` take one to four values, and
-  `border-top-color` and the like set one side. `outline`, `outline-width`,
+  `border-top-color`, `border-top-style` and the like set one side. `outline`, `outline-width`,
   `outline-color` and `outline-offset` draw a ring outside the border.
 
 A node that loses a declaration gets that field's default back. Paint set

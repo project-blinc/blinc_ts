@@ -22,6 +22,9 @@ const css = `
 }
 .b-outline:hover { outline-offset: 6px; outline-width: 4px; }
 .b-thick { background: #fef3c7; color: #92400e; border: 6px solid #f59e0b; border-radius: 28px; }
+.b-dashed { background: var(--surface); color: var(--text-primary); border: 3px dashed #6366f1; border-radius: 20px; }
+.b-dotted { background: var(--surface); color: var(--text-primary); border: 3px dotted #ec4899; border-radius: 20px; }
+.b-patterns { background: var(--surface); color: var(--text-primary); border: 3px solid #16a34a; border-style: dashed dotted solid none; border-radius: 12px; }
 `;
 
 export default function PaintBorders() {
@@ -36,6 +39,9 @@ export default function PaintBorders() {
         Hover
       </Tile>
       <Tile class="b-thick" css="6px, rounded" />
+      <Tile class="b-dashed" css="dashed, rounded" />
+      <Tile class="b-dotted" css="dotted, rounded" />
+      <Tile class="b-patterns" css="style per side" />
     </div>
   );
 }

@@ -428,9 +428,11 @@ export const stylingPages: readonly WikiPage[] = [
         <Example name="paint-borders" view={PaintBorders} />
         <p>
           A border takes layout space, as CSS's box model has it; <code>none</code> and{' '}
-          <code>hidden</code> take it away and every other style draws solid. Widths and colours are
-          per side, radii per corner. An outline is drawn outside the border and takes no space, so
-          it can grow and move out without moving anything.
+          <code>hidden</code> take it away. <code>dashed</code> and <code>dotted</code> follow round
+          corners using the same patterns as text decorations; other visible styles currently draw
+          solid. Widths, colours and styles are per side, radii per corner. An outline is drawn
+          outside the border and takes no space, so it can grow and move out without moving
+          anything.
         </p>
         <h2>Shadows</h2>
         <Example name="paint-shadows" view={PaintShadows} />

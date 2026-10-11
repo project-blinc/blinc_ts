@@ -675,6 +675,9 @@ fn same_paint(a: &PaintWrite, b: &PaintWrite) -> bool {
     match (a, b) {
         (W::Opacity(x), W::Opacity(y)) => x == y,
         (W::Visible(x), W::Visible(y)) => x == y,
+        (W::BorderStyle { side: s, style: x }, W::BorderStyle { side: t, style: y }) => {
+            s == t && x == y
+        }
         (W::BorderRadius(x), W::BorderRadius(y)) | (W::OverflowFade(x), W::OverflowFade(y)) => {
             x == y
         }

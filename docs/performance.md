@@ -67,6 +67,28 @@ in this workload. [Raw samples, source revisions and binary hash](../benchmarks/
 retain the p95 values and environment. This comparison does not measure a change
 in the cost of ordinary layout between revisions.
 
+## Solid-border regression comparison, 2026-10-11
+
+The dashed/dotted border implementation retains the existing solid-box path.
+Compared release addons using ABI `438640a` and `1a95de4` on the Apple M1 Pro,
+Node 24.2.0 and Metal:
+
+```sh
+node benchmarks/compare-renderer.mjs \
+  --baseline /path/to/baseline.node --candidate /path/to/candidate.node \
+  --counts 30,300 --cases list,cards --scales 1,2 \
+  --samples 101 --warmup 20 --runs 4 \
+  --output .blinc/benchmarks/border-solid-final
+```
+
+All captured pixels, primitive counts, draw counts and record sizes matched.
+Across the twelve static/changed cases, the median of CPU-frame run medians
+ranged from 3.6% slower to 27.2% faster. Individual runs varied substantially,
+so these timings do not establish a speedup. The comparison checks existing
+solid-border workloads; it does not measure patterned-border throughput.
+[Raw samples, source revisions and binary hashes](../benchmarks/results/2026-10-11-border-solid.json.gz)
+retain all four alternating run pairs and the summary.
+
 ## Large-tree mutation and frame benchmark
 
 ```sh

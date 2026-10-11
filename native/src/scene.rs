@@ -450,6 +450,9 @@ pub(crate) fn apply_paint(
                 blinc_abi::layout_props::border_side(slot).color =
                     color.unwrap_or_else(unset_side_color);
             }
+            PaintWrite::BorderStyle { side, style } => {
+                tree.set_border_style(node, *side, *style)?
+            }
             PaintWrite::OutlineWidth(w) => props.outline_width = *w,
             PaintWrite::OutlineColor(c) => props.outline_color = *c,
             PaintWrite::OutlineOffset(o) => props.outline_offset = *o,

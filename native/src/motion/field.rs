@@ -66,6 +66,7 @@ pub(crate) enum Field {
     CornerShape,
     BorderColor,
     BorderSide(u8),
+    BorderStyle(u8),
     OutlineWidth,
     OutlineColor,
     OutlineOffset,
@@ -154,6 +155,7 @@ impl Field {
             PaintWrite::CornerShape { .. } => Field::CornerShape,
             PaintWrite::BorderColor(_) => Field::BorderColor,
             PaintWrite::BorderSideColor { side, .. } => Field::BorderSide(*side as u8),
+            PaintWrite::BorderStyle { side, .. } => Field::BorderStyle(*side as u8),
             PaintWrite::OutlineWidth(_) => Field::OutlineWidth,
             PaintWrite::OutlineColor(_) => Field::OutlineColor,
             PaintWrite::OutlineOffset(_) => Field::OutlineOffset,
@@ -184,6 +186,10 @@ impl Field {
                 locked: false,
             },
             Field::BorderColor => PaintWrite::BorderColor(None),
+            Field::BorderStyle(side) => PaintWrite::BorderStyle {
+                side: side as usize,
+                style: blinc_abi::css::border::Style::Solid,
+            },
             Field::BorderSide(side) => PaintWrite::BorderSideColor {
                 side: side as usize,
                 color: None,
@@ -213,11 +219,11 @@ impl Field {
     /// Whether a transition can move the slot between values; a corner shape
     /// is a setting, not a quantity.
     pub(crate) fn blends(self) -> bool {
-        self != Field::CornerShape
+        self != Field::CornerShape && !matches!(self, Field::BorderStyle(_))
     }
 
     /// The paint slots `all` names, besides every layout one.
-    pub(crate) const ALL: [Field; 24] = [
+    pub(crate) const ALL: [Field; 28] = [
         Field::Background,
         Field::TextColor,
         Field::Opacity,
@@ -228,6 +234,10 @@ impl Field {
         Field::BorderSide(1),
         Field::BorderSide(2),
         Field::BorderSide(3),
+        Field::BorderStyle(0),
+        Field::BorderStyle(1),
+        Field::BorderStyle(2),
+        Field::BorderStyle(3),
         Field::OutlineWidth,
         Field::OutlineColor,
         Field::OutlineOffset,
@@ -253,6 +263,16 @@ pub(crate) fn fields_of(property: &str) -> Vec<Field> {
         "opacity" => &[Field::Opacity],
         "visibility" => &[Field::Visible],
         "border-radius" => &[Field::BorderRadius],
+        "border-style" => &[
+            Field::BorderStyle(0),
+            Field::BorderStyle(1),
+            Field::BorderStyle(2),
+            Field::BorderStyle(3),
+        ],
+        "border-top-style" => &[Field::BorderStyle(0)],
+        "border-right-style" => &[Field::BorderStyle(1)],
+        "border-bottom-style" => &[Field::BorderStyle(2)],
+        "border-left-style" => &[Field::BorderStyle(3)],
         "border-color" => &[
             Field::BorderColor,
             Field::BorderSide(0),
