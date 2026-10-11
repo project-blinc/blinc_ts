@@ -23,7 +23,7 @@ globalThis[key] = {
     state.created++;
     return {
       native,
-      state: { page: 'first', scheme: 'light' },
+      state: { page: 'first', scheme: 'light', hud: false },
       show: (host) => state.shown.push(host),
       dispose: () => state.closed++,
     };
@@ -90,10 +90,20 @@ if (import.meta.hot) {
   // The reader goes to the second page and to the dark scheme.
   buttonNamed(first.root, 'Second').click();
   findAll(first.root, 'bui-switch')[0].click();
+  // And opens the performance panel.
+  buttonNamed(first.root, 'Performance').click();
   first.flush();
   assert.deepEqual(said(first), ['Two']);
+  assert.equal(findAll(first.root, 'wiki-hud').length, 1, 'the panel shows');
+  const memory = findAll(first.root, 'wiki-hud-value')[0].textContent;
+  assert.match(memory, /^\d+\.\d MB$/, `with what the process holds: ${memory}`);
+  assert.ok(parseFloat(memory) > 10, memory);
   const shell = state.session.host;
-  assert.deepEqual(shell.state, { page: 'second', scheme: 'dark' }, 'what a reload keeps is noted');
+  assert.deepEqual(
+    shell.state,
+    { page: 'second', scheme: 'dark', hud: true },
+    'what a reload keeps is noted',
+  );
 
   await save(pagesFile, pagesSource('Two, edited'));
   await waitFor(() => state.shown.length === 2, 'the wiki mounted again');
@@ -109,6 +119,7 @@ if (import.meta.hot) {
   );
   const toggle = findAll(second.root, 'bui-switch')[0];
   assert.ok(toggle.hasAttribute('data-checked'), 'and in the scheme they chose');
+  assert.equal(findAll(second.root, 'wiki-hud').length, 1, 'with the panel still open');
 
   // A full reload starts again with a new shell; disposing the session closes it.
   await delay(75);
@@ -127,4 +138,4 @@ if (import.meta.hot) {
     await rm(directory, { recursive: true, force: true });
   }
 }
-console.log('Wiki: hot reload keeps the shell, the page and the scheme');
+console.log('Wiki: hot reload keeps the shell, the page, the scheme and the panel');

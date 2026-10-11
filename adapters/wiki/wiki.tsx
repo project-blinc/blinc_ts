@@ -5,7 +5,8 @@ import type { HostElement } from 'blinc_ts/native/host';
 import type { JsxNode } from '#jsx/jsx-runtime';
 import { effect, signal } from '#jsx/owner';
 import { Moon, Sun } from '../base-ui/icons.js';
-import { Switch } from '../base-ui/toggle.js';
+import { Switch, Toggle } from '../base-ui/toggle.js';
+import { PerfHud, type PerfSource } from './hud.js';
 import { WikiTheme } from './context.js';
 import { pages as all, type WikiPage } from './pages.js';
 
@@ -28,11 +29,16 @@ export interface WikiProps {
   /** The page shown, by id; shared, so something outside can choose one. */
   page?: Signal<string>;
   pages?: readonly WikiPage[];
+  /** Where the performance panel reads from; without it the header offers none. */
+  perf?: PerfSource;
+  /** Whether the performance panel shows; shared, so it outlives a reload. */
+  hud?: Signal<boolean>;
 }
 
 export function Wiki(props: WikiProps): JsxNode {
   const pages = props.pages ?? all;
   const page = props.page ?? signal(pages[0]!.id);
+  const hud = props.hud ?? signal(false);
   let main: HostElement | undefined;
   // A new page starts at its top.
   effect(() => {
@@ -76,6 +82,11 @@ export function Wiki(props: WikiProps): JsxNode {
         <div class="wiki-brand">blinc_ts</div>
         <div class="wiki-tagline">Live examples, running on Blinc</div>
         <div class="wiki-spacer" />
+        {props.perf ? (
+          <Toggle class="wiki-hud-toggle" pressed={hud}>
+            Performance
+          </Toggle>
+        ) : null}
         <Switch.Root
           size="lg"
           aria-label="Dark theme"
@@ -88,6 +99,7 @@ export function Wiki(props: WikiProps): JsxNode {
           </Switch.Thumb>
         </Switch.Root>
       </header>
+      {() => (props.perf && hud.get() ? <PerfHud source={props.perf} page={page} /> : null)}
     </div>
   );
 }

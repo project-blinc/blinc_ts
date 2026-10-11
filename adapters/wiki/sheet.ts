@@ -26,6 +26,26 @@ export const wikiCss = `
   box-shadow: var(--shadow-sm);
 }
 .wiki-spacer { flex: 1; }
+
+/* The performance panel floats over the page's corner; its readouts keep their width as they change. */
+.wiki-hud-toggle { font-size: var(--text-sm); }
+.wiki-hud {
+  position: absolute;
+  right: var(--space-5);
+  bottom: var(--space-5);
+  width: 268px;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  font-size: var(--text-xs);
+}
+.wiki-hud-title { margin-bottom: var(--space-1); font-weight: var(--font-semibold); color: var(--text-primary); }
+.wiki-hud-row { flex-direction: row; align-items: center; justify-content: space-between; }
+.wiki-hud-label { color: var(--text-secondary); }
+.wiki-hud-value { width: 140px; flex-shrink: 0; flex-direction: row; justify-content: flex-end; font-family: var(--font-mono); color: var(--text-primary); }
 .wiki-body { width: 100%; height: 100%; flex-direction: row; padding-top: var(--space-14); }
 
 .wiki-nav {
