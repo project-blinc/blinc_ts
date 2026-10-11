@@ -202,6 +202,25 @@ try {
   frame = await capture(host);
   assert.ok(near(at(fitted, 25, 25), GREEN, 30), 'drawn as fill meanwhile');
 
+  // An image with a border is drawn inside it: clipped to the inner edge of a round border, not
+  // to its outer edge with its square corners over the ring.
+  host.layout.addStyleSheet('.ringed { border: 8px solid #ffffff; border-radius: 9999px; }');
+  const solid = picture(40, 40, RED, RED);
+  const ringed = img(440, 120, solid.url, {}, 'box ringed');
+  assert.equal(await ringed.settled, 'load');
+  frame = await capture(host, 'ringed');
+  {
+    const [x, y, w] = ringed.e.bounds();
+    const r = w / 2;
+    const diagonal = (d) => [x + r - d / Math.SQRT2, y + r - d / Math.SQRT2];
+    assert.ok(
+      near(pixel(frame, ...diagonal(r - 4)), [255, 255, 255], 40),
+      'the ring, at the diagonal',
+    );
+    assert.ok(near(pixel(frame, ...diagonal(r - 14)), RED), 'and the image inside it');
+    assert.ok(near(pixel(frame, x + 2, y + 2), GROUND, 8), 'and nothing outside the circle');
+  }
+
   // A destroyed image lets go, and the others are unharmed.
   covered.e.destroy();
   frame = await capture(host);
