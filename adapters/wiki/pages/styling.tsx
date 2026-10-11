@@ -122,9 +122,8 @@ export const stylingPages: readonly WikiPage[] = [
         <p>
           Pseudo-elements (<code>::before</code>, <code>::after</code>) are not supported: a part an
           element needs is an element the host owns, which a sheet styles by its class, as a list
-          item's marker is. <code>z-index</code> is not read either: paint order is the tree's
-          order, so what comes later is drawn over what came before. Units are px, <code>em</code>,{' '}
-          <code>rem</code>, percentages and viewport units; <code>calc()</code> is not supported.
+          item's marker is. Units are px, <code>em</code>, <code>rem</code>, percentages and
+          viewport units; <code>calc()</code> is not supported.
         </p>
         <h2>Variables and the theme</h2>
         <p>
@@ -141,8 +140,7 @@ export const stylingPages: readonly WikiPage[] = [
           A sheet's syntax errors are its diagnostics. A value that cannot be applied, such as{' '}
           <code>calc()</code> or a percentage where none is allowed, is reported to{' '}
           <code>host.onStyleErrors</code> listeners with its reason, once, and the rest of its rule
-          still applies. A property the engine does not know, <code>z-index</code> among them, is
-          skipped without a report.
+          still applies. A property the engine does not know is skipped without a report.
         </p>
         <Note>
           A sheet can also be compiled when the app is built, so the app loads bytes and never
@@ -172,7 +170,26 @@ export const stylingPages: readonly WikiPage[] = [
         <p>
           Margins do not collapse between flex items, which is why the user-agent sheet gives half a
           browser's. <code>position: absolute</code> places a box against its nearest positioned
-          ancestor, and paint order is tree order: what comes later is drawn on top.
+          ancestor, and paint order is tree order: what comes later is drawn on top, until{' '}
+          <code>z-index</code> says otherwise.
+        </p>
+        <h2>Sticky and stacking</h2>
+        <p>
+          <code>position: sticky</code> holds a box in view of its nearest scrolling ancestor: with{' '}
+          <code>top: 0</code> a section's header stays at the top of the box while the section
+          scrolls, and goes up with the end of the section. It takes <code>top</code>,{' '}
+          <code>right</code>, <code>bottom</code> and <code>left</code>, in pixels; it is laid out
+          where it would be without them, and the hit test and <code>viewBounds()</code> follow
+          where it is held.
+        </p>
+        <p>
+          <code>z-index</code> takes an integer or <code>auto</code>. Among siblings, a negative one
+          is drawn under the rest, the rest in tree order, then <code>0</code> and sticky boxes,
+          then positive ones, highest last, and the hit test follows. Two limits: a box with no{' '}
+          <code>z-index</code> keeps tree order whatever its <code>position</code>, and each box
+          stacks only among its own siblings, as if it began a stacking context, so a nested one
+          cannot rise over its ancestors' siblings. What must float over the whole page belongs in
+          the top layer.
         </p>
       </Page>
     ),

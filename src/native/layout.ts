@@ -202,6 +202,7 @@ export interface NativeLayoutNode {
   removeChild(child: NativeLayoutNode): void;
   detach(): void;
   contentSize(): number[];
+  stickyShift(): number[];
   remove(): void;
 }
 /** @internal */
@@ -1198,6 +1199,16 @@ export class LayoutNode implements QueuedNode {
     this.#layout.flush();
     const [width, height] = this.#native.contentSize();
     return [width!, height!];
+  }
+
+  /**
+   * How far `position: sticky` draws this node from where layout puts it, `[dx, dy]`; zero for any
+   * other node. Its layout bounds plus this is where it is seen.
+   */
+  stickyShift(): [dx: number, dy: number] {
+    this.#layout.flush();
+    const [dx, dy] = this.#native.stickyShift();
+    return [dx!, dy!];
   }
 
   /** Take this node out of its parent, keeping it valid. */

@@ -294,6 +294,18 @@ impl NativeLayoutNode {
         crate::css::detach(&mut tree, &mut self.owner.styles.borrow_mut(), child.node)
             .map_err(error)
     }
+    /// How far `position: sticky` draws the node from where layout puts it, `[dx, dy]`.
+    #[napi]
+    pub fn sticky_shift(&self) -> Result<Vec<f64>> {
+        self.owner.check()?;
+        let [dx, dy] = self
+            .owner
+            .tree
+            .borrow()
+            .sticky_shift(self.node)
+            .map_err(error)?;
+        Ok(vec![f64::from(dx), f64::from(dy)])
+    }
     /// How far laid-out content reaches, right and down from the node's top-left.
     #[napi]
     pub fn content_size(&self) -> Result<Vec<f64>> {

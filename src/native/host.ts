@@ -1475,6 +1475,8 @@ export class Host {
   /** @internal HostNode.viewBounds. */
   viewBoundsOf(node: HostNode): [number, number, number, number] {
     const [x, y, width, height] = this.boundsOf(node);
+    // Held in view by position: sticky, it is seen away from where layout puts it.
+    const [stuckX, stuckY] = node.layoutNode.stickyShift();
     let dx = 0;
     let dy = 0;
     for (let n = node.composedParent; n; n = n.composedParent) {
@@ -1482,7 +1484,7 @@ export class Host {
       dx += sx;
       dy += sy;
     }
-    return [x - dx, y - dy, width, height];
+    return [x - dx + stuckX, y - dy + stuckY, width, height];
   }
   /** The topmost element at a point, or null; text hits resolve to their element. */
   elementAt(x: number, y: number): HostElement | null {
