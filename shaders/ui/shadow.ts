@@ -28,7 +28,7 @@ const vertex = tgpu
       d.vec2f(grow, grow),
     );
     const pixel = placed(b.xy, field(input.instanceIndex, fields.affine), local);
-    const position = pixelToClip(pixel, scene.$.viewport.xy);
+    const position = pixelToClip(pixel, scene.$.viewport.frame);
     const packedPlace = d.vec4f(local, pixel);
     return { position, place: packedPlace, record: input.instanceIndex };
   })

@@ -46,6 +46,13 @@ export interface SceneRenderStats {
   /** What the renderer's own textures hold after the frame: the frame, layers, atlases. */
   textureBytes: number;
 }
+/** Where a texture's contents sit on screen, in device pixels. */
+interface Region {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 interface Texture {
   texture: gpu.GpuTexture;
   view: gpu.GpuTextureView;
@@ -63,6 +70,10 @@ const BOUNDS = fields.bounds * 4;
 const COLOR = fields.color * 4;
 const COLOR2 = fields.color2 * 4;
 /** Image sizes are bucketed at twelve steps an octave of scale, so a zoom reuses rasterizations. */
+/** Floats between uniform slots: 256 bytes, the alignment a dynamic offset needs. */
+const SLOT_FLOATS = 64;
+/** Layer textures grow in steps of this many pixels, so a moving layer does not remake one a frame. */
+const LAYER_STEP = 64;
 /** Frames a scratch texture outlives the last frame that needed it. */
 const KEEP_FRAMES = 60;
 const IMAGE_STEPS_PER_OCTAVE = 12;
@@ -102,8 +113,13 @@ export class SceneRenderer {
   readonly #pipelines = new Map<number, gpu.GpuPipeline>();
   readonly #frameLayout: gpu.GpuBindGroupLayout;
   readonly #textureLayout: gpu.GpuBindGroupLayout;
-  readonly #viewport: gpu.GpuBuffer;
-  readonly #viewportData = new Float32Array(4);
+  /** One uniform slot per pass of a frame: the target it draws into, and what it reads. */
+  #viewport: gpu.GpuBuffer | undefined;
+  #slotData = new Float32Array(0);
+  #slotCount = 0;
+  #slotOffset = new Uint8Array(4);
+  /** The slot of the pass being recorded. */
+  #slot = 0;
   readonly #sampler: gpu.GpuSampler;
   readonly #images: TextureAtlas;
   readonly #imageSlots = new Map<number, AtlasRect>();
@@ -174,7 +190,7 @@ export class SceneRenderer {
       },
       resume: () => {
         const state = this.#canvasState;
-        this.#begin(state.encoder!, state.target!);
+        this.#begin(state.encoder!, state.target!, this.#slot);
         state.encoder!.renderSetScissorRect(...state.scissor);
       },
     });
@@ -190,7 +206,7 @@ export class SceneRenderer {
           {
             binding: 0,
             visibility: gpu.ShaderStage.VERTEX | gpu.ShaderStage.FRAGMENT,
-            buffer: { type: gpu.BufferBindingType.Uniform },
+            buffer: { type: gpu.BufferBindingType.Uniform, hasDynamicOffset: true },
           },
           {
             binding: 1,
@@ -221,9 +237,6 @@ export class SceneRenderer {
     );
     this.#pipelineLayout = keep(
       device.createPipelineLayout({ bindGroupLayouts: [this.#frameLayout, this.#textureLayout] }),
-    );
-    this.#viewport = keep(
-      device.createBuffer({ size: 16n, usage: gpu.BufferUsage.UNIFORM | gpu.BufferUsage.COPY_DST }),
     );
     this.#sampler = keep(
       device.sampler({ minFilter: gpu.FilterMode.Linear, magFilter: gpu.FilterMode.Linear }),
@@ -577,10 +590,14 @@ export class SceneRenderer {
       this.#layout.readDisplayList(this.#records);
       this.#resolveImages(info.count);
     }
-    let depth = 0;
-    let maxDepth = 0;
-    let needsRows = false;
-    let needsShadow = false;
+    // Each layer is drawn into a texture the size of what it covers, from where it starts on
+    // screen; one that holds glass or a canvas, which read or draw the screen, covers it all.
+    const layers = new Map<number, Region>();
+    const open: { index: number; full: boolean }[] = [];
+    const deepest: [number, number][] = [];
+    let rowsSize: [number, number] = [0, 0];
+    let shadowSize: [number, number] = [0, 0];
+    let slots = 2;
     for (let i = 0; i < info.count; i++) {
       const at = i * R;
       const kind = this.#records[at + KIND]!;
@@ -597,18 +614,41 @@ export class SceneRenderer {
         throw new Error(`Unsupported display-list primitive ${kind}`);
       }
       if (kind === 40) {
-        maxDepth = Math.max(maxDepth, ++depth);
+        open.push({ index: i, full: false });
+        slots++;
       } else if (kind === 41) {
-        if (--depth < 0) {
+        const layer = open.pop();
+        if (!layer) {
           throw new Error('Unbalanced display-list layers');
         }
-        needsRows ||= this.#records[at + fields.color * 4]! > 0;
-        needsShadow ||= this.#records[at + fields.via * 4 + 3]! > 0;
-      } else if (kind === 42) {
-        needsRows = true;
+        const region = layer.full
+          ? { x: 0, y: 0, width, height }
+          : this.#region(at, width, height, scale);
+        layers.set(layer.index, region);
+        const d = open.length;
+        const need = deepest[d] ?? [0, 0];
+        deepest[d] = [Math.max(need[0], region.width), Math.max(need[1], region.height)];
+        if (this.#records[at + fields.color * 4]! > 0) {
+          rowsSize = [Math.max(rowsSize[0], region.width), Math.max(rowsSize[1], region.height)];
+        }
+        if (this.#records[at + fields.via * 4 + 3]! > 0) {
+          shadowSize = [
+            Math.max(shadowSize[0], region.width),
+            Math.max(shadowSize[1], region.height),
+          ];
+        }
+        slots += 3;
+      } else if (kind === 42 || kind === 33) {
+        for (const layer of open) {
+          layer.full = true;
+        }
+        if (kind === 42) {
+          rowsSize = [width, height];
+          slots += 2;
+        }
       }
     }
-    if (depth !== 0) {
+    if (open.length !== 0) {
       throw new Error('Unbalanced display-list layers');
     }
     const atlasBytes = this.#syncGlyphs();
@@ -627,31 +667,22 @@ export class SceneRenderer {
     }
     // Scratch passes are consumed immediately, so rows/shadow can be shared at every depth.
     // Only simultaneously active groups need distinct content textures.
-    if (needsRows && !this.#rows) {
-      this.#rows = this.#texture(width, height, gpu.TextureFormat.Rgba8unorm, true);
-    }
-    if (needsShadow && !this.#shadow) {
-      this.#shadow = this.#texture(width, height, gpu.TextureFormat.Rgba8unorm, true);
-    }
-    while (this.#layers.length < maxDepth) {
-      this.#layers.push(this.#texture(width, height, gpu.TextureFormat.Rgba8unorm, true));
-    }
     const now = this.#frameCount;
-    for (let i = 0; i < maxDepth; i++) {
-      this.#layerUsed[i] = now;
-    }
-    if (needsRows) {
+    if (rowsSize[0] > 0) {
+      this.#rows = this.#fit(this.#rows, rowsSize, width, height);
       this.#rowsUsed = now;
     }
-    if (needsShadow) {
+    if (shadowSize[0] > 0) {
+      this.#shadow = this.#fit(this.#shadow, shadowSize, width, height);
       this.#shadowUsed = now;
+    }
+    for (let d = 0; d < deepest.length; d++) {
+      this.#layers[d] = this.#fit(this.#layers[d], deepest[d]!, width, height);
+      this.#layerUsed[d] = now;
     }
     // What no recent frame needed goes; a frame that needs it again makes it again.
     this.#release(now - KEEP_FRAMES);
-    const frame = this.#frame;
-    let current = frame;
-    this.#viewportData.set([width / scale, height / scale, 0, 0]);
-    this.#queue.writeBuffer(this.#viewport, 0n, new Uint8Array(this.#viewportData.buffer), 16);
+    this.#reserveSlots(slots);
     if (info.floats) {
       this.#queue.writeBuffer(
         this.#buffer!,
@@ -660,8 +691,27 @@ export class SceneRenderer {
         info.floats * 4,
       );
     }
+    const frame = this.#frame;
+    const whole: Region = { x: 0, y: 0, width, height };
+    let used = 0;
+    /** A uniform slot for a pass into `texture` at `into`, reading what lies at `from`. */
+    const slot = (texture: Texture, into: Region, from: Region = into): number => {
+      const data = this.#slotData;
+      const o = used * SLOT_FLOATS;
+      data[o] = texture.width / scale;
+      data[o + 1] = texture.height / scale;
+      data[o + 2] = into.x / scale;
+      data[o + 3] = into.y / scale;
+      data[o + 4] = into.x;
+      data[o + 5] = into.y;
+      data[o + 6] = into.x - from.x;
+      data[o + 7] = into.y - from.y;
+      return used++;
+    };
+    const stack: { texture: Texture; region: Region }[] = [{ texture: frame, region: whole }];
+    let current = stack[0]!;
     const clear = options.clear ?? [0, 0, 0, 0];
-    this.#begin(encoder, frame.view, clear);
+    this.#begin(encoder, frame.view, slot(frame, whole), clear);
     let drawCalls = 0;
     let canvasCalls = 0;
     this.#canvasState.drawCalls = 0;
@@ -669,50 +719,55 @@ export class SceneRenderer {
       const kind = this.#records[i * R + KIND]!;
       if (kind === 40) {
         encoder.renderEnd();
-        current = this.#layers[depth++]!;
-        this.#begin(encoder, current.view, [0, 0, 0, 0]);
+        const region = layers.get(i)!;
+        current = { texture: this.#layers[stack.length - 1]!, region };
+        stack.push(current);
+        this.#begin(encoder, current.texture.view, slot(current.texture, region), [0, 0, 0, 0]);
         i++;
       } else if (kind === 41) {
         encoder.renderEnd();
-        const inner = current;
+        const inner = stack.pop()!;
         const blurred = this.#records[i * R + fields.color * 4]! > 0;
         const shadowed = this.#records[i * R + fields.via * 4 + 3]! > 0;
         if (shadowed) {
-          this.#begin(encoder, this.#shadow!.view, [0, 0, 0, 0]);
-          this.#draw(encoder, -4, i, 1, inner.view);
+          this.#begin(encoder, this.#shadow!.view, slot(this.#shadow!, inner.region), [0, 0, 0, 0]);
+          this.#draw(encoder, -4, i, 1, inner.texture.view);
           encoder.renderEnd();
           drawCalls++;
         }
         if (blurred) {
-          this.#begin(encoder, this.#rows!.view, [0, 0, 0, 0]);
-          this.#draw(encoder, -3, i, 1, inner.view);
+          this.#begin(encoder, this.#rows!.view, slot(this.#rows!, inner.region), [0, 0, 0, 0]);
+          this.#draw(encoder, -3, i, 1, inner.texture.view);
           encoder.renderEnd();
           drawCalls++;
         }
-        depth--;
-        current = depth === 0 ? frame : this.#layers[depth - 1]!;
-        this.#begin(encoder, current.view);
+        current = stack[stack.length - 1]!;
+        this.#begin(
+          encoder,
+          current.texture.view,
+          slot(current.texture, current.region, inner.region),
+        );
         this.#draw(
           encoder,
           41,
           i,
           1,
-          blurred ? this.#rows!.view : inner.view,
+          blurred ? this.#rows!.view : inner.texture.view,
           shadowed ? this.#shadow!.view : this.#dummy.view,
         );
         drawCalls++;
         i++;
       } else if (kind === 42) {
         encoder.renderEnd();
-        this.#begin(encoder, this.#rows!.view, [0, 0, 0, 0]);
-        this.#draw(encoder, -1, i, 1, current.view);
+        this.#begin(encoder, this.#rows!.view, slot(this.#rows!, whole), [0, 0, 0, 0]);
+        this.#draw(encoder, -1, i, 1, current.texture.view);
         encoder.renderEnd();
-        this.#begin(encoder, current.view);
+        this.#begin(encoder, current.texture.view, slot(current.texture, current.region));
         this.#draw(encoder, 42, i, 1, this.#rows!.view);
         drawCalls += 2;
         i++;
       } else if (kind === 33) {
-        canvasCalls += this.#paintCanvas(encoder, i, width, height, scale, current.view);
+        canvasCalls += this.#paintCanvas(encoder, i, width, height, scale, current.texture.view);
         i++;
       } else {
         let end = i + 1;
@@ -725,9 +780,15 @@ export class SceneRenderer {
       }
     }
     encoder.renderEnd();
-    this.#begin(encoder, target, [0, 0, 0, 0]);
+    this.#begin(encoder, target, slot(frame, whole), [0, 0, 0, 0]);
     this.#draw(encoder, -2, 0, 1, frame.view);
     encoder.renderEnd();
+    this.#queue.writeBuffer(
+      this.#viewport!,
+      0n,
+      new Uint8Array(this.#slotData.buffer, 0, used * SLOT_FLOATS * 4),
+      used * SLOT_FLOATS * 4,
+    );
     this.#check();
     return {
       primitives: info.count,
@@ -856,19 +917,104 @@ export class SceneRenderer {
       capacity *= 2;
     }
     this.#records = new Float32Array(capacity);
-    this.#frameGroup?.destroy();
     this.#buffer?.destroy();
     this.#buffer = this.#device.createBuffer({
       size: BigInt(capacity * 4),
       usage: gpu.BufferUsage.STORAGE | gpu.BufferUsage.COPY_DST,
     });
-    this.#frameGroup = this.#device.createBindGroup({
+    this.#frameGroup?.destroy();
+    this.#frameGroup = undefined;
+  }
+
+  /** Room for `count` uniform slots, and the bind group that reads them with the records. */
+  #reserveSlots(count: number): void {
+    if (count > this.#slotCount) {
+      let capacity = Math.max(this.#slotCount, 16);
+      while (capacity < count) {
+        capacity *= 2;
+      }
+      this.#slotCount = capacity;
+      this.#slotData = new Float32Array(capacity * SLOT_FLOATS);
+      this.#viewport?.destroy();
+      this.#viewport = this.#device.createBuffer({
+        size: BigInt(capacity * SLOT_FLOATS * 4),
+        usage: gpu.BufferUsage.UNIFORM | gpu.BufferUsage.COPY_DST,
+      });
+      this.#frameGroup?.destroy();
+      this.#frameGroup = undefined;
+    }
+    this.#frameGroup ??= this.#device.createBindGroup({
       layout: this.#frameLayout,
       entries: [
-        { binding: 0, resource: { kind: 'Buffer', value: this.#viewport } },
-        { binding: 1, resource: { kind: 'Buffer', value: this.#buffer } },
+        {
+          binding: 0,
+          resource: { kind: 'BufferBinding', value: { buffer: this.#viewport!, size: 32n } },
+        },
+        { binding: 1, resource: { kind: 'Buffer', value: this.#buffer! } },
       ],
     });
+  }
+
+  /**
+   * What the layer ending at record offset `at` covers, in device pixels: its bounds as drawn,
+   * grown by how far its blur and drop shadow read, within the frame.
+   */
+  #region(at: number, width: number, height: number, scale: number): Region {
+    const r = this.#records;
+    const [x, y, w, h] = [
+      r[at + BOUNDS]!,
+      r[at + BOUNDS + 1]!,
+      r[at + BOUNDS + 2]!,
+      r[at + BOUNDS + 3]!,
+    ];
+    const m = at + fields.affine * 4;
+    const [a, b, c, d] = [r[m]!, r[m + 1]!, r[m + 2]!, r[m + 3]!];
+    const xs = [0, a * w, c * h, a * w + c * h];
+    const ys = [0, b * w, d * h, b * w + d * h];
+    const blur = Math.max(r[at + fields.color * 4]!, 0);
+    const offset = at + fields.gradient * 4;
+    const reach =
+      Math.ceil(3 * Math.max(blur, r[offset + 2]!)) +
+      Math.ceil(Math.abs(r[offset]!)) +
+      Math.ceil(Math.abs(r[offset + 1]!)) +
+      2;
+    const x0 = Math.max(0, Math.floor((x + Math.min(...xs)) * scale) - reach);
+    const y0 = Math.max(0, Math.floor((y + Math.min(...ys)) * scale) - reach);
+    const x1 = Math.min(width, Math.ceil((x + Math.max(...xs)) * scale) + reach);
+    const y1 = Math.min(height, Math.ceil((y + Math.max(...ys)) * scale) + reach);
+    if (![x0, y0, x1, y1].every(Number.isFinite)) {
+      return { x: 0, y: 0, width, height };
+    }
+    if (x1 <= x0 || y1 <= y0) {
+      // Wholly off screen: nothing of it is seen, so a pixel holds it.
+      return { x: Math.min(x0, width - 1), y: Math.min(y0, height - 1), width: 1, height: 1 };
+    }
+    return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+  }
+
+  /** `texture`, or one made in its place, at least `size` and at most the frame. */
+  #fit(
+    texture: Texture | undefined,
+    [w, h]: [number, number],
+    width: number,
+    height: number,
+  ): Texture {
+    if (texture && texture.width >= w && texture.height >= h) {
+      return texture;
+    }
+    const step = (n: number, most: number) =>
+      Math.min(most, Math.ceil(n / LAYER_STEP) * LAYER_STEP);
+    const made = this.#texture(
+      Math.max(texture?.width ?? 0, step(w, width)),
+      Math.max(texture?.height ?? 0, step(h, height)),
+      gpu.TextureFormat.Rgba8unorm,
+      true,
+    );
+    if (texture) {
+      this.#clearGroups();
+      this.#drop(texture);
+    }
+    return made;
   }
   #syncGlyphs(): number {
     let bytes = 0;
@@ -922,7 +1068,14 @@ export class SceneRenderer {
     });
     return { texture, view: texture.createView({}), width, height };
   }
-  #begin(encoder: gpu.GpuEncoder, view: gpu.GpuTextureView, clear?: readonly number[]): void {
+  #begin(
+    encoder: gpu.GpuEncoder,
+    view: gpu.GpuTextureView,
+    slot: number,
+    clear?: readonly number[],
+  ): void {
+    this.#slot = slot;
+    new DataView(this.#slotOffset.buffer).setUint32(0, slot * SLOT_FLOATS * 4, true);
     encoder.beginRenderPass({
       colorAttachments: [
         {
@@ -1015,7 +1168,7 @@ export class SceneRenderer {
       });
       groups.set(shadow, group);
     }
-    encoder.renderSetBindGroup(0, this.#frameGroup!);
+    encoder.renderSetBindGroupOffsets(0, this.#frameGroup!, this.#slotOffset, 0n, 1);
     encoder.renderSetBindGroup(1, group);
   }
   /**
@@ -1111,6 +1264,7 @@ export class SceneRenderer {
     this.#clearGroups();
     this.#frameGroup?.destroy();
     this.#buffer?.destroy();
+    this.#viewport?.destroy();
     this.#drop(this.#frame);
     this.#drop(this.#rows);
     this.#drop(this.#shadow);

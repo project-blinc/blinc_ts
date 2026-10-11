@@ -16,7 +16,7 @@ export const layerVertex = tgpu
       std.mul(quadCorner(d.i32(input.vertexIndex)), b.zw),
     );
     return {
-      position: pixelToClip(pixel, scene.$.viewport.xy),
+      position: pixelToClip(pixel, scene.$.viewport.frame),
       place: d.vec4f(0),
       record: input.instanceIndex,
     };

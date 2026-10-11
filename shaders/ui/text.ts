@@ -19,7 +19,7 @@ const vertex = tgpu
     const b = field(input.instanceIndex, fields.bounds);
     const uv = quadCorner(d.i32(input.vertexIndex));
     const pixel = placed(b.xy, field(input.instanceIndex, fields.affine), std.mul(uv, b.zw));
-    const position = pixelToClip(pixel, scene.$.viewport.xy);
+    const position = pixelToClip(pixel, scene.$.viewport.frame);
     const packedPlace = d.vec4f(uv, pixel);
     return { position, place: packedPlace, record: input.instanceIndex };
   })

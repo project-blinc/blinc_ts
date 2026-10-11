@@ -1,6 +1,6 @@
 import { tgpu, d, std } from 'typegpu';
 import { fields } from '../../src/renderer/records.js';
-import { inputs, field, textures } from '../../src/renderer/gpu/shared.js';
+import { inputs, field, scene, textures } from '../../src/renderer/gpu/shared.js';
 import { layerVertex, gaussian } from './layerShared.js';
 
 const maskAlpha = tgpu
@@ -45,10 +45,12 @@ const maskAlpha = tgpu
 
 const fragment = tgpu
   .fragmentFn({ in: inputs, out: d.vec4f })((input) => {
-    let texel = std.textureLoad(textures.$.layer, d.vec2i(input.position.xy), 0);
+    // Where this pixel is in the layer, its blurred rows and its shadow, which share an origin.
+    const at = std.add(input.position.xy, scene.$.viewport.offsets.zw);
+    let texel = std.textureLoad(textures.$.layer, d.vec2i(at), 0);
     const color = field(input.record, fields.color);
     if (color.x > 0) {
-      texel = gaussian(textures.$.layer, input.position.xy, d.vec2f(0, 1), color.x);
+      texel = gaussian(textures.$.layer, at, d.vec2f(0, 1), color.x);
     }
     let rgb = d.vec3f(0);
     if (texel.a > 0.0001) {
@@ -68,10 +70,7 @@ const fragment = tgpu
     const tint = field(input.record, fields.via);
     if (tint.a > 0) {
       const offset = field(input.record, fields.gradient);
-      const source = std.sub(
-        std.floor(input.position.xy),
-        std.floor(std.add(offset.xy, d.vec2f(0.5))),
-      );
+      const source = std.sub(std.floor(at), std.floor(std.add(offset.xy, d.vec2f(0.5))));
       const size = d.vec2f(std.textureDimensions(textures.$.shadow));
       let fallen = d.f32(0);
       if (source.x >= 0 && source.x < size.x) {
@@ -91,7 +90,8 @@ const fragment = tgpu
       }
       alpha = outAlpha;
     }
-    return d.vec4f(rgb, alpha * color.a * maskAlpha(input.record, input.position.xy));
+    const screen = std.add(input.position.xy, scene.$.viewport.offsets.xy);
+    return d.vec4f(rgb, alpha * color.a * maskAlpha(input.record, screen));
   })
   .$name('layerFragment');
 

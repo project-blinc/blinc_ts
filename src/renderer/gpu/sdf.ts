@@ -27,12 +27,14 @@ export const placed = tgpu
     return std.add(at, d.vec2f(m.x * rel.x + m.z * rel.y, m.y * rel.x + m.w * rel.y));
   })
   .$name('placed');
+/** A point on screen, in layout pixels, in the clip space of a target `frame`: its size, then its origin. */
 export const pixelToClip = tgpu
   .fn(
-    [d.vec2f, d.vec2f],
+    [d.vec2f, d.vec4f],
     d.vec4f,
-  )((pos, size) => {
-    return d.vec4f((pos.x / size.x) * 2 - 1, 1 - (pos.y / size.y) * 2, 0, 1);
+  )((screen, frame) => {
+    const pos = std.sub(screen, frame.zw);
+    return d.vec4f((pos.x / frame.x) * 2 - 1, 1 - (pos.y / frame.y) * 2, 0, 1);
   })
   .$name('pixelToClip');
 export const sdRoundedRect = tgpu

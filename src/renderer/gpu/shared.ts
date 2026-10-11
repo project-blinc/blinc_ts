@@ -2,9 +2,15 @@ import { sceneSchema } from '../../native/scene.js';
 import { fields } from '../records.js';
 import { tgpu, d, std } from 'typegpu';
 import { sdShapedRect, halfPixel } from './sdf.js';
+/**
+ * What a pass draws into. `frame` is the target's size and origin on screen, in layout pixels;
+ * `offsets` is its origin in device pixels, and how far a texel of the texture it reads is from
+ * the same point in the target, in device pixels: zero unless the two have different origins.
+ */
+export const Viewport = d.struct({ frame: d.vec4f, offsets: d.vec4f });
 export const scene = tgpu
   .bindGroupLayout({
-    viewport: { uniform: d.vec4f },
+    viewport: { uniform: Viewport },
     records: { storage: d.arrayOf(d.vec4f), access: 'readonly' },
   })
   .$idx(0);

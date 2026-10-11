@@ -62,6 +62,7 @@ function fixture() {
     beginRenderPass() {},
     renderSetPipeline() {},
     renderSetBindGroup() {},
+    renderSetBindGroupOffsets() {},
     renderDrawRange() {},
     renderEnd() {},
   };

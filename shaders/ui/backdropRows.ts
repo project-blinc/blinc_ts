@@ -30,7 +30,7 @@ const vertex = tgpu
     );
     const position = pixelToClip(
       std.mix(lo, hi, quadCorner(d.i32(input.vertexIndex))),
-      scene.$.viewport.xy,
+      scene.$.viewport.frame,
     );
     const packedPlace = d.vec4f(0);
     return { position, place: packedPlace, record: input.instanceIndex };

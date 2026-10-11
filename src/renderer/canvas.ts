@@ -31,7 +31,7 @@ export const canvasVertex = tgpu
     const uv = quadCorner(d.i32(input.vertexIndex));
     const pixel = placed(b.xy, field(input.instanceIndex, fields.affine), std.mul(uv, b.zw));
     return {
-      position: pixelToClip(pixel, scene.$.viewport.xy),
+      position: pixelToClip(pixel, scene.$.viewport.frame),
       uv,
       pixel,
       record: input.instanceIndex,

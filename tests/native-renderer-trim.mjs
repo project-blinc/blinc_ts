@@ -12,8 +12,8 @@ import { SceneRenderer } from '../dist/native/renderer.js';
 import { OffscreenRenderer } from '../dist/native/offscreen.js';
 import { probeShader } from '../dist/renderer/shaders.js';
 
-const W = 320;
-const H = 240;
+const W = 640;
+const H = 480;
 const native = loadNative();
 const target = await OffscreenRenderer.create(native, W, H, probeShader);
 const host = Host.create(native);
@@ -56,8 +56,12 @@ try {
   const inner = element('width: 100px; height: 60px; opacity: 0.5; background: #ff4020', outer);
   element('width: 40px; height: 30px; background: #20c040', inner);
   const nested = await draw();
-  const layer = W * H * 4;
-  assert.equal(nested.bytes, plain + 2 * layer, 'two layers, each the size of the frame');
+  // Each the size of what it covers, not the frame: both together are far less than one frame.
+  const layers = nested.bytes - plain;
+  assert.ok(
+    layers > 0 && layers < (W * H * 4) / 2,
+    `two layers, each the size of the group it draws: ${layers} bytes`,
+  );
 
   // Gone from the scene, they are kept a while, in case the next frames want them again.
   outer.destroy();

@@ -30,7 +30,7 @@ const vertex = tgpu
     );
     const pixel = placed(b.xy, m, local);
     const packedPlace = d.vec4f(local, pixel);
-    const position = pixelToClip(pixel, scene.$.viewport.xy);
+    const position = pixelToClip(pixel, scene.$.viewport.frame);
     return { position, place: packedPlace, record: input.instanceIndex };
   })
   .$name('backdropVertex');
@@ -97,7 +97,7 @@ const fragment = tgpu
       const g = d.vec2f(m.x * gx + m.z * gy, m.y * gx + m.w * gy);
       normal = std.div(g, std.max(std.length(g), 0.0001));
       lens = rimLens(inner, rim);
-      const k = (size.x / scene.$.viewport.x) * std.length(m.xy);
+      const k = (size.x / scene.$.viewport.frame.x) * std.length(m.xy);
       offset = std.mul(
         std.mul(std.mul(std.mul(normal, lens), 60), field(input.record, fields.gradient).y),
         k,

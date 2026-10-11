@@ -1,14 +1,15 @@
 import { tgpu, d, std } from 'typegpu';
 import { fields } from '../../src/renderer/records.js';
-import { inputs, field, textures } from '../../src/renderer/gpu/shared.js';
+import { inputs, field, scene, textures } from '../../src/renderer/gpu/shared.js';
 import { layerVertex, gaussian } from './layerShared.js';
 
 const fragment = tgpu
   .fragmentFn({ in: inputs, out: d.vec4f })((input) => {
     const sigma = field(input.record, fields.gradient).z;
-    let alpha = std.textureLoad(textures.$.layer, d.vec2i(input.position.xy), 0).a;
+    const at = std.add(input.position.xy, scene.$.viewport.offsets.zw);
+    let alpha = std.textureLoad(textures.$.layer, d.vec2i(at), 0).a;
     if (sigma > 0.25) {
-      alpha = gaussian(textures.$.layer, input.position.xy, d.vec2f(1, 0), sigma).a;
+      alpha = gaussian(textures.$.layer, at, d.vec2f(1, 0), sigma).a;
     }
     return d.vec4f(0, 0, 0, alpha);
   })

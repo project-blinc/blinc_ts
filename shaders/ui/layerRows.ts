@@ -1,13 +1,13 @@
-import { tgpu, d } from 'typegpu';
+import { tgpu, d, std } from 'typegpu';
 import { fields } from '../../src/renderer/records.js';
-import { inputs, field, textures } from '../../src/renderer/gpu/shared.js';
+import { inputs, field, scene, textures } from '../../src/renderer/gpu/shared.js';
 import { layerVertex, gaussian } from './layerShared.js';
 
 const fragment = tgpu
   .fragmentFn({ in: inputs, out: d.vec4f })((input) =>
     gaussian(
       textures.$.layer,
-      input.position.xy,
+      std.add(input.position.xy, scene.$.viewport.offsets.zw),
       d.vec2f(1, 0),
       field(input.record, fields.color).x,
     ),

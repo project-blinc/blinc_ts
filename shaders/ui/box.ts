@@ -31,7 +31,7 @@ const vertex = tgpu
     );
     const pixel = placed(b.xy, field(input.instanceIndex, fields.affine), local);
     const packedPlace = d.vec4f(local, pixel);
-    const position = pixelToClip(pixel, scene.$.viewport.xy);
+    const position = pixelToClip(pixel, scene.$.viewport.frame);
     return { position, place: packedPlace, record: input.instanceIndex };
   })
   .$name('boxVertex');
