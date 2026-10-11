@@ -169,10 +169,10 @@ export const elementsPages: readonly WikiPage[] = [
           <code>TopLayer.of(host).open(content, options)</code> puts an element above everything
           else, beside a backdrop as large as the root. A press on the backdrop, or Escape, closes a
           dismissible entry; <code>modal</code> dims the page, keeps Tab inside and gives focus back
-          as it closes; <code>modeless</code> has no backdrop, for a hover card;{' '}
-          <code>passThrough</code> takes no presses, for a tooltip. Closing puts{' '}
-          <code>closing</code> on it, so a sheet can animate it away, and <code>entry.close()</code>{' '}
-          resolves once that has played.
+          as it closes; <code>modeless</code> has no backdrop, so the page keeps its presses, and a
+          press or focus outside it closes it; <code>passThrough</code> takes no presses, for a
+          tooltip. Closing puts <code>closing</code> on it, so a sheet can animate it away, and{' '}
+          <code>entry.close()</code> resolves once that has played.
         </p>
         <p>
           <code>placement</code> says where: <code>center()</code>, <code>below(anchor)</code> (at

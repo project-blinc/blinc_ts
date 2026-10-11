@@ -325,13 +325,39 @@ try {
   panel.addEventListener('click', () => inside++);
   entry = stack.open(panel, { placement: placement.at(100, 100), modeless: true });
   host.compute(W, H);
+  press(140, 120);
+  assert.equal(inside, 1, 'the content takes its own presses');
+  assert.equal(entry.isOpen, true, 'and stays open for them');
   press(30, 30);
   assert.equal(clicks, 4, 'the page beneath still takes its presses');
-  press(140, 120);
-  assert.equal(inside, 1, 'and the content its own');
-  assert.equal(entry.isOpen, true, 'a press elsewhere does not close it');
+  assert.equal(entry.isOpen, false, 'and a press there closes it');
+  await settle(entry);
+  // Focus moving outside it closes it too, and Escape does.
+  panel = make('div', 'panel');
+  entry = stack.open(panel, { placement: placement.at(100, 100), modeless: true });
+  host.compute(W, H);
+  const field = host.createElement('input');
+  host.root.appendChild(field);
+  host.input.focus(field, false);
+  assert.equal(entry.isOpen, false, 'focus outside it closes it');
+  await settle(entry);
+  field.destroy();
+  panel = make('div', 'panel');
+  entry = stack.open(panel, { placement: placement.at(100, 100), modeless: true });
   host.input.keyDown({ key: 'Escape' });
-  assert.equal(entry.isOpen, false, 'but Escape does');
+  assert.equal(entry.isOpen, false, 'and so does Escape');
+  await settle(entry);
+  // One that is not dismissible stays.
+  panel = make('div', 'panel');
+  entry = stack.open(panel, {
+    placement: placement.at(100, 100),
+    modeless: true,
+    dismissible: false,
+  });
+  host.compute(W, H);
+  press(30, 30);
+  assert.equal(entry.isOpen, true, 'a press outside one that is not dismissible leaves it open');
+  void entry.close();
   await settle(entry);
 
   assert.deepEqual(errors, []);

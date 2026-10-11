@@ -24,7 +24,10 @@ export interface TopLayerOptions {
   backdrop?: string;
   /** A press outside, or Escape, closes it; true by default. A control of its own closes it otherwise. */
   dismissible?: boolean;
-  /** No backdrop: the page beneath keeps its presses and pointer while the content takes its own. A hover card. */
+  /**
+   * No backdrop: the page beneath keeps its presses and pointer while the content takes its own,
+   * as a hover card does. Dismissible, it closes when a press or focus lands outside it.
+   */
   modeless?: boolean;
   /** It takes no presses at all, which reach what is beneath. A tooltip. */
   passThrough?: boolean;
@@ -317,6 +320,20 @@ export class TopLayer {
         void entry.close();
       }
     });
+    if (modeless && options.dismissible !== false) {
+      // With no backdrop to press, a press or focus anywhere outside the content closes it.
+      const outside = (event: { target: unknown }) => {
+        if (!within(event.target as HostElement | null, content)) {
+          void entry.close();
+        }
+      };
+      host.root.addEventListener('pointerdown', outside);
+      host.root.addEventListener('focusin', outside);
+      entry.onClosing(() => {
+        host.root.removeEventListener('pointerdown', outside);
+        host.root.removeEventListener('focusin', outside);
+      });
+    }
     if (options.modal) {
       entry.onClosing(host.input.trapFocus(content));
     }
