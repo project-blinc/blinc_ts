@@ -1,1 +1,1 @@
-{"author":{"id":"a51b5961cc6de343a64125d8eb6a0f965aa434020b9c46ed932a1bbf143eb532"},"ops":[{"type":5,"timestamp":1791727863,"nonce":"1XlsrsjFk7+buJg0B/qOoRyf+mI=","added":["debt","priority:high","area:layout"],"removed":null}]}
+{"author":{"id":"a51b5961cc6de343a64125d8eb6a0f965aa434020b9c46ed932a1bbf143eb532"},"ops":[{"type":3,"timestamp":1791731762,"nonce":"BY/CNuUcw0ltY17GTDxIJH6z47U=","message":"Built: blinc_abi fix 6bf5c4a (a long word breaks on every line it wraps to) and blinc_ts's side, committed locally, not pushed until the engine branches land.","files":null}]}
