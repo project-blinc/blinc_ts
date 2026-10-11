@@ -26,6 +26,35 @@ export const startPages: readonly WikiPage[] = [
           explain how they work and how to write your own, for a framework or for no framework at
           all.
         </p>
+        <h2>What is here</h2>
+        <ul>
+          <li>
+            <b>Start:</b> building it, a first app, how the layers fit, and what each import holds.
+          </li>
+          <li>
+            <b>Adapters:</b> what an adapter is, the host interface it calls, and how to write one;
+            the JSX and Vue adapters.
+          </li>
+          <li>
+            <b>Elements:</b> the tree, events and input, forms, text fields, controls, selects and
+            dialogs, tables, scrolling, the top layer and inline text.
+          </li>
+          <li>
+            <b>Styling:</b> CSS, flexbox and grid, the theme and its tokens, corner shape, utility
+            classes, user-agent styles, paint, liquid glass, images and motion.
+          </li>
+          <li>
+            <b>Drawing:</b> GPU canvases, layout trees, brushes, notches, measuring text, windows
+            and reactive contexts.
+          </li>
+          <li>
+            <b>Tooling:</b> hot reload, builders and bundlers, shaders, snapshots, testing,
+            performance and contributing.
+          </li>
+          <li>
+            <b>Base UI:</b> components built on the JSX adapter, styled only by theme tokens.
+          </li>
+        </ul>
         <Note>
           This wiki is a Blinc app, written with the JSX adapter, so each example is live: use it,
           then read the source on the next tab. The switch at the top changes the colour scheme.
