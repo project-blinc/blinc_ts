@@ -92,10 +92,33 @@ export class TextureAtlas {
         { width: rect.width, height: rect.height, depthOrArrayLayers: 1 },
       );
   }
-  /** Forgets every entry: the space is free again, and the rects handed out are no longer valid. */
-  reset(): void {
+  /** The side of the texture, in pixels. */
+  get size(): number {
+    return this.#size;
+  }
+  /** The pixels its entries and the gaps between them take. */
+  get used(): number {
+    let used = 0;
+    for (const shelf of this.#shelves) {
+      used += shelf.x * (shelf.height + 1);
+    }
+    return used;
+  }
+  /**
+   * Forgets every entry: the space is free again, and the rects handed out are no longer valid.
+   * Given a smaller `size`, the texture is made again at that size, and `revision` changes.
+   */
+  reset(size?: number): void {
     this.#shelves.length = 0;
     this.#nextY = 0;
+    if (size !== undefined && size < this.#size) {
+      this.view.destroy();
+      this.#texture.destroy();
+      this.#size = size;
+      this.#texture = this.#allocate();
+      this.view = this.#texture.createView({});
+      this.revision++;
+    }
   }
   dispose(): void {
     this.view.destroy();

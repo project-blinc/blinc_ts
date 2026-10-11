@@ -43,6 +43,8 @@ export interface SceneRenderStats {
   recordBytes: number;
   atlasBytes: number;
   canvasCalls: number;
+  /** What the renderer's own textures hold after the frame: the frame, layers, atlases. */
+  textureBytes: number;
 }
 interface Texture {
   texture: gpu.GpuTexture;
@@ -61,6 +63,8 @@ const BOUNDS = fields.bounds * 4;
 const COLOR = fields.color * 4;
 const COLOR2 = fields.color2 * 4;
 /** Image sizes are bucketed at twelve steps an octave of scale, so a zoom reuses rasterizations. */
+/** Frames a scratch texture outlives the last frame that needed it. */
+const KEEP_FRAMES = 60;
 const IMAGE_STEPS_PER_OCTAVE = 12;
 /** The largest side an image is resampled to; beyond it, it is magnified. */
 const IMAGE_MAX_SIDE = 2048;
@@ -126,6 +130,15 @@ export class SceneRenderer {
   #frame: Texture | undefined;
   #rows: Texture | undefined;
   #shadow: Texture | undefined;
+  /** Frames encoded, and the last that needed each scratch texture: each layer depth, rows, shadow. */
+  #frameCount = 0;
+  readonly #layerUsed: number[] = [];
+  #rowsUsed = 0;
+  #shadowUsed = 0;
+  /** Pixels of an atlas entry on their way to it. */
+  #scratch = new Uint8Array(0);
+  /** The frame each atlas entry was last drawn in, by its key. */
+  readonly #imageUsed = new Map<string, number>();
   #disposed = false;
   #encoding = false;
   readonly #canvases = new Map<number, CanvasPaint>();
@@ -373,9 +386,15 @@ export class SceneRenderer {
     height: number,
     draw: (pixels: Uint8Array) => void,
   ): AtlasRect {
+    this.#imageUsed.set(key, this.#frameCount);
     let rect = this.#imageRects.get(key);
     if (!rect) {
-      const pixels = new Uint8Array(width * height * 4);
+      // One buffer serves every entry, so a frame that makes many does not hold them all at once.
+      const bytes = width * height * 4;
+      if (this.#scratch.length < bytes) {
+        this.#scratch = new Uint8Array(bytes);
+      }
+      const pixels = this.#scratch.subarray(0, bytes);
       draw(pixels);
       const revision = this.#images.revision;
       rect = this.#images.add(width, height, pixels);
@@ -397,9 +416,14 @@ export class SceneRenderer {
   }
 
   /** Empty the image atlas, putting the fixed slots back. */
-  #resetImages(): void {
-    this.#images.reset();
+  #resetImages(size?: number): void {
+    const revision = this.#images.revision;
+    this.#images.reset(size);
+    if (revision !== this.#images.revision) {
+      this.#clearGroups();
+    }
     this.#imageRects.clear();
+    this.#imageUsed.clear();
     for (const [slot, { image, width, height, fit }] of this.#fixedImages) {
       this.#imageSlots.set(slot, this.#fixedRect(image, width, height, fit));
     }
@@ -543,6 +567,7 @@ export class SceneRenderer {
     ) {
       throw new RangeError('Invalid render dimensions');
     }
+    this.#frameCount++;
     const info = this.#layout.prepareDisplayList(root, options);
     this.#reserve(info.floats);
     this.#layout.readDisplayList(this.#records);
@@ -611,6 +636,18 @@ export class SceneRenderer {
     while (this.#layers.length < maxDepth) {
       this.#layers.push(this.#texture(width, height, gpu.TextureFormat.Rgba8unorm, true));
     }
+    const now = this.#frameCount;
+    for (let i = 0; i < maxDepth; i++) {
+      this.#layerUsed[i] = now;
+    }
+    if (needsRows) {
+      this.#rowsUsed = now;
+    }
+    if (needsShadow) {
+      this.#shadowUsed = now;
+    }
+    // What no recent frame needed goes; a frame that needs it again makes it again.
+    this.#release(now - KEEP_FRAMES);
     const frame = this.#frame;
     let current = frame;
     this.#viewportData.set([width / scale, height / scale, 0, 0]);
@@ -698,7 +735,18 @@ export class SceneRenderer {
       canvasCalls,
       recordBytes: info.floats * 4,
       atlasBytes,
+      textureBytes: this.#textureBytes(),
     };
+  }
+
+  #textureBytes(): number {
+    const rgba = (t: Texture | undefined) => (t ? t.width * t.height * 4 : 0);
+    let bytes = rgba(this.#frame) + rgba(this.#rows) + rgba(this.#shadow);
+    for (const layer of this.#layers) {
+      bytes += rgba(layer);
+    }
+    bytes += this.#glyphs[0].width * this.#glyphs[0].height + rgba(this.#glyphs[1]);
+    return bytes + this.#images.size * this.#images.size * 4;
   }
 
   #paintCanvas(
@@ -968,6 +1016,58 @@ export class SceneRenderer {
     }
     encoder.renderSetBindGroup(0, this.#frameGroup!);
     encoder.renderSetBindGroup(1, group);
+  }
+  /**
+   * Let go of what the last frame did not draw with: layers deeper than it went, scratch
+   * textures it did not use, and, when the images it drew fill little of the image atlas, the
+   * atlas, which the next frame fills afresh at the size those images need. For a window that
+   * has gone quiet; frames release what they have not needed for a while on their own.
+   */
+  trim(): void {
+    this.#assertLive();
+    this.#assertIdle();
+    this.#release(this.#frameCount - 1);
+    this.#scratch = new Uint8Array(0);
+    let live = 0;
+    for (const [key, used] of this.#imageUsed) {
+      const rect = this.#imageRects.get(key);
+      if (used === this.#frameCount && rect) {
+        live += (rect.width + 1) * (rect.height + 1);
+      }
+    }
+    for (const { width, height } of this.#fixedImages.values()) {
+      live += (width + 1) * (height + 1);
+    }
+    // Room for what is shown, with half again for shelves to waste; a quarter used or less shrinks it.
+    let size = 256;
+    while (size < 4096 && size * size < live * 1.5) {
+      size *= 2;
+    }
+    if (size < this.#images.size || this.#images.used > live * 4) {
+      this.#resetImages(size);
+    }
+  }
+  /** Drop the scratch textures last needed at or before frame `before`. */
+  #release(before: number): void {
+    let dropped = false;
+    while (this.#layers.length > 0 && (this.#layerUsed[this.#layers.length - 1] ?? 0) <= before) {
+      this.#drop(this.#layers.pop());
+      dropped = true;
+    }
+    this.#layerUsed.length = this.#layers.length;
+    if (this.#rows && this.#rowsUsed <= before) {
+      this.#drop(this.#rows);
+      this.#rows = undefined;
+      dropped = true;
+    }
+    if (this.#shadow && this.#shadowUsed <= before) {
+      this.#drop(this.#shadow);
+      this.#shadow = undefined;
+      dropped = true;
+    }
+    if (dropped) {
+      this.#clearGroups();
+    }
   }
   #clearGroups(): void {
     for (const groups of this.#textureGroups.values()) {

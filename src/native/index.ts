@@ -101,6 +101,8 @@ interface Addon {
   decodeImage(bytes: Uint8Array): NativeImage;
   loadImage(bytes: Uint8Array): Promise<NativeLoadedImage>;
   rasterizeSvg(markup: string, width: number, height: number): NativeImage;
+  releaseFreeMemory(): void;
+  memoryFootprint(): number;
   NativeLayout: new () => NativeLayout;
   measureText: NativeText['measureText'];
   cssIsLayoutProperty(name: string): boolean;
@@ -152,6 +154,16 @@ export interface NativeBindings {
    */
   loadImage(bytes: Uint8Array, scope?: Scope): Promise<LoadedPicture>;
   rasterizeSvg(markup: string, width: number, height: number, scope?: Scope): ImageResource;
+  /**
+   * Hand back to the system the memory the allocator holds freed. A window does this once it has
+   * been quiet a while; it frees nothing in use.
+   */
+  releaseFreeMemory(): void;
+  /**
+   * Bytes of memory the process holds as the system counts them: its physical footprint on
+   * macOS, which is what Activity Monitor shows, and its resident set elsewhere.
+   */
+  memoryFootprint(): number;
   readonly buildProfile: string;
   createLayout(scope?: Scope): Layout;
   /** `text` in `style`, laid out as it is drawn; with `wrapWidth`, wrapped at it. */
@@ -195,6 +207,8 @@ export function loadNative(
     },
     rasterizeSvg: (markup, width, height, scope) =>
       new ImageResource(addon.rasterizeSvg(markup, width, height), scope),
+    releaseFreeMemory: () => addon.releaseFreeMemory(),
+    memoryFootprint: () => addon.memoryFootprint(),
     createLayout: (scope?: Scope) => new Layout(new addon.NativeLayout(), addon, scope),
     measureText: (text, style = {}, wrapWidth) =>
       new TextMeasurement(text, addon.measureText(text, style, wrapWidth)),

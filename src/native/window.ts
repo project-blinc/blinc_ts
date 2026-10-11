@@ -7,6 +7,9 @@ import type { ImageLibrary } from './image-library.js';
 
 export type { CapturedFrame } from './frame-tap.js';
 
+/** How long a scene is quiet before its renderer lets go of what the last frame did not use. */
+const TRIM_AFTER_MS = 1000;
+
 export interface NativeWindowOptions extends window.WindowAttributes {
   /** Global native-loop raw-device policy; GUI hosts default to Never. */
   deviceEvents?: window.DeviceEvents;
@@ -73,6 +76,7 @@ export class NativeWindowHost {
   #frames = 0;
   #error: unknown;
   #stats: SceneRenderStats | undefined;
+  #frameTime: number | undefined;
 
   /** The bindings the window was opened with, for its clipboard and other services. */
   readonly bindings: NativeBindings;
@@ -166,6 +170,10 @@ export class NativeWindowHost {
   }
   get stats(): SceneRenderStats | undefined {
     return this.#stats;
+  }
+  /** Milliseconds the last frame took to lay out and encode, on this thread. */
+  get frameTime(): number | undefined {
+    return this.#frameTime;
   }
   get device(): gpu.GpuDevice {
     return this.#liveGpu().device;
@@ -288,9 +296,11 @@ export class NativeWindowHost {
     const render: RenderOptions = { ...rendering, width: 0, height: 0, scale: 1 };
     const clock = options.now ?? (() => performance.now());
     const frameLayout = new FrameLayout(layout, root);
+    let trimTimer: ReturnType<typeof setTimeout> | undefined;
     const detach = this.setPainter(
       (encoder, target, w, h, ratio) => {
         let time = 0;
+        const started = performance.now();
         const moving = frameLayout.prepare(w, h, ratio, () => (time = clock()));
         render.width = w;
         render.height = h;
@@ -298,13 +308,24 @@ export class NativeWindowHost {
         // A capture is the presented frame only while nothing runs between these two draws.
         const draw = (view: gpu.GpuTextureView) => renderer.encode(encoder, root, view, render);
         this.#stats = draw(target);
+        this.#frameTime = performance.now() - started;
         this.#tap?.record(encoder, draw, w, h, time);
         clearTimeout(this.#motionTimer);
         this.#motionTimer = undefined;
+        clearTimeout(trimTimer);
+        trimTimer = undefined;
         const wake = layout.motionWake;
         if (moving) {
           this.requestFrame();
-        } else if (wake !== null) {
+        } else if (wake === null) {
+          // Quiet: once no frame has come for a while, the renderer lets go of what this one did not use.
+          trimTimer = setTimeout(() => {
+            trimTimer = undefined;
+            renderer.trim();
+            this.bindings.releaseFreeMemory();
+          }, TRIM_AFTER_MS);
+          trimTimer.unref?.();
+        } else {
           this.#motionTimer = setTimeout(
             () => {
               this.#motionTimer = undefined;
@@ -315,6 +336,7 @@ export class NativeWindowHost {
         }
       },
       () => {
+        clearTimeout(trimTimer);
         unsubscribe();
         renderer.dispose();
       },
