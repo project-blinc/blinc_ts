@@ -254,6 +254,28 @@ reason to `host.onStyleErrors` listeners, or logged as a warning when there
 are none, and the rest of its rule still applies. A property the cascade does
 not know is skipped without a report.
 
+### Length expressions
+
+`calc()`, `min()`, `max()` and `clamp()` read lengths in layout and paint,
+including padding, gaps, borders, radii and font sizes. They nest and read
+`var()` values. Add and subtract lengths with spaces around `+` and `-`;
+multiply or divide a length by a number. Relative units resolve from the
+element's font, the root font and the viewport, so `calc(100vw - 2rem)`
+is a pixel length, and `calc(100% / 3)` stays a percentage. Theme and
+viewport changes re-evaluate them. Media-query expressions accept px, em
+and rem, using the initial 16px font as ordinary media-query lengths do.
+
+Layout sizes cannot yet combine a percentage with pixels: `calc(100% - 32px)`
+and `min(50%, 200px)` report errors. A font size's percentage basis is known,
+the inherited font size, so `calc(150% + 2px)` and `clamp(12px, 120%, 24px)`
+work there. Invalid expressions, division by zero and non-finite results
+are reported through `host.onStyleErrors`; the rest of the rule still applies.
+Grid templates keep their existing length grammar.
+
+`tests/native-css-calc.mjs` compares expressions with explicit lengths in
+geometry and pixels at 1× and 2×, from runtime and compiled sheets, and
+checks inherited fonts, theme changes, media queries and diagnostics.
+
 ### Paint declarations
 
 The paint properties are read by the same engine as the sheet, so a value

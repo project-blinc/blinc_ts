@@ -117,6 +117,33 @@ try {
       wiki.close();
     }
   }
+  // The calculator example changes a custom property and clamps the resulting width.
+  {
+    const wiki = await open('light');
+    try {
+      const { host } = wiki;
+      wiki.page.set('css');
+      await wiki.settle();
+      const bar = findAll(host.root, 'math-bar')[0];
+      assert.equal(bar.bounds()[2], 128);
+      const { frame, press } = windowed(host, target, W, H);
+      for (const [label, width] of [
+        ['4rem', 64],
+        ['12rem', 160],
+        ['8rem', 128],
+      ]) {
+        const button = buttonNamed(host.root, label);
+        const main = findAll(host.root, 'wiki-main')[0];
+        main.scrollBy(0, button.viewBounds()[1] - 160);
+        await frame();
+        await press(button);
+        assert.equal(bar.bounds()[2], width, `${label}: the expression updates and clamps`);
+      }
+      assert.deepEqual(wiki.errors, []);
+    } finally {
+      wiki.close();
+    }
+  }
   // The header is fixed with the theme switch in it, whatever the page does under it.
   {
     const wiki = await open('light');

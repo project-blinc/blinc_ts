@@ -18,6 +18,7 @@ import { Example, Note, Page, SourceView, Table } from '../kit.js';
 import CornerShapes from '../examples/corner-shapes.js';
 import CssEditor from '../examples/css-editor.js';
 import CssFeatures from '../examples/css-features.js';
+import CssMath from '../examples/css-math.js';
 import ImagesBackgrounds from '../examples/images-backgrounds.js';
 import ImagesEffects from '../examples/images-effects.js';
 import ImagesFit from '../examples/images-fit.js';
@@ -124,8 +125,23 @@ export const stylingPages: readonly WikiPage[] = [
           Pseudo-elements (<code>::before</code>, <code>::after</code>) are not supported: a part an
           element needs is an element the host owns, which a sheet styles by its class, as a list
           item's marker is. Units are px, <code>em</code>, <code>rem</code>, percentages and
-          viewport units; <code>calc()</code> is not supported.
+          viewport units.
         </p>
+        <h2>Lengths as expressions</h2>
+        <p>
+          <code>calc()</code> adds and subtracts lengths, or multiplies and divides one by a number.
+          <code>min()</code>, <code>max()</code> and <code>clamp()</code> choose among lengths. They
+          nest, read <code>var()</code>, and resolve relative units before layout. Put spaces around
+          addition and subtraction: <code>calc(100vw - 2rem)</code>. A percentage alone, such as{' '}
+          <code>calc(100% / 3)</code>, stays a percentage.
+        </p>
+        <Example name="css-math" title="A variable, held between two bounds" view={CssMath} />
+        <Note>
+          Layout cannot yet mix percentages and pixels in one size, so{' '}
+          <code>calc(100% - 32px)</code> and <code>min(50%, 200px)</code> are reported. A font size
+          has a known percentage basis, its inherited font size, so it can mix them. Media-query
+          lengths accept expressions in px, em and rem.
+        </Note>
         <h2>Variables and the theme</h2>
         <p>
           <code>var()</code> reads a custom property from the element and its ancestors, then{' '}
@@ -139,7 +155,7 @@ export const stylingPages: readonly WikiPage[] = [
         <h2>When a value cannot be used</h2>
         <p>
           A sheet's syntax errors are its diagnostics. A value that cannot be applied, such as{' '}
-          <code>calc()</code> or a percentage where none is allowed, is reported to{' '}
+          division by zero or a percentage where none is allowed, is reported to{' '}
           <code>host.onStyleErrors</code> listeners with its reason, once, and the rest of its rule
           still applies. A property the engine does not know is skipped without a report.
         </p>
