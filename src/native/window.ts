@@ -323,6 +323,9 @@ export class NativeWindowHost {
             trimTimer = undefined;
             renderer.trim();
             this.bindings.releaseFreeMemory();
+            if (this.#stats) {
+              this.#stats = { ...this.#stats, textureBytes: renderer.textureBytes };
+            }
           }, TRIM_AFTER_MS);
           trimTimer.unref?.();
         } else {

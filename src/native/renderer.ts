@@ -735,11 +735,12 @@ export class SceneRenderer {
       canvasCalls,
       recordBytes: info.floats * 4,
       atlasBytes,
-      textureBytes: this.#textureBytes(),
+      textureBytes: this.textureBytes,
     };
   }
 
-  #textureBytes(): number {
+  /** Bytes its own textures hold now: the frame, layers, atlases. */
+  get textureBytes(): number {
     const rgba = (t: Texture | undefined) => (t ? t.width * t.height * 4 : 0);
     let bytes = rgba(this.#frame) + rgba(this.#rows) + rgba(this.#shadow);
     for (const layer of this.#layers) {
