@@ -1,1 +1,1 @@
-{"author":{"id":"a51b5961cc6de343a64125d8eb6a0f965aa434020b9c46ed932a1bbf143eb532"},"ops":[{"type":5,"timestamp":1791709692,"nonce":"LZ6nYmP8rVEIvkgIAz0vCT2cdWQ=","added":["bug","area:style"],"removed":null}]}
+{"author":{"id":"a51b5961cc6de343a64125d8eb6a0f965aa434020b9c46ed932a1bbf143eb532"},"ops":[{"type":3,"timestamp":1791709794,"nonce":"IkrjYpYjAagG5vPqAeIlNMjvFaI=","message":"Fixed in bfd4e23 (Turn a keyframed rotate by its angle). Transitions of transform still blend as matrices, as noted above.","files":null}]}
