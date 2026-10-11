@@ -9,6 +9,8 @@ const css = `
 .n-bar { width: 360px; height: 40px; flex-shrink: 0; flex-direction: row; align-items: center; gap: 18px; padding: 0 16px;
   background: #0f172a; color: #ffffff; border-radius: 12px; }
 .n-menu { width: 196px; flex-shrink: 0; margin-left: 40px; padding: 20px 32px 14px 32px; gap: 8px; background: #0f172a; color: #e2e8f0; box-shadow: var(--shadow-lg); }
+/* Concave corners inset the body from the top by their radius: the menu sits that far up into its bar. */
+.n-menu[data-flared] { margin-top: -16px; }
 .n-tip { padding: 10px 14px 22px 14px; background: #6366f1; color: #ffffff; font-weight: 600; }
 .n-island { width: 220px; height: 80px; flex-shrink: 0; align-items: center; justify-content: flex-end; padding-bottom: 12px;
   background: linear-gradient(135deg, #111827, #374151); color: #ffffff; }
@@ -31,6 +33,7 @@ export default function Notches() {
         </div>
         <div
           class="n-menu"
+          data-flared={() => (flared.get() ? '' : undefined)}
           ref={(e: HostElement) => {
             menu = e;
             shape(true);

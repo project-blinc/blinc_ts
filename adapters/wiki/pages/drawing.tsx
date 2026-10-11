@@ -144,8 +144,9 @@ export const drawingPages: readonly WikiPage[] = [
           and of the bottom edge: <code>notchEdge.scoop</code> and <code>cut</code> carve into the
           body, <code>bulge</code> and <code>peak</code> rise out of it. Concave corners, bulges and
           peaks lie inside the box, so the body is inset by them and needs padding for its content.
-          Fills, borders and shadows follow the notch, and a radius animated through zero is
-          continuous.
+          A concave corner insets the body from its edge too: a dropdown meets its bar with a margin
+          that takes it that radius up into the bar. Fills, borders and shadows follow the notch,
+          and a radius animated through zero is continuous.
         </p>
         <p>
           <code>node.setNotch(notch)</code> sets it on an element's <code>layoutNode</code>;{' '}
