@@ -240,6 +240,45 @@ try {
     shared.dispose();
     surface.dispose();
   }
+
+  // An image the atlas grows for and still cannot hold: it is made again for what is shown, and
+  // drawn from the texture it now is, not the one it grew out of.
+  const tall = Host.create(native);
+  tall.root.setAttribute('style', 'background: #202020');
+  const square = tall.createElement('div');
+  const long = tall.createElement('div');
+  const sized = (e, w, h, on) =>
+    e.setAttribute(
+      'style',
+      `position: absolute; left: 0; top: 0; width: ${w}px; height: ${h}px; display: ${on ? 'block' : 'none'}`,
+    );
+  for (const [e, colour, name] of [
+    [square, RED, 'red'],
+    [long, BLUE, 'blue'],
+  ]) {
+    tall.root.appendChild(e);
+    tall.layout.setImageSource(name, ImageFit.Fill, fresh.slot(big(colour), ImageFit.Fill));
+    e.layoutNode.setPaint({ background: Brush.image(name, ImageFit.Fill) });
+  }
+  const growing = await OffscreenRenderer.create(native, 2000, 2100, probeShader);
+  targets.set('2000x2100', growing);
+  const drawing = new SceneRenderer(growing.device, tall.layout);
+  try {
+    // 2000 square at twice the scale: an atlas 2048 square, its one shelf 2000 tall.
+    sized(square, 1000, 1000, true);
+    sized(long, 1000, 1050, false);
+    let shot = await capture(tall, fresh, null, 2, 2000, 2100, drawing);
+    assert.ok(near(pixel(shot, 1000, 1000), RED, 8), `the square: ${pixel(shot, 1000, 1000)}`);
+    // 2000 by 2100: no shelf is tall enough and none fits below, so the atlas widens, finds no
+    // room still, and starts again with what is shown.
+    sized(square, 1000, 1000, false);
+    sized(long, 1000, 1050, true);
+    shot = await capture(tall, fresh, null, 2, 2000, 2100, drawing);
+    assert.ok(near(pixel(shot, 1000, 1000), BLUE, 8), `the tall one: ${pixel(shot, 1000, 1000)}`);
+  } finally {
+    drawing.dispose();
+    tall.dispose();
+  }
 } finally {
   for (const image of owned) {
     image.dispose();
@@ -250,4 +289,4 @@ try {
     target.dispose();
   }
 }
-console.log('Native images: fits, svg, scale, removal and atlas reset passed');
+console.log('Native images: fits, svg, scale, removal, atlas reset and regrowth passed');

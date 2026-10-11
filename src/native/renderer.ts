@@ -410,11 +410,15 @@ export class SceneRenderer {
       const pixels = this.#scratch.subarray(0, bytes);
       draw(pixels);
       const revision = this.#images.revision;
-      rect = this.#images.add(width, height, pixels);
-      this.#imageRects.set(key, rect);
-      if (revision !== this.#images.revision) {
-        this.#clearGroups();
+      try {
+        rect = this.#images.add(width, height, pixels);
+      } finally {
+        // It may have grown into a new texture before finding it still had no room.
+        if (revision !== this.#images.revision) {
+          this.#clearGroups();
+        }
       }
+      this.#imageRects.set(key, rect);
     }
     return rect;
   }

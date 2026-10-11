@@ -67,14 +67,13 @@ export class TextureAtlas {
       while (w < width + 1) {
         w = Math.max(HEIGHT_STEP, w * 2);
       }
-      let h = Math.max(
+      const h = Math.max(
         this.#height,
         Math.ceil((this.#nextY + height + 1) / HEIGHT_STEP) * HEIGHT_STEP,
       );
-      if (h > MAX_SIDE && w < MAX_SIDE) {
-        // No room for another shelf: wider, the shelves there are take more beside what they hold.
+      // No taller than wide: past that, or past the limit, it grows wider instead.
+      while (h > Math.max(w, HEIGHT_STEP) && w < MAX_SIDE) {
         w *= 2;
-        h = this.#height;
       }
       if (w > MAX_SIDE || h > MAX_SIDE) {
         throw new RangeError('Image atlas full');

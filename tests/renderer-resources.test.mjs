@@ -129,13 +129,13 @@ test('image atlas grows only as wide and tall as its entries need and releases r
     [1024, 512],
   ]);
   const first = atlas.view;
-  // Too wide to sit beside the first: a shelf below it, taller rather than wider.
+  // Too wide to sit beside the first: a shelf below it, and as wide as that leaves it tall.
   atlas.add(800, 800, new Uint8Array(800 * 800 * 4));
   assert.equal(first.released, 1);
   assert.deepEqual(sizes(), [
     [1, 1],
     [1024, 512],
-    [1024, 1536],
+    [2048, 1536],
   ]);
   atlas.dispose();
   assert(f.resources.every((r) => r.released === 1));
