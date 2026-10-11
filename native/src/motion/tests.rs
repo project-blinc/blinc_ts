@@ -829,3 +829,27 @@ fn a_keyframed_rotate_turns_by_its_angle_not_the_short_way_between_matrices() {
     // Three quarters of a turn the long way, where the matrices would go a quarter back.
     near(angle_at(&mut motion, 50.0), 135.0);
 }
+
+#[test]
+fn text_shadows_blend_shadow_by_shadow() {
+    let (mut motion, _) = animate(
+        &[("animation", "lift 100ms linear")],
+        "@keyframes lift { from { text-shadow: 0 0 0 #ff0000 } to { text-shadow: 10px 20px 4px #ff0000, 2px 2px 0 #0000ff } }",
+    );
+    motion.tick(0.0, |_| true);
+    let frame = motion.tick(50.0, |_| true);
+    let writes = &frame.writes.iter().find(|(raw, _)| *raw == NODE).unwrap().1;
+    let shadows = writes
+        .iter()
+        .find_map(|w| match w {
+            Write::Paint(PaintWrite::TextShadow(Some(s))) => Some(s.clone()),
+            _ => None,
+        })
+        .expect("a text shadow is written");
+    // The first halfway to its end; the second, which the start lacks, fading in from nothing.
+    assert_eq!(shadows.len(), 2);
+    near(Some(shadows[0].offset_x), 5.0);
+    near(Some(shadows[0].offset_y), 10.0);
+    near(Some(shadows[0].blur), 2.0);
+    near(Some(shadows[1].color.a), 0.5);
+}

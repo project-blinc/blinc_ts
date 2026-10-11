@@ -33,6 +33,7 @@ import PaintFilters from '../examples/paint-filters.js';
 import PaintGradients from '../examples/paint-gradients.js';
 import PaintShadows from '../examples/paint-shadows.js';
 import PaintText from '../examples/paint-text.js';
+import PaintTextShadow from '../examples/paint-text-shadow.js';
 import PaintTransforms from '../examples/paint-transforms.js';
 import GlassGallery from '../examples/glass-gallery.js';
 import LayoutLab from '../examples/layout-lab.js';
@@ -427,6 +428,17 @@ export const stylingPages: readonly WikiPage[] = [
           <code>dashed</code>, in a colour and a thickness, with <code>text-underline-offset</code>,
           under every line of the text; its colour, thickness and offset transition.{' '}
           <code>wavy</code> is not drawn yet.
+        </p>
+        <h2>Text shadow</h2>
+        <Example name="paint-text-shadow" view={PaintTextShadow} />
+        <p>
+          <code>text-shadow</code> takes an offset, an optional blur and a colour, the text's own
+          when it is left out, and as many shadows as a comma separates, the first drawn on top. It
+          shadows the text's decorations too, and an emoji casts its shape in the shadow's colour.
+          It is inherited, so a parent can set it for all its text, and <code>none</code> takes it
+          away; a blurred shadow is clipped where its text is, and it transitions shadow by shadow.
+          The theme's <code>text-shadow-sm</code>, <code>-md</code> and <code>-lg</code> take the
+          colour of its shadows of the same size.
         </p>
         <Note>
           Glass and <code>backdrop-filter</code>, which draw from what is behind a box, have a page

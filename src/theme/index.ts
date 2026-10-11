@@ -58,8 +58,10 @@ export {
   themeVariables,
   colorVariable,
   cssShadow,
+  cssTextShadow,
+  textShadowTokens,
 } from './theme.js';
-export type { ColorScheme, Theme, ThemeBundle, ThemePatch } from './theme.js';
+export type { ColorScheme, Theme, ThemeBundle, ThemePatch, TextShadowToken } from './theme.js';
 export { ThemeState } from './state.js';
 export type { SchemePreference, SchemeSource, ThemeStateOptions } from './state.js';
 export { neutralTheme } from './neutral.js';

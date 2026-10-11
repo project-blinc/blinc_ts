@@ -1,6 +1,7 @@
 import { tgpu, d, std } from 'typegpu';
 import { fields } from '../../src/renderer/records.js';
 import { inputs, field, scene, textures } from '../../src/renderer/gpu/shared.js';
+import { clipCoverage } from '../../src/renderer/gpu/sdf.js';
 import { layerVertex, gaussian } from './layerShared.js';
 
 const maskAlpha = tgpu
@@ -91,7 +92,15 @@ const fragment = tgpu
       alpha = outAlpha;
     }
     const screen = std.add(input.position.xy, scene.$.viewport.offsets.xy);
-    return d.vec4f(rgb, alpha * color.a * maskAlpha(input.record, screen));
+    // The clips it is drawn under, as a text shadow's is drawn where its text is clipped.
+    const clip = clipCoverage(
+      input.place.zw,
+      field(input.record, fields.clipBounds),
+      field(input.record, fields.clipRadius),
+      field(input.record, fields.typeInfo).z,
+      field(input.record, fields.typeInfo).w,
+    );
+    return d.vec4f(rgb, alpha * color.a * maskAlpha(input.record, screen) * clip);
   })
   .$name('layerFragment');
 

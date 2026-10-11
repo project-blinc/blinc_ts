@@ -17,7 +17,8 @@ export const layerVertex = tgpu
     );
     return {
       position: pixelToClip(pixel, scene.$.viewport.frame),
-      place: d.vec4f(0),
+      // Where on screen, in layout units, for the clip a composite is drawn under.
+      place: d.vec4f(0, 0, pixel.x, pixel.y),
       record: input.instanceIndex,
     };
   })

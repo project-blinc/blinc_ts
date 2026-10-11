@@ -267,6 +267,25 @@ export function colorVariable(token: ColorToken): string {
   return `--${kebab(token)}`;
 }
 
+/** The text shadows, from the theme's own shadows: their colour, at offsets text wears. */
+export const textShadowTokens = ['sm', 'md', 'lg'] as const;
+export type TextShadowToken = (typeof textShadowTokens)[number];
+const TEXT_SHADOW: Record<TextShadowToken, [number, number]> = {
+  sm: [1, 1],
+  md: [1, 2],
+  lg: [2, 4],
+};
+
+/** A text shadow of the theme's `token` elevation as `text-shadow` text; `none` if it is clear. */
+export function cssTextShadow(theme: Theme, token: TextShadowToken): string {
+  const color = theme.shadows[token][0]?.color;
+  if (!color || color[3] <= 0) {
+    return 'none';
+  }
+  const [y, blur] = TEXT_SHADOW[token];
+  return `0px ${px(y)} ${px(blur)} ${cssColor(color)}`;
+}
+
 /** A shadow stack as `box-shadow` text; `none` for an empty one. */
 export function cssShadow(stack: readonly ShadowLayer[]): string {
   const layers = stack
@@ -281,7 +300,7 @@ export function cssShadow(stack: readonly ShadowLayer[]): string {
 /**
  * Every token of `theme` as a CSS custom property, by name with `--`:
  * `--primary`, `--space-4`, `--radius-lg`, `--text-lg`, `--font-semibold`,
- * `--leading-normal`, `--tracking-wide`, `--shadow-md`, `--duration-normal`,
+ * `--leading-normal`, `--tracking-wide`, `--shadow-md`, `--text-shadow-md`, `--duration-normal`,
  * `--ease-spring`, and the shape's `--corner-smoothing`,
  * `--corner-exponent`, `--smoothing-threshold` and `--corner-n`.
  */
@@ -319,6 +338,9 @@ export function themeVariables(theme: Theme): Record<string, string> {
     vars[shadow === 'default' ? '--shadow' : `--shadow-${shadow}`] = cssShadow(
       theme.shadows[shadow],
     );
+  }
+  for (const token of textShadowTokens) {
+    vars[`--text-shadow-${token}`] = cssTextShadow(theme, token);
   }
   const a = theme.animations;
   for (const duration of durations) {

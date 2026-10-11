@@ -58,7 +58,20 @@ const fragment = tgpu
     const rect = field(input.record, fields.gradient);
     // eslint-disable-next-line no-useless-assignment -- The initializer establishes the WGSL storage type.
     let result = d.vec4f(0, 0, 0, 0);
-    if (field(input.record, fields.typeInfo).y > 0.5) {
+    if (field(input.record, fields.typeInfo).y > 1.5) {
+      // A colour glyph's shadow: its shape, the colour atlas's alpha, in the record's colour.
+      const size = d.vec2f(std.textureDimensions(textures.$.colorAtlas));
+      const shape = std.textureSampleLevel(
+        textures.$.colorAtlas,
+        textures.$.linearSampler,
+        std.div(std.mix(rect.xy, rect.zw, uv), size),
+        0,
+      ).a;
+      result = d.vec4f(
+        field(input.record, fields.color).rgb,
+        field(input.record, fields.color).a * shape,
+      );
+    } else if (field(input.record, fields.typeInfo).y > 0.5) {
       const size = d.vec2f(std.textureDimensions(textures.$.colorAtlas));
       result = std.textureSampleLevel(
         textures.$.colorAtlas,

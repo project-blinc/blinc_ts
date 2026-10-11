@@ -137,6 +137,9 @@ test('every token becomes a CSS variable', () => {
   assert.equal(vars['--shadow-md'], '0px 4px 6px -1px rgba(0,0,0,0.1)');
   assert.equal(vars['--shadow-inner'], 'inset 0px 2px 4px 0px rgba(0,0,0,0.05)');
   assert.equal(vars['--shadow-none'], 'none');
+  // Text shadows take the colour of the shadow of their elevation.
+  assert.equal(vars['--text-shadow-md'], '0px 1px 2px rgba(0,0,0,0.1)');
+  assert.equal(vars['--text-shadow-lg'], '0px 2px 4px rgba(0,0,0,0.1)');
   assert.equal(vars['--duration-normal'], '200ms');
   assert.equal(vars['--ease-in-out'], 'cubic-bezier(0.4, 0, 0.2, 1)');
   assert.equal(vars['--corner-smoothing'], '0');
@@ -192,6 +195,12 @@ test('utility classes are generated from the token names', () => {
   const css = utilityCss();
   assert.ok(utilityClasses.includes('bg-surface-elevated'));
   assert.ok(utilityClasses.includes('p-0.5'));
+  assert.ok(utilityClasses.includes('text-shadow-md'));
+  assert.ok(
+    css.includes('.text-shadow-md { text-shadow: var(--text-shadow-md); }'),
+    'text-shadow-md',
+  );
+  assert.ok(css.includes('.text-shadow-none { text-shadow: none; }'), 'text-shadow-none');
   assert.ok(utilityClasses.includes('rounded'));
   assert.ok(utilityClasses.includes('shadow-inner'));
   assert.match(css, /^\.shadow-inner \{ box-shadow: var\(--shadow-inner\); \}$/m);

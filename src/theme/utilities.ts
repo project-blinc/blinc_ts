@@ -6,7 +6,7 @@
  * optional; an app that does not pays nothing for it.
  */
 import type { Layout, StyleSheet } from '../native/layout.js';
-import { kebab } from './theme.js';
+import { kebab, textShadowTokens, type TextShadowToken } from './theme.js';
 import {
   colorTokens,
   fontFamilies,
@@ -70,6 +70,7 @@ export type UtilityClass =
   | `rounded-${Exclude<RadiusToken, 'default'>}`
   | 'shadow'
   | `shadow-${Exclude<ShadowToken, 'default'>}`
+  | `text-shadow-${TextShadowToken | 'none'}`
   | `text-${TextSize}`
   | `font-${FontWeightName | FontFamilyName}`
   | `leading-${LineHeightName}`
@@ -114,6 +115,10 @@ function rules(): [name: string, declarations: string][] {
     const name = shadow === 'default' ? 'shadow' : `shadow-${shadow}`;
     out.push([name, `box-shadow: var(--${name})`]);
   }
+  for (const token of textShadowTokens) {
+    out.push([`text-shadow-${token}`, `text-shadow: var(--text-shadow-${token})`]);
+  }
+  out.push(['text-shadow-none', 'text-shadow: none']);
   for (const size of textSizes) {
     out.push([`text-${size}`, `font-size: var(--text-${size})`]);
   }

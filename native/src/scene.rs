@@ -384,6 +384,7 @@ pub(crate) fn apply_paint(
     let mut even_odd = None;
     let mut backdrop = None;
     let mut decoration = None;
+    let mut text_shadow = None;
     for write in writes {
         match write {
             PaintWrite::Background(background) => {
@@ -478,6 +479,7 @@ pub(crate) fn apply_paint(
                 props.mask_image = g.clone().map(scene::blinc_core::MaskImage::Gradient);
             }
             PaintWrite::TextDecoration(d) => decoration = Some(*d),
+            PaintWrite::TextShadow(s) => text_shadow = Some(s.clone()),
             PaintWrite::BackdropFilter(f) => {
                 backdrop = Some((*f != BACKDROP_IDENTITY).then_some(*f));
             }
@@ -507,6 +509,9 @@ pub(crate) fn apply_paint(
     }
     if let Some(d) = decoration {
         tree.set_text_decoration(node, d)?;
+    }
+    if let Some(s) = text_shadow {
+        tree.set_text_shadow(node, s)?;
     }
     Ok(())
 }

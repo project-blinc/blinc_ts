@@ -71,6 +71,7 @@ pub(crate) enum Field {
     OverflowFade,
     BackdropFilter,
     TextDecoration,
+    TextShadow,
     /// A layout property, by its router id; a length's percentage id is its pixel id's slot.
     Layout(i32),
     /// Where a layout animation draws it.
@@ -156,6 +157,7 @@ impl Field {
             PaintWrite::OverflowFade(_) => Field::OverflowFade,
             PaintWrite::BackdropFilter(_) => Field::BackdropFilter,
             PaintWrite::TextDecoration(_) => Field::TextDecoration,
+            PaintWrite::TextShadow(_) => Field::TextShadow,
         }
     }
 
@@ -190,6 +192,7 @@ impl Field {
             Field::OverflowFade => PaintWrite::OverflowFade([0.0; 4]),
             Field::BackdropFilter => PaintWrite::BackdropFilter(BACKDROP_IDENTITY),
             Field::TextDecoration => PaintWrite::TextDecoration(None),
+            Field::TextShadow => PaintWrite::TextShadow(None),
             Field::Layout(slot) => return Write::Layout(slot, Value::Unset),
             Field::Visual => return Write::Visual(None),
         })
@@ -202,7 +205,7 @@ impl Field {
     }
 
     /// The paint slots `all` names, besides every layout one.
-    pub(crate) const ALL: [Field; 21] = [
+    pub(crate) const ALL: [Field; 22] = [
         Field::Background,
         Field::TextColor,
         Field::Opacity,
@@ -224,6 +227,7 @@ impl Field {
         Field::OverflowFade,
         Field::BackdropFilter,
         Field::TextDecoration,
+        Field::TextShadow,
     ];
 }
 
@@ -251,6 +255,7 @@ pub(crate) fn fields_of(property: &str) -> Vec<Field> {
         "outline-color" => &[Field::OutlineColor],
         "outline-offset" => &[Field::OutlineOffset],
         "box-shadow" => &[Field::Shadows],
+        "text-shadow" => &[Field::TextShadow],
         "transform" => &[Field::Transform],
         "filter" => &[Field::Filter],
         "mask-image" | "-webkit-mask-image" => &[Field::Mask],

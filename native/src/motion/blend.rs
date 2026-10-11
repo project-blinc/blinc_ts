@@ -590,6 +590,9 @@ fn blend_paint(a: &PaintWrite, b: &PaintWrite, t: f64) -> PaintWrite {
         (W::BackdropFilter(x), W::BackdropFilter(y)) => {
             W::BackdropFilter(std::array::from_fn(|i| lerp(x[i], y[i], t)))
         }
+        // Lists blend shadow by shadow, as box-shadow's do; one left to an ancestor flips.
+        (W::TextShadow(Some(x)), W::TextShadow(Some(y))) => W::TextShadow(Some(shadows(x, y, t))),
+        (W::TextShadow(x), W::TextShadow(y)) => W::TextShadow(flip(x, y, t).clone()),
         (W::TextDecoration(x), W::TextDecoration(y)) => W::TextDecoration(
             x.zip(*y)
                 .and_then(|(x, y)| decoration(&x, &y, t))
@@ -644,6 +647,7 @@ fn vector_paint(write: &PaintWrite) -> Option<Vec<f32>> {
             f.blur,
         ],
         W::Shadows { outer, inner } => outer.iter().chain(inner).flat_map(shadow).collect(),
+        W::TextShadow(Some(list)) => list.iter().flat_map(shadow).collect(),
         _ => return None,
     })
 }
