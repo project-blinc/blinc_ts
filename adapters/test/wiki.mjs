@@ -535,6 +535,109 @@ try {
       wiki.close();
     }
   }
+  // Motion: the race's lanes are apart part of the way and together at the end; added cards push
+  // the others along, drawn on their way; a dismissed toast is seen leaving, then is gone.
+  {
+    const wiki = await open('light');
+    try {
+      const { host } = wiki;
+      const { frame, settle, pixels } = windowed(host, target, W, H);
+      await frame();
+      wiki.page.set('motion');
+      await settle();
+      // A press where an element is, scrolled into view first.
+      const tap = async (element) => {
+        element.scrollIntoView({ block: 'center' });
+        await settle();
+        const [x, y, w, h] = element.viewBounds();
+        host.input.pointerMove(x + w / 2, y + h / 2);
+        host.input.pointerDown();
+        host.input.pointerUp();
+      };
+      // Where each lane's dot is drawn: the middle of the dark pixels along its track.
+      const tracks = findAll(host.root, 'track');
+      assert.equal(tracks.length, 7, 'seven lanes');
+      const drawn = () =>
+        tracks.map((track) => {
+          const [x, y, w, h] = track.viewBounds();
+          const row = Math.round(y + h / 2);
+          let sum = 0;
+          let n = 0;
+          for (let px = Math.round(x); px < x + w; px++) {
+            const i = (row * W + px) * 4;
+            if (pixels[i] + pixels[i + 1] + pixels[i + 2] < 200) {
+              sum += px - x;
+              n++;
+            }
+          }
+          return n ? Math.round(sum / n) : -1;
+        });
+      await tap(buttonNamed(host.root, 'Go'));
+      for (let i = 0; i < 18; i++) {
+        await frame();
+      }
+      const partway = drawn();
+      assert.ok(new Set(partway).size >= 5, `the lanes part ways: ${partway}`);
+      await settle();
+      const ended = drawn();
+      assert.ok(
+        ended.every((x) => x > 310),
+        `and all arrive: ${ended}`,
+      );
+      // Layout: adding a card pushes Card 1, the pink one, along: drawn on its way, between where it
+      // was and where it goes.
+      const cards = () => findAll(host.root, 'card');
+      const count = cards().length;
+      const pink = () => {
+        const [x, y, w, h] = findAll(host.root, 'cards')[0].viewBounds();
+        let sx = 0;
+        let sy = 0;
+        let n = 0;
+        for (let py = Math.round(y); py < y + h; py += 2) {
+          for (let px = Math.round(x); px < x + w; px += 2) {
+            const i = (py * W + px) * 4;
+            if (pixels[i] > 200 && pixels[i + 1] < 110 && pixels[i + 2] > 120) {
+              sx += px;
+              sy += py;
+              n++;
+            }
+          }
+        }
+        return [Math.round(sx / n), Math.round(sy / n)];
+      };
+      const add = buttonNamed(host.root, 'Add first');
+      add.scrollIntoView({ block: 'center' });
+      await settle();
+      const was = pink();
+      await tap(add);
+      await frame();
+      await frame();
+      const between = pink();
+      await settle();
+      const now = pink();
+      assert.equal(cards().length, count + 1, 'a card is added');
+      assert.ok(String(now) !== String(was), `Card 1 moved: ${was} to ${now}`);
+      assert.ok(
+        String(between) !== String(was) && String(between) !== String(now),
+        `and was drawn on its way: ${was}, ${between}, ${now}`,
+      );
+      // Exit: a toast closing is still there two frames on, and gone once it has played.
+      await tap(buttonNamed(host.root, 'Notify'));
+      await settle();
+      assert.equal(findAll(host.root, 'toast').length, 1, 'a toast');
+      await tap(buttonNamed(host.root, 'Dismiss'));
+      await frame();
+      await frame();
+      assert.equal(findAll(host.root, 'toast').length, 1, 'still there, leaving');
+      await settle();
+      await new Promise((r) => setTimeout(r, 0));
+      await frame();
+      assert.equal(findAll(host.root, 'toast').length, 0, 'then gone');
+      assert.deepEqual(wiki.errors, []);
+    } finally {
+      wiki.close();
+    }
+  }
 } finally {
   target.dispose();
 }

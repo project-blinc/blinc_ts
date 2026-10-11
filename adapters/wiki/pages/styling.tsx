@@ -22,7 +22,10 @@ import ImagesBackgrounds from '../examples/images-backgrounds.js';
 import ImagesEffects from '../examples/images-effects.js';
 import ImagesFit from '../examples/images-fit.js';
 import ImagesPeople from '../examples/images-people.js';
-import Motion from '../examples/motion.js';
+import MotionExit from '../examples/motion-exit.js';
+import MotionKeyframes from '../examples/motion-keyframes.js';
+import MotionLayout from '../examples/motion-layout.js';
+import MotionTiming from '../examples/motion-timing.js';
 import PaintBorders from '../examples/paint-borders.js';
 import PaintClips from '../examples/paint-clips.js';
 import PaintFade from '../examples/paint-fade.js';
@@ -479,14 +482,69 @@ export const stylingPages: readonly WikiPage[] = [
     view: () => (
       <Page
         title="Motion"
-        lead="A change eases, and keyframes play, interpolated natively each frame."
+        lead="Transitions, keyframes, springs and layout animation, interpolated natively each frame."
       >
         <p>
-          A property with a <code>transition</code> eases to its new value when it changes, whatever
-          changed it. Keyframes animate on their own. Values are interpolated in native code and
-          written to the node, so JavaScript only supplies the time.
+          Motion is CSS's: a <code>transition</code> eases a property to its new value whatever
+          changed it, and <code>animation</code> plays <code>@keyframes</code>. Values are
+          interpolated in native code and written to the node, so JavaScript supplies only the time.
+          A mounted host ticks every frame while something in view moves and asks for none once
+          nothing does; motion out of view keeps its clock and draws nothing.
         </p>
-        <Example name="motion" view={Motion} />
+        <h2>Timing</h2>
+        <Example name="motion-timing" title="One move, timed seven ways" view={MotionTiming} />
+        <p>
+          Timing functions are CSS's keywords, <code>cubic-bezier()</code>, <code>steps()</code> and{' '}
+          <code>linear()</code>, and <code>spring(mass stiffness damping [velocity])</code>. A
+          spring runs until it settles, whatever duration it is given, and one turned back mid-way
+          keeps its momentum. A change to a transitioned property runs from the value shown, so a
+          hover that ends half-way turns back from where it is. The theme's{' '}
+          <code>--ease-spring</code> is a spring.
+        </p>
+        <p>
+          What blends: colours (premultiplied), <code>opacity</code>, radii, outlines, shadows layer
+          by layer, transforms, filters, gradients of one shape, clip paths of one kind,{' '}
+          <code>overflow-fade</code>, <code>backdrop-filter</code> and text decoration's colour,
+          thickness and offset; lengths such as <code>width</code>, <code>padding</code> or{' '}
+          <code>gap</code> when both ends are in one unit, laid out at each value between. What does
+          not blend flips half-way. A node's first style is not a change, so nothing runs as it
+          appears.
+        </p>
+        <h2>Keyframes</h2>
+        <Example name="motion-keyframes" view={MotionKeyframes} />
+        <p>
+          A stop's own <code>animation-timing-function</code> is read, a property a block leaves out
+          at <code>from</code> or <code>to</code> starts or ends at the node's style, and fill
+          modes, delays, iteration counts, directions and <code>animation-play-state</code> work as
+          CSS has them. A keyframe's <code>var()</code>s read the theme, and a running animation
+          follows a theme change.
+        </p>
+        <h2>Layout animation</h2>
+        <Example name="motion-layout" title="Cards that make room" view={MotionLayout} />
+        <p>
+          <code>element.animateLayout(options)</code> animates where layout puts an element: when
+          its place or size changes, layout settles at once and the element is drawn where it was,
+          easing to where it is, nothing laid out again for it. A child carried by an animated
+          parent does not move twice, and a change mid-move starts from where it is drawn. Options
+          are <code>position</code> and <code>size</code>, <code>duration</code> and{' '}
+          <code>easing</code>; <code>null</code> stops it. Use it for what layout moves, a list
+          making room or a panel opening; a <code>transform</code> transition is cheaper for what
+          only moves in paint, as a switch's knob does.
+        </p>
+        <h2>Exits</h2>
+        <Example name="motion-exit" title="Toasts that leave" view={MotionExit} />
+        <p>
+          <code>element.animationsFinished()</code> resolves when an element's transitions and
+          animations have ended, and an element with a layout animation waits for the layout that
+          starts its move. That is how a component plays its exit: mark it closing, await this, then
+          remove it.
+        </p>
+        <Note>
+          Motion is checked frame by frame in <code>tests/native-motion.mjs</code>, and in a real
+          window in <code>tests/native-motion-window.mjs</code>;{' '}
+          <code>npm run snapshot -- motion</code> captures a scene's frames with curves of every
+          track.
+        </Note>
       </Page>
     ),
   },
