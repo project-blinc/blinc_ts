@@ -1,1 +1,1 @@
-{"author":{"id":"a51b5961cc6de343a64125d8eb6a0f965aa434020b9c46ed932a1bbf143eb532"},"ops":[{"type":5,"timestamp":1791698460,"nonce":"+e6eKXXq2PNqLJiwjOPye5cGV1A=","added":["debt","area:docs","priority:high"],"removed":null}]}
+{"author":{"id":"a51b5961cc6de343a64125d8eb6a0f965aa434020b9c46ed932a1bbf143eb532"},"ops":[{"type":3,"timestamp":1791700245,"nonce":"aeTdWdZQ92Iea6Sfhh46oMWM6bY=","message":"Wiki hot reload (wiki:dev, launch/app/dev split, headless HMR test) landed in 34bbc183c88199e8e7ebc0636e7bd8b7de7a4dfb. Pages for HMR and builders still to write.","files":null}]}
