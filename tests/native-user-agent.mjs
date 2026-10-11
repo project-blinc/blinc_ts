@@ -473,6 +473,38 @@ try {
       host.dispose();
     }
   }
+  // A code, kbd or mark in a paragraph is kept whole, on one line: one with a space in it is as
+  // tall as one without, at a font size that does not fall on a whole pixel.
+  {
+    const host = Host.create(native);
+    try {
+      const state = new ThemeState(context, neutralTheme, { scheme: 'light' });
+      state.attach(host.layout);
+      addUserAgent(host.layout);
+      const spaced = el(host, 'code', ['overflow: auto']);
+      const single = el(host, 'code', ['scroll']);
+      const key = el(host, 'kbd', ['Shift Tab']);
+      const p = el(host, 'p', ['An element with ', spaced, ' or ', single, ', and ', key, '.']);
+      p.setAttribute('style', 'font-size: 16px; width: 340px');
+      host.root.appendChild(p);
+      for (let i = 0; i < 3; i++) {
+        host.compute(W, H);
+      }
+      const height = (e) => Math.round(e.bounds()[3]);
+      assert.equal(
+        height(spaced),
+        height(single),
+        `one line: ${height(spaced)} and ${height(single)}`,
+      );
+      const [, , keyWidth, keyHeight] = key.bounds();
+      assert.ok(
+        keyHeight < 30 && keyWidth > 40,
+        `the key is on one line: ${keyWidth}x${keyHeight}`,
+      );
+    } finally {
+      host.dispose();
+    }
+  }
 } finally {
   context.dispose();
   target.dispose();

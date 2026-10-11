@@ -94,6 +94,10 @@ code, kbd {
 }
 kbd { border: 1px solid var(--border); border-bottom-width: 3px; box-shadow: var(--shadow-sm); }
 mark { background: var(--warning-bg); }
+/* In a paragraph these are kept whole, a box on one line, so their text does not wrap inside them. */
+:is(p, li, dt, dd, th, td, h1, h2, h3, h4, h5, h6, figcaption, caption, legend, div) > :is(code, kbd, mark) {
+  white-space: nowrap;
+}
 u, ins { text-decoration: underline; }
 s, del { text-decoration: line-through; }
 abbr[title] { text-decoration: underline dotted; }
