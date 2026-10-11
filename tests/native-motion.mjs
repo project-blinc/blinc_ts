@@ -372,6 +372,34 @@ try {
   settling.animateLayout(null);
   host.root.removeChild(settling);
 
+  // What is shown again after display none appears where it is, and does not fly in from where it
+  // was hidden: a box with no size has no place to move from.
+  const ghost = host.createElement('div');
+  ghost.setAttribute('id', 'ghost');
+  const ghostStyle = (top, display) =>
+    `position: absolute; left: 250px; top: ${top}px; width: 40px; height: 20px; background: #ff0000; display: ${display}`;
+  ghost.setAttribute('style', ghostStyle(230, 'block'));
+  host.root.appendChild(ghost);
+  ghost.animateLayout({ duration: 100, easing: 'linear' });
+  host.compute(W, H);
+  ghost.setAttribute('style', ghostStyle(230, 'none'));
+  host.compute(W, H);
+  host.layout.tickMotion(13000);
+  ghost.setAttribute('style', ghostStyle(275, 'block'));
+  host.compute(W, H);
+  assert.equal(ghost.bounds()[1], 275, 'it is laid out where it is shown');
+  assert.equal(host.layout.tickMotion(13050), false, 'no move began for what was hidden');
+  flipped = await capture(host);
+  assert.ok(near(pixel(flipped, 270, 285), RED), 'it is drawn there at once');
+  assert.ok(near(pixel(flipped, 270, 240), GROUND), 'and nowhere it was');
+  // Once shown, it is a box like any other: moved, it moves.
+  ghost.setAttribute('style', ghostStyle(230, 'block'));
+  host.compute(W, H);
+  assert.equal(host.layout.tickMotion(14000), true, 'a shown box moves');
+  await flipAt(14100);
+  ghost.animateLayout(null);
+  host.root.removeChild(ghost);
+
   // Out of view, motion keeps its clock but draws nothing and asks for no frames, only a wake.
   const away = host.createElement('div');
   away.setAttribute('id', 'away');

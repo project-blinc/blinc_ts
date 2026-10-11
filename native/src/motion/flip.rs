@@ -93,6 +93,11 @@ impl Flip {
         if last == now {
             return;
         }
+        // A box with no size is not laid out at all, as under display none: what appears from
+        // one, or goes into one, does so where it is.
+        if (last[2] == 0.0 && last[3] == 0.0) || (now[2] == 0.0 && now[3] == 0.0) {
+            return;
+        }
         let a = &self.animation;
         // Where it is drawn now, relative to its new layout.
         let drawn_size = if self.shown[2] >= 0.0 {
@@ -219,6 +224,19 @@ mod tests {
             !only_place.running(),
             "a size it does not animate changes at once"
         );
+    }
+
+    #[test]
+    fn what_was_not_laid_out_appears_where_it_is() {
+        let mut f = linear(true, true);
+        f.laid_out_test([10.0, 10.0, 50.0, 20.0]);
+        // Hidden, it has a place and no size.
+        f.laid_out_test([0.0, 0.0, 0.0, 0.0]);
+        assert!(!f.running(), "going into hiding is not a move");
+        f.laid_out_test([10.0, 10.0, 50.0, 20.0]);
+        assert!(!f.running(), "and neither is coming out of it");
+        f.laid_out_test([60.0, 10.0, 50.0, 20.0]);
+        assert!(f.running(), "though it moves once it is shown");
     }
 
     #[test]

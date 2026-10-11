@@ -231,6 +231,58 @@ try {
       wiki.close();
     }
   }
+  // Back from the source tab, the knobs are where they were and do not fly in from the panel's
+  // hiding, a frame at a time as a window draws them.
+  {
+    const wiki = await open('light');
+    try {
+      const { host } = wiki;
+      const { frame, settle, pixels } = windowed(host, target, W, H);
+      await frame();
+      wiki.page.set('toggles');
+      await settle();
+      const knobs = () =>
+        findAll(host.root, 'bui-switch')
+          .slice(0, 2)
+          .map((track) => {
+            const [tx, ty, tw, th] = track.viewBounds();
+            let sum = 0;
+            let count = 0;
+            for (let y = Math.round(ty) + 2; y < Math.round(ty + th) - 2; y++) {
+              for (let x = Math.round(tx) + 2; x < Math.round(tx + tw) - 2; x++) {
+                const i = (y * W + x) * 4;
+                if (pixels[i] + pixels[i + 1] + pixels[i + 2] > 650) {
+                  sum += x - tx;
+                  count++;
+                }
+              }
+            }
+            return count ? (sum / count).toFixed(1) : 'none';
+          })
+          .join(' ');
+      const rest = knobs();
+      assert.ok(!rest.includes('none'), `the knobs are drawn: ${rest}`);
+      const click = async (name) => {
+        const [x, y, w, h] = buttonNamed(host.root, name).viewBounds();
+        host.input.pointerMove(x + w / 2, y + h / 2);
+        await frame();
+        host.input.pointerDown();
+        await frame();
+        host.input.pointerUp();
+      };
+      for (let round = 0; round < 2; round++) {
+        await click('Source');
+        await settle();
+        await click('Preview');
+        for (let n = 0; n < 40; n++) {
+          await frame();
+          assert.equal(knobs(), rest, `round ${round}, frame ${n}: the knobs are at rest`);
+        }
+      }
+    } finally {
+      wiki.close();
+    }
+  }
 } finally {
   target.dispose();
 }
