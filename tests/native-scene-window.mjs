@@ -136,6 +136,7 @@ try {
   );
   // A window quiet for a while lets go of what its last frame did not draw with: here, the layer a
   // group with opacity was drawn through.
+  const withoutLayer = host.stats.textureBytes;
   const group = replacement.createNode({ width: 200, height: 100 });
   group.setPaint({ opacity: 0.5, background: Brush.solid(0xffffff) });
   const inner = replacement.createNode({ width: 50, height: 50 });
@@ -150,11 +151,8 @@ try {
   await waitFor(() => host.frames > beforeUngroup, 'Ungrouped frame');
   assert.equal(host.stats.textureBytes, withLayer, 'A layer is kept a while after its last use');
   await delay(1600);
-  assert.equal(
-    host.stats.textureBytes,
-    withLayer - host.window.width() * host.window.height() * 4,
-    'and let go once the window has been quiet',
-  );
+  assert.ok(withLayer > withoutLayer, 'The group was drawn through a layer');
+  assert.equal(host.stats.textureBytes, withoutLayer, 'and let go once the window has been quiet');
   const beforeDetach = host.frames;
   replacement.dispose(); // Disposing a caller-owned scene detaches its renderer.
   await waitFor(() => host.frames > beforeDetach, 'Detached scene clears the window');
