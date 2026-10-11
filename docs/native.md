@@ -388,7 +388,9 @@ of `height` lays out every frame instead.
 
 `element.animationsFinished()` resolves when the element's transitions and
 animations have ended, or at once when it has none; it restyles first, so an
-attribute set just before has started its animation. That is how a component
+attribute set just before has started its animation, and an element whose
+layout is animated waits for the layout after a change, which a window makes
+at its next frame, since that is where its move starts. That is how a component
 plays an exit: set `closing`, await it, then remove the element. `attachScene`
 and `mount` take `now` to run motion on another clock.
 

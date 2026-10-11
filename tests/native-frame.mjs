@@ -109,6 +109,76 @@ try {
   } finally {
     stage.dispose();
   }
+  // A frame whose restyle starts a transition still measures what layout moved: the knob of a
+  // switch slides while its track's colour eases, both started by one change.
+  const track = Host.create(native);
+  try {
+    track.layout.addStyleSheet(`
+      .track { position: absolute; left: 0; top: 0; width: 200px; height: 20px; flex-direction: row;
+        justify-content: flex-start; background: #202020; transition: background 150ms; }
+      .track.on { justify-content: flex-end; background: #000000; }
+      .knob { width: 20px; height: 20px; background: #ffffff; }
+    `);
+    const row = track.createElement('div');
+    row.className = 'track';
+    const knob = track.createElement('div');
+    knob.className = 'knob';
+    row.appendChild(knob);
+    track.root.appendChild(row);
+    knob.animateLayout({ duration: 160, easing: 'linear' });
+    const frames = new FrameLayout(track.layout, track.root.layoutNode);
+    track.layout.onChange((change) => frames.changed(change));
+    let now = 0;
+    const pixels = new Uint8Array(W * H * 4);
+    const knobAt = async () => {
+      frames.prepare(W, H, 1, () => (now += 16));
+      const renderer = new SceneRenderer(target.device, track.layout);
+      try {
+        await target.captureCommandsInto(
+          pixels,
+          (encoder, view) =>
+            renderer.encode(encoder, track.root.layoutNode, view, { width: W, height: H, scale: 1 })
+              .drawCalls,
+        );
+      } finally {
+        renderer.dispose();
+      }
+      for (let x = 0; x < W; x++) {
+        if (pixels[(10 * W + x) * 4] > 200) {
+          return x;
+        }
+      }
+      return -1;
+    };
+    assert.equal(await knobAt(), 0, 'the knob starts at the left');
+    row.classList.add('on');
+    const drawn = [];
+    for (let i = 0; i < 12; i++) {
+      drawn.push(await knobAt());
+    }
+    assert.equal(drawn.at(-1), 180, `it ends at the right: ${drawn}`);
+    assert.ok(
+      drawn.some((x) => x > 20 && x < 160),
+      `and is drawn on its way, not at its end at once: ${drawn}`,
+    );
+    // Asked straight after a change, before the frame that lays it out, the knob's motion is the
+    // move that frame starts: the promise waits for it to end, not for nothing.
+    row.classList.remove('on');
+    let done = false;
+    const finished = knob.animationsFinished().then(() => (done = true));
+    await Promise.resolve();
+    assert.equal(done, false, 'nothing has been laid out yet, and it waits');
+    await knobAt();
+    await knobAt();
+    assert.equal(done, false, 'two frames into the move, it still waits');
+    for (let i = 0; i < 12; i++) {
+      await knobAt();
+    }
+    await finished;
+    assert.equal(done, true, 'and it is told when the move has ended');
+  } finally {
+    track.dispose();
+  }
 } finally {
   host.dispose();
   target.dispose();

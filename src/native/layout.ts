@@ -335,6 +335,12 @@ export class Layout {
   #motion = false;
   #motionWake: number | null = null;
   readonly #motionWaiters = new Map<bigint, (() => void)[]>();
+  /** The nodes whose layout is animated, by id. */
+  readonly #animated = new Set<bigint>();
+  /** Whether layout changed since layout animations last measured it. */
+  #unsettled = false;
+  /** Waits on nodes with a layout animation, asked before the layout that may start their move. */
+  #beforeSettle: [LayoutNode, () => void][] = [];
   #shapeTokens: ShapeTokens | null = null;
   #shapeOverride: Partial<ShapeTokens> = {};
   #fullRadius = 9999;
@@ -367,6 +373,9 @@ export class Layout {
   /** @internal Nodes notify only after a native edit succeeds. */
   changed(change: LayoutChange): void {
     this.#hitRevision++;
+    if (change === 'layout') {
+      this.#unsettled = true;
+    }
     let errors: unknown[] | undefined;
     for (const listener of this.#listeners) {
       try {
@@ -590,7 +599,15 @@ export class Layout {
 
   /** The layout just computed is a frame's: layout animations measure what moved against the last one's. */
   settleMotion(): void {
-    this.#motion ||= this.#native.settleMotion();
+    // Measured whether or not motion is already running: a restyle that started a transition
+    // in the same frame does not stand in for it.
+    const moved = this.#native.settleMotion();
+    this.#motion ||= moved;
+    this.#unsettled = false;
+    // What waited for this layout to start a move is answered now that it has, or has not.
+    for (const [node, resolve] of this.#beforeSettle.splice(0)) {
+      this.#waitFor(node, resolve);
+    }
   }
 
   compute(root: LayoutNode, width: number, height: number): void {
@@ -621,7 +638,7 @@ export class Layout {
         // last one's, and a page settling as it is built is not a move. A window measures only
         // the layouts it draws, since one made to read a size sees the page before it is placed.
         if (!this.measureByFrame) {
-          this.#motion ||= this.#native.settleMotion();
+          this.settleMotion();
         }
         return;
       }
@@ -832,23 +849,45 @@ export class Layout {
    * set just before has started what it starts.
    */
   motionFinished(node: LayoutNode): Promise<void> {
-    if (this.#native.cssMotionRunning(LayoutNode.unwrap(node, this)) === 0) {
-      return Promise.resolve();
-    }
     return new Promise((resolve) => {
-      const waiting = this.#motionWaiters.get(node.id);
-      if (waiting) {
-        waiting.push(resolve);
+      // A layout animation starts at the layout after a change, not at the restyle: one that a
+      // change waiting to be laid out may start is waited for.
+      if (this.#unsettled && this.#animated.has(node.id)) {
+        this.#beforeSettle.push([node, resolve]);
       } else {
-        this.#motionWaiters.set(node.id, [resolve]);
+        this.#waitFor(node, resolve);
       }
-      this.#motion = true;
     });
+  }
+  #waitFor(node: LayoutNode, resolve: () => void): void {
+    let running: number;
+    try {
+      running = this.#native.cssMotionRunning(LayoutNode.unwrap(node, this));
+    } catch {
+      // Removed meanwhile: it has nothing left to play.
+      running = 0;
+    }
+    if (running === 0) {
+      resolve();
+      return;
+    }
+    const waiting = this.#motionWaiters.get(node.id);
+    if (waiting) {
+      waiting.push(resolve);
+    } else {
+      this.#motionWaiters.set(node.id, [resolve]);
+    }
+    this.#motion = true;
   }
 
   /** @internal LayoutNode.animateLayout. */
   animateLayout(node: LayoutNode, options: LayoutAnimationOptions | null): void {
     this.flush();
+    if (options) {
+      this.#animated.add(node.id);
+    } else {
+      this.#animated.delete(node.id);
+    }
     this.#native.cssAnimateLayout(
       LayoutNode.unwrap(node, this),
       options && {
