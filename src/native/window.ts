@@ -322,6 +322,8 @@ export class NativeWindowHost {
           trimTimer = setTimeout(() => {
             trimTimer = undefined;
             renderer.trim();
+            // The GPU frees what was destroyed only when the device is polled, and no frame follows.
+            this.#gpu?.device.poll();
             this.bindings.releaseFreeMemory();
             if (this.#stats) {
               this.#stats = { ...this.#stats, textureBytes: renderer.textureBytes };
@@ -596,6 +598,8 @@ export class NativeWindowHost {
       encoder.submit(state.queue);
       this.window.prePresentNotify();
       state.queue.presentSurface(state.surface);
+      // Frees what earlier frames destroyed once the GPU is done with it; it does not wait.
+      state.device.poll();
       this.#check(state.device);
       this.#frames++;
       this.#tap?.presented(this.#frames);
