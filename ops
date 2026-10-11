@@ -1,1 +1,1 @@
-{"author":{"id":"a51b5961cc6de343a64125d8eb6a0f965aa434020b9c46ed932a1bbf143eb532"},"ops":[{"type":5,"timestamp":1791709788,"nonce":"hlQSAgFNweoTuRPjwmEV8thmzx8=","added":["debt","area:docs"],"removed":null}]}
+{"author":{"id":"a51b5961cc6de343a64125d8eb6a0f965aa434020b9c46ed932a1bbf143eb532"},"ops":[{"type":3,"timestamp":1791725206,"nonce":"AxNc2RtHO+73QTMVL5RsNmKhLbI=","message":"Replaced in 49e39a0: the Liquid glass page in the dark scheme, scrolled to the lens, captured with screencapture -l -o (transparent corners at the system's radius, no shadow).","files":null}]}
