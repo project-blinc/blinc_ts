@@ -6,6 +6,7 @@ import type { JsxNode } from '#jsx/jsx-runtime';
 import { effect, signal } from '#jsx/owner';
 import { Moon, Sun } from '../base-ui/icons.js';
 import { Switch } from '../base-ui/toggle.js';
+import { WikiTheme } from './context.js';
 import { pages as all, type WikiPage } from './pages.js';
 
 /** The pages grouped by section, in order. */
@@ -65,7 +66,9 @@ export function Wiki(props: WikiProps): JsxNode {
             main = element;
           }}
         >
-          {() => pages.find((entry) => entry.id === page.get())?.view()}
+          <WikiTheme.Provider value={props.theme}>
+            {() => pages.find((entry) => entry.id === page.get())?.view()}
+          </WikiTheme.Provider>
         </main>
       </div>
       {/* Last, so its shadow is drawn over the page that scrolls under it. */}

@@ -9,6 +9,7 @@ import { SceneRenderer } from 'blinc_ts/native/renderer';
 import { probeShader } from 'blinc_ts/shaders';
 import { ThemeState } from 'blinc_ts/theme';
 import { addUserAgent } from 'blinc_ts/theme/user-agent';
+import { addUtilities } from 'blinc_ts/theme/utilities';
 import { jsx, mount } from '../dist/jsx/jsx-runtime.js';
 import { baseUiTheme } from '../dist/base-ui/theme.js';
 import { addBaseUi } from '../dist/base-ui/sheet.js';
@@ -34,6 +35,7 @@ async function open(scheme) {
   addUserAgent(host.layout);
   addBaseUi(host.layout);
   addWikiSheet(host.layout);
+  addUtilities(host.layout);
   const page = context.signal(pages[0].id);
   const unmount = mount(host, jsx(Wiki, { theme, page }), { context });
   let clock = 0;
@@ -330,6 +332,153 @@ try {
       await settle();
       assert.equal(panel().textContent, '', 'and once folded it is let go');
       assert.equal(panel().bounds()[3], 0, 'laid out at no height');
+    } finally {
+      wiki.close();
+    }
+  }
+  // A dial changes what it shows and nothing else: the subject and the dials stay where they are
+  // as the values, and the text of their readouts, change.
+  {
+    const wiki = await open('light');
+    try {
+      const { host } = wiki;
+      const { frame, settle } = windowed(host, target, W, H);
+      await frame();
+      wiki.page.set('shape');
+      await settle();
+      const ranges = findAll(host.root, 'wiki-field').map((f) =>
+        [...f.childNodes].find((n) => n.tag === 'input'),
+      );
+      assert.equal(ranges.length, 2, 'two dials');
+      const subject = ranges[0].parentNode.parentNode.previousSibling;
+      const boxes = () =>
+        [subject, ...ranges].map((e) => e.viewBounds().map(Math.round).join(',')).join(' ');
+      const before = boxes();
+      for (const range of ranges) {
+        const [x, y, w, h] = range.viewBounds();
+        for (const at of [0.1, 0.37, 0.5, 0.83, 1]) {
+          host.input.pointerMove(x + w * at, y + h / 2);
+          host.input.pointerDown();
+          host.input.pointerUp();
+          await settle();
+          assert.equal(boxes(), before, `nothing moved with the dial at ${at}`);
+        }
+      }
+    } finally {
+      wiki.close();
+    }
+  }
+  // Code scrolled across keeps its line numbers where they are; the lines scroll under nothing.
+  {
+    const wiki = await open('light');
+    try {
+      const { host } = wiki;
+      const { frame, settle } = windowed(host, target, W, H);
+      await frame();
+      wiki.page.set('theme');
+      await settle();
+      const lines = findAll(host.root, 'wiki-code-lines').at(-1);
+      const gutter = lines.previousSibling;
+      lines.scrollIntoView({ block: 'center' });
+      await settle();
+      const [lx, ly, , lh] = lines.viewBounds();
+      const numbers = () => gutter.viewBounds().map(Math.round).join(',');
+      const before = numbers();
+      host.input.pointerMove(lx + 40, ly + lh / 2);
+      host.input.wheel(240, 0);
+      await settle();
+      assert.ok(lines.scrollLeft > 0, `the lines scrolled across: ${lines.scrollLeft}`);
+      assert.equal(numbers(), before, 'the line numbers did not');
+      assert.ok(lines.scrollWidth > lines.clientWidth, 'and there was more to see');
+    } finally {
+      wiki.close();
+    }
+  }
+  // Images: three fits of one photograph differ, and contain leaves the frame showing.
+  {
+    const wiki = await open('light');
+    try {
+      const { host } = wiki;
+      const { frame, settle, pixels } = windowed(host, target, W, H);
+      await frame();
+      wiki.page.set('images');
+      await settle();
+      await host.images.idle();
+      await settle();
+      const imgs = [];
+      const walk = (n) => {
+        for (let c = n.firstChild; c; c = c.nextSibling) {
+          if (c.tag === 'img') imgs.push(c);
+          walk(c);
+        }
+      };
+      walk(findAll(host.root, 'wiki-example-preview')[0]);
+      assert.equal(imgs.length, 3, 'three fits');
+      const patch = (e, fx = 0.5, fy = 0.5) => {
+        const [x, y, w, h] = e.viewBounds();
+        const out = [];
+        for (let dy = -6; dy <= 6; dy += 3) {
+          for (let dx = -6; dx <= 6; dx += 3) {
+            const i = (Math.round(y + h * fy + dy) * W + Math.round(x + w * fx + dx)) * 4;
+            out.push(pixels[i], pixels[i + 1], pixels[i + 2]);
+          }
+        }
+        return out;
+      };
+      const differ = (a, b) => a.reduce((sum, v, i) => sum + Math.abs(v - b[i]), 0) / a.length;
+      const [fill, contain, cover] = imgs.map((e) => patch(e, 0.5, 0.35));
+      assert.ok(differ(fill, cover) > 8, `fill and cover draw differently: ${differ(fill, cover)}`);
+      assert.ok(differ(fill, contain) > 8, 'fill and contain');
+      assert.ok(differ(contain, cover) > 8, 'contain and cover');
+      // Above a landscape photograph contained in a portrait frame is the frame itself.
+      const top = patch(imgs[1], 0.5, 0.06);
+      const plain = top.every((v, i) => Math.abs(v - top[i % 3]) <= 2);
+      assert.ok(plain, 'contain leaves the frame plain above the photograph');
+    } finally {
+      wiki.close();
+    }
+  }
+  // The lens follows the pointer, and its dials move nothing but the glass.
+  {
+    const wiki = await open('light');
+    try {
+      const { host } = wiki;
+      const { frame, settle } = windowed(host, target, W, H);
+      await frame();
+      wiki.page.set('glass');
+      await settle();
+      const lens = findAll(host.root, 'lens')[0];
+      const stage = findAll(host.root, 'lens-stage')[0];
+      lens.scrollIntoView({ block: 'center' });
+      await settle();
+      const [x, y, w, h] = lens.viewBounds();
+      host.input.pointerMove(x + w / 2, y + h / 2);
+      host.input.pointerDown();
+      await frame();
+      host.input.pointerMove(x + w / 2 + 120, y + h / 2 + 40);
+      await frame();
+      host.input.pointerUp();
+      await settle();
+      const [x2, y2] = lens.viewBounds();
+      assert.ok(
+        Math.abs(x2 - x - 120) <= 1 && Math.abs(y2 - y - 40) <= 1,
+        `dragged: ${x},${y} to ${x2},${y2}`,
+      );
+      const boxes = () =>
+        [stage, lens].map((e) => e.viewBounds().map(Math.round).join(',')).join(' ');
+      const before = boxes();
+      const dials = findAll(host.root, 'lens-dials')[0];
+      for (const range of [...dials.childNodes].filter((n) => n.tag === 'input')) {
+        const [rx, ry, rw, rh] = range.viewBounds();
+        for (const at of [0.05, 0.6, 1]) {
+          host.input.pointerMove(rx + rw * at, ry + rh / 2);
+          host.input.pointerDown();
+          host.input.pointerUp();
+          await settle();
+          assert.equal(boxes(), before, 'a dial moved nothing');
+        }
+      }
+      assert.deepEqual(wiki.errors, []);
     } finally {
       wiki.close();
     }

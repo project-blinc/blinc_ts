@@ -704,8 +704,8 @@ that many. Any other column is sized by its cells, as a browser's automatic tabl
 never narrower than the widest thing in it that cannot break, and sharing the rest of the width in
 proportion to what its cells would take on one line, or, beside columns given shares, taking up to
 that and leaving the rest to them. Every cell is an inline flow, which measures what it holds.
-A cell's `colspan` spans columns. Rows and cells that come or go, and `colspan`, `span` and `width` that change, lay the columns out again before
-the next frame. `rowspan` is not supported.
+A cell's `colspan` spans columns. Rows and cells that come or go, and `colspan`, `span` and
+`width` that change, lay the columns out again before the next frame. `rowspan` is not supported.
 
 **Selects.** A `select` shows the label of its chosen option (its `label` attribute, else
 its text) with an owned `.value` and `.chevron`, and keeps its `option`s, and the ones in

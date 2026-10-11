@@ -5,6 +5,7 @@ import { Host } from 'blinc_ts/native/host';
 import { NativeWindowHost } from 'blinc_ts/native/window';
 import { ThemeState } from 'blinc_ts/theme';
 import { addUserAgent } from 'blinc_ts/theme/user-agent';
+import { addUtilities } from 'blinc_ts/theme/utilities';
 import { effect } from '#jsx/owner';
 import { jsx, mount } from '#jsx/jsx-runtime';
 import { addBaseUi } from '../base-ui/sheet.js';
@@ -61,6 +62,7 @@ export function mountWiki(shell: Shell, scope: Scope, pages: readonly WikiPage[]
   addUserAgent(host.layout);
   addBaseUi(host.layout);
   addWikiSheet(host.layout);
+  addUtilities(host.layout);
   host.onStyleErrors((errors) => {
     for (const error of errors) {
       console.error(error);

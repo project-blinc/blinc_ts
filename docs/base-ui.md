@@ -49,7 +49,7 @@ scheme switch under the navigation is a `Switch` with a day and night icon on it
 
 ## Character
 
-The parts have the depth and motion of ashui's components, in a monochrome palette.
+The parts have depth and motion, in a monochrome palette.
 
 - **Tokens only.** `sheet.ts` and the wiki's sheet say only the theme's tokens: colours, spacing
   (`--space-*`), type (`--text-*`, `--font-*`, `--leading-*`), shadows (`--shadow-*`) and motion
@@ -58,7 +58,7 @@ The parts have the depth and motion of ashui's components, in a monochrome palet
 - **Shape is the theme's.** A corner is `var(--radius-*)` and nothing else, and a sheet sets no
   `corner-*` property, so the theme's corner smoothing reaches every part. The showcase test turns
   smoothing off and requires an accordion's corner to change.
-- **Shadows as ashui has them.** An outline button, the knob of a switch and a tooltip stand on
+- **Shadows where a surface stands.** An outline button, the knob of a switch and a tooltip stand on
   `--shadow-sm`; an accordion and a popover on `--shadow-md`; a dialog on `--shadow-xl`; what is
   flat has none, and a disabled button or knob loses its shadow.
 - **Everything that changes eases.** Colours and borders ease over `--duration-fast`; a press

@@ -54,7 +54,7 @@ ${each(':disabled')} { opacity: 0.5; transform: none; box-shadow: none; }
 .bui-toggle[data-pressed] { background: var(--accent-subtle); border-color: var(--border-hover); }
 .bui-popover-trigger[data-popup-open], .bui-dialog-trigger[data-popup-open], .bui-tooltip-trigger[data-popup-open] { border-color: var(--border-hover); }
 
-/* Buttons that are not a surface of their own lie flat, as ashui's ghost buttons do, whatever the user-agent sheet gives a button. */
+/* Buttons that are not a surface of their own lie flat, as ghost buttons do, whatever the user-agent sheet gives a button. */
 ${flat.flatMap((s) => [s, `${s}:hover`, `${s}:active`]).join(', ')} { box-shadow: none; }
 
 /* A chevron turns over as what it belongs to opens. */
@@ -89,7 +89,7 @@ ${flat.flatMap((s) => [s, `${s}:hover`, `${s}:active`]).join(', ')} { box-shadow
 .bui-switch[data-checked]:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
 .bui-switch[data-disabled] { background: var(--input-bg-disabled); border-color: var(--border-secondary); opacity: 0.5; }
 .bui-switch[data-disabled] > .bui-switch-thumb { box-shadow: none; border: 1px solid var(--border-secondary); }
-/* The knob travels by a transform, as ashui's does: paint only, nothing laid out again. */
+/* The knob travels by a transform: paint only, nothing laid out again. */
 .bui-switch[data-size="lg"] { width: 46px; height: var(--space-7); }
 .bui-switch-thumb {
   position: relative;
@@ -166,7 +166,7 @@ ${flat.flatMap((s) => [s, `${s}:hover`, `${s}:active`]).join(', ')} { box-shadow
 .bui-collapsible-trigger[data-panel-open] { border-color: var(--border-hover); }
 .bui-collapsible-panel { gap: var(--space-2); padding: 0 var(--space-0-5); overflow: hidden; }
 .bui-collapsible-panel[data-closed] { height: 0; }
-/* Hidden, a panel is still laid out, at no height, as ashui's is: opening and closing are a change
+/* Hidden, a panel is still laid out, at no height: opening and closing are a change
    of size that layout animation eases, never a box appearing from nothing. */
 .bui-collapsible-panel[hidden], .bui-accordion-panel[hidden] { display: flex; }
 .bui-accordion {

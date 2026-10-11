@@ -79,16 +79,78 @@ export const wikiCss = `
 .wiki-example > .bui-tabs > .bui-tabs-list { padding: 0 var(--space-2); }
 .wiki-example > .bui-tabs > .bui-tabs-panel { padding: 0; }
 .wiki-example > .bui-tabs > .wiki-example-preview { padding: var(--space-5); gap: var(--space-3-5); background: var(--background); align-items: flex-start; }
-.wiki-example-source { max-height: 340px; overflow-y: auto; }
-.wiki-example-source > pre { margin: 0; border: 0; border-radius: var(--radius-none); font-size: var(--text-sm); }
+/* The panel scrolls the code up and down, gutter and lines together; only the lines scroll across,
+   so the line numbers stay where they are. */
+.wiki-example-source { max-height: 380px; overflow-x: hidden; overflow-y: auto; }
+
+/* Code: a gutter of line numbers, and lines of tokens in the theme's colours, kept as written. */
+.wiki-code {
+  flex-direction: row;
+  align-items: flex-start;
+  align-self: stretch;
+  padding: var(--space-3) 0;
+  background: var(--surface);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  white-space: pre;
+}
+.wiki-code-gutter {
+  flex-shrink: 0;
+  align-items: flex-end;
+  padding: 0 var(--space-3) 0 var(--space-4);
+  border-right: 1px solid var(--border);
+  color: var(--text-tertiary);
+}
+.wiki-code-lines {
+  flex: 1;
+  min-width: 0;
+  align-items: flex-start;
+  padding: 0 var(--space-4);
+  color: var(--text-primary);
+  overflow-x: auto;
+  scrollbar-visibility: hover;
+}
+.wiki-code-line { flex-shrink: 0; }
+.wiki-code-gutter > span, .wiki-code-line { height: var(--space-5); align-items: center; }
+.wiki-code-line { flex-direction: row; }
+.tok-keyword, .tok-tag { color: var(--error); }
+.tok-string { color: var(--info); }
+.tok-number { color: var(--warning); }
+.tok-function, .tok-property { color: var(--success); }
+.tok-type { font-weight: var(--font-semibold); }
+.tok-comment { color: var(--text-tertiary); font-style: italic; }
+.tok-punctuation { color: var(--text-secondary); }
 .wiki-row { flex-direction: row; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
 .wiki-col { gap: var(--space-2-5); align-items: flex-start; }
 .wiki-readout { padding: var(--space-1-5) var(--space-2-5); border-radius: var(--radius-md); background: var(--accent-subtle); font-family: var(--font-mono); font-size: var(--text-sm); }
-.wiki-field { align-self: stretch; gap: var(--space-1); align-items: stretch; }
+.wiki-field { align-self: stretch; flex-direction: column; gap: var(--space-1); align-items: stretch; }
 .wiki-field > :is(textarea, input:not([type="number"]), select) { width: 100%; }
 .wiki-field > label { font-size: var(--text-sm); font-weight: var(--font-medium); }
 .wiki-hint { font-size: var(--text-sm); color: var(--text-tertiary); }
 .wiki-error { font-size: var(--text-sm); color: var(--error); }
+/* Reference tables, and the pieces of the examples that show tokens and take input. */
+.wiki-table { margin: var(--space-2) 0; align-self: stretch; font-size: var(--text-sm); }
+.wiki-table th { text-align: left; color: var(--text-secondary); }
+.wiki-code-input { width: 100%; min-height: 220px; font-family: var(--font-mono); font-size: var(--text-sm); }
+.wiki-chips { flex-direction: row; flex-wrap: wrap; gap: var(--space-1-5); align-items: center; }
+.wiki-chip {
+  height: var(--space-7);
+  padding: 0 var(--space-2-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  box-shadow: none;
+}
+.wiki-chip:hover { background: var(--input-bg-hover); color: var(--text-primary); }
+.wiki-chip[data-active] { border-color: var(--primary); background: var(--primary); color: var(--text-inverse); }
+.wiki-chip-label { width: 92px; font-size: var(--text-xs); font-weight: var(--font-semibold); color: var(--text-tertiary); }
+.wiki-grid { flex-direction: row; flex-wrap: wrap; gap: var(--space-3); align-self: stretch; }
+.wiki-swatch { width: 172px; gap: var(--space-1); font-size: var(--text-xs); color: var(--text-secondary); }
+.wiki-swatch-fill { height: var(--space-10); border: 1px solid var(--border); border-radius: var(--radius-md); }
+.wiki-mono { font-family: var(--font-mono); font-size: var(--text-xs); }
 @keyframes wiki-pulse { from { opacity: 0.25; } to { opacity: 1; } }
 .wiki-pulse { animation: wiki-pulse var(--duration-slowest) var(--ease-in-out) infinite alternate; }
 `;

@@ -48,36 +48,6 @@ export default function Paint() {
           filter: 'saturate(0.6)',
         }}
       />
-      <div style={{ position: 'relative', width: 140, height: 72 }}>
-        <div
-          style={{
-            position: 'absolute',
-            left: 0,
-            top: 0,
-            width: 140,
-            height: 72,
-            borderRadius: 12,
-            background: 'linear-gradient(90deg, #ff5a5a, #5a93ff)',
-          }}
-        />
-        <div
-          style={{
-            position: 'absolute',
-            left: 20,
-            top: 16,
-            width: 100,
-            height: 40,
-            borderRadius: 10,
-            backdropFilter: 'blur(6px)',
-            background: 'rgba(255,255,255,0.25)',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'white',
-          }}
-        >
-          Glass
-        </div>
-      </div>
       <span style={{ textDecoration: 'underline', textDecorationColor: 'var(--error)' }}>
         Underlined
       </span>
