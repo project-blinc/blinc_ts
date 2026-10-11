@@ -4,6 +4,7 @@ import { baseUiPages } from './pages/base-ui.js';
 import { elementsPages } from './pages/elements.js';
 import { startPages } from './pages/start.js';
 import { stylingPages } from './pages/styling.js';
+import { toolingPages } from './pages/tooling.js';
 import type { WikiPage } from './page.js';
 
 export type { WikiPage } from './page.js';
@@ -13,5 +14,6 @@ export const pages: readonly WikiPage[] = [
   ...adaptersPages,
   ...elementsPages,
   ...stylingPages,
+  ...toolingPages,
   ...baseUiPages,
 ];

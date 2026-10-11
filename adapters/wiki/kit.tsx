@@ -49,6 +49,7 @@ export function SourceView(props: {
   from?: number;
   to?: number;
   title?: string;
+  language?: Language;
 }): JsxNode {
   const lines = props.from ? ` (lines ${props.from} to ${props.to ?? 'the end'})` : '';
   return (
@@ -60,7 +61,7 @@ export function SourceView(props: {
       <div class="wiki-example-source">
         <CodeLines
           text={sourceOfFile(props.file, props.from, props.to)}
-          language={languageOf(props.file)}
+          language={props.language ?? languageOf(props.file)}
           first={props.from ?? 1}
         />
       </div>

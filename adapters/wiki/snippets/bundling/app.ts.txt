@@ -1,0 +1,13 @@
+import { loadNative } from 'blinc_ts/native';
+import { Host } from 'blinc_ts/native/host';
+import sheet, { classes } from './card.css';
+
+const host = Host.create(loadNative());
+const errors = host.layout.addStyleSheet(sheet).diagnostics;
+const card = host.createElement('div');
+card.className = classes.card;
+host.root.appendChild(card);
+host.compute(400, 300);
+const [, , width, height] = card.bounds();
+console.log(`card ${width}x${height}, ${errors.length} diagnostics, sheet ${sheet.byteLength} bytes`);
+host.dispose();
