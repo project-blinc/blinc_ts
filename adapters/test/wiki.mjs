@@ -55,6 +55,7 @@ async function open(scheme) {
   const draw = async (name) => {
     await settle();
     const renderer = new SceneRenderer(target.device, host.layout);
+    const detach = host.canvases.attach(renderer);
     try {
       renderer.useImages(host.images.library);
       const pixels = new Uint8Array(W * H * 4);
@@ -72,6 +73,7 @@ async function open(scheme) {
       }
       return pixels;
     } finally {
+      detach();
       renderer.dispose();
     }
   };
@@ -478,6 +480,56 @@ try {
           assert.equal(boxes(), before, 'a dial moved nothing');
         }
       }
+      assert.deepEqual(wiki.errors, []);
+    } finally {
+      wiki.close();
+    }
+  }
+  // A canvas element draws its shader, frame after frame while it plays, and holds when paused.
+  {
+    const wiki = await open('light');
+    try {
+      const { host } = wiki;
+      const { frame, press, pixels } = windowed(host, target, W, H);
+      await frame();
+      wiki.page.set('canvas');
+      await frame();
+      await frame();
+      const canvas = [];
+      const walk = (n) => {
+        for (let c = n.firstChild; c; c = c.nextSibling) {
+          if (c.tag === 'canvas') canvas.push(c);
+          walk(c);
+        }
+      };
+      walk(host.root);
+      const [x, y, w, h] = canvas[0].viewBounds();
+      const at = () => {
+        const i = (Math.round(y + h / 2) * W + Math.round(x + w / 2)) * 4;
+        return [pixels[i], pixels[i + 1], pixels[i + 2]];
+      };
+      const first = at();
+      assert.ok(Math.max(...first) - Math.min(...first) > 40, `the shader is drawn: ${first}`);
+      // A frame's paint that asks for the next one says so as a paint change, as a window hears it.
+      let asked = 0;
+      host.layout.onChange((change) => {
+        if (change === 'paint') {
+          asked++;
+        }
+      });
+      await new Promise((r) => setTimeout(r, 120));
+      asked = 0;
+      await frame();
+      assert.ok(asked > 0, 'it asks for the next frame while it plays');
+      const later = at();
+      assert.notDeepEqual(later, first, 'and moves');
+      await press(buttonNamed(host.root, 'Pause'));
+      const held = at();
+      await new Promise((r) => setTimeout(r, 120));
+      asked = 0;
+      await frame();
+      assert.deepEqual(at(), held, 'paused, it holds still');
+      assert.equal(asked, 0, 'and asks for no frames');
       assert.deepEqual(wiki.errors, []);
     } finally {
       wiki.close();

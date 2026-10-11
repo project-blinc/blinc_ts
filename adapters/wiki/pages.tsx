@@ -1,6 +1,7 @@
 /** The wiki's pages, section by section, in the order the navigation lists them. */
 import { adaptersPages } from './pages/adapters.js';
 import { baseUiPages } from './pages/base-ui.js';
+import { drawingPages } from './pages/drawing.js';
 import { elementsPages } from './pages/elements.js';
 import { startPages } from './pages/start.js';
 import { stylingPages } from './pages/styling.js';
@@ -14,6 +15,7 @@ export const pages: readonly WikiPage[] = [
   ...adaptersPages,
   ...elementsPages,
   ...stylingPages,
+  ...drawingPages,
   ...toolingPages,
   ...baseUiPages,
 ];

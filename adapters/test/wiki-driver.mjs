@@ -38,20 +38,22 @@ export function windowed(host, target, width, height) {
   host.layout.onChange((change) => layout.changed(change));
   let clock = 0;
   const pixels = new Uint8Array(width * height * 4);
-  const frame = async () => {
-    const moving = layout.prepare(width, height, 1, () => (clock += 16));
-    const renderer = new SceneRenderer(target.device, host.layout);
-    try {
-      renderer.useImages(host.images.library);
-      await target.captureCommandsInto(
-        pixels,
-        (encoder, view) =>
-          renderer.encode(encoder, host.root.layoutNode, view, { width, height, scale: 1 })
-            .drawCalls,
-      );
-    } finally {
+  // One renderer for every frame, as a window keeps, with the host's canvases drawn through it.
+  const renderer = new SceneRenderer(target.device, host.layout);
+  renderer.useImages(host.images.library);
+  host.canvases.attach(renderer);
+  host.layout.onChange((change) => {
+    if (change === 'disposed') {
       renderer.dispose();
     }
+  });
+  const frame = async () => {
+    const moving = layout.prepare(width, height, 1, () => (clock += 16));
+    await target.captureCommandsInto(
+      pixels,
+      (encoder, view) =>
+        renderer.encode(encoder, host.root.layoutNode, view, { width, height, scale: 1 }).drawCalls,
+    );
     return moving;
   };
   /** Frames until nothing is moving, at most `limit`; how many it took. */
