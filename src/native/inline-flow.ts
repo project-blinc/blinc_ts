@@ -21,8 +21,8 @@
  * longest line can be, no narrower than its longest word, and as tall as its
  * lines at the width it is given. After each layout pass the flow lays its
  * lines out again at that width and asks for another pass when anything
- * moved. Only an element that holds an inline element or a `br` is a flow;
- * one that holds only text is a plain wrapping text, as before.
+ * moved. Only an element that holds an inline element, a `br` or more than one
+ * text is a flow; one that holds a single text is a plain wrapping text, as before.
  */
 import type { Host, HostElement, HostNode, HostText } from './host.js';
 import { HostElement as ElementClass, HostText as TextClass } from './host.js';
@@ -611,12 +611,17 @@ export class InlineFlows {
     if (root.destroyed) {
       return false;
     }
+    let texts = 0;
     for (let child = root.firstChild; child; child = child.nextSibling) {
       if (child instanceof ElementClass && (INLINE_TAGS.has(child.tag) || child.tag === 'br')) {
         return true;
       }
+      // Two pieces of text are a line made of both, as `Count: {n}` is, not two lines.
+      if (child instanceof TextClass && child.data.trim() !== '') {
+        texts++;
+      }
     }
-    return false;
+    return texts >= 2;
   }
 
   #layOut(): boolean {

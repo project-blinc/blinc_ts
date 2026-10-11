@@ -264,6 +264,32 @@ try {
   assert.ok(inkText && inkText[0] >= rx + 31, `the text starts past the gutter: ${inkText}`);
   host.root.removeChild(rendered);
 
+  // An item made of several texts, as a framework makes `{index}. {label}`, is one line of them and
+  // not a line each, and stays so as one comes and goes.
+  const lone = el('li', ['1. One']);
+  const pieces = host.createElement('li');
+  for (const piece of [
+    host.createComment('['),
+    text('1'),
+    host.createComment(']'),
+    text('. '),
+    text('One'),
+  ]) {
+    pieces.appendChild(piece);
+  }
+  const mixed = place(el('ul', [lone, pieces]), 10, 10);
+  settle();
+  const oneLine = lone.bounds()[3];
+  assert.ok(oneLine > 0 && pieces.bounds()[3] <= oneLine + 1, 'texts of an item share a line');
+  const [first] = pieces.childNodes.filter((n) => n.data === '1');
+  first.data = '';
+  settle();
+  assert.ok(pieces.bounds()[3] <= oneLine + 1, 'and one going empty leaves the rest on it');
+  first.data = '12';
+  settle();
+  assert.ok(pieces.bounds()[3] <= oneLine + 1, 'and coming back');
+  host.root.removeChild(mixed);
+
   assert.deepEqual(errors, []);
   state.dispose();
 } finally {

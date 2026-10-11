@@ -1382,6 +1382,8 @@ export class Host {
   /** @internal */
   textChanged(node: HostText): void {
     this.behaviours.selects.changed(node.parentNode);
+    // Text going empty or coming back changes whether its parent holds more than one.
+    this.inlineFlows?.touch(node.parentNode);
     this.#text.add(node);
     this.#schedule();
   }
