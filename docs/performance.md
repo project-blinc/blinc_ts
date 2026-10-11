@@ -89,6 +89,28 @@ solid-border workloads; it does not measure patterned-border throughput.
 [Raw samples, source revisions and binary hashes](../benchmarks/results/2026-10-11-border-solid.json.gz)
 retain all four alternating run pairs and the summary.
 
+## Shared row-grid ordinary-renderer comparison, 2026-10-12
+
+The row-span layout projection is opt-in. Compared ordinary lists and cards
+using release addons with ABI `c3945f4` and `a59d641` on the Apple M1 Pro,
+Node 24.2.0 and Metal:
+
+```sh
+node benchmarks/compare-renderer.mjs \
+  --baseline /path/to/baseline.node --candidate /path/to/candidate.node \
+  --counts 30,300 --cases list,cards --scales 1,2 \
+  --samples 101 --warmup 20 --runs 3 \
+  --output .blinc/benchmarks/row-grid-final
+```
+
+All captured pixels, primitive counts, draw counts and record sizes matched.
+Across the twelve static/changed cases, the median of CPU-frame run medians
+ranged from 2.8% slower to 13.2% faster. Individual runs varied, so these
+timings do not establish a speedup. This comparison checks the ordinary-tree
+rendering path; it does not measure table row-span throughput.
+[Raw samples, source revisions and binary hashes](../benchmarks/results/2026-10-12-row-grid-ordinary.json.gz)
+retain all three alternating run pairs and the summary.
+
 ## Large-tree mutation and frame benchmark
 
 ```sh
