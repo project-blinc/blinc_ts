@@ -218,7 +218,7 @@ try {
   const grouped = el(
     'table',
     { style: 'position: absolute; left: 20px; top: 300px; width: 400px' },
-    [el('colgroup', { span: '3' }), el('tbody', {}, [row(cell('td', 'a'), cell('td', 'b'))])],
+    [el('colgroup', { span: '3' }), el('tbody', {}, [row(cell('td', 'a'), cell('td', 'a'))])],
   );
   host.root.appendChild(grouped);
   settle();
