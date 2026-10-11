@@ -638,6 +638,99 @@ try {
       wiki.close();
     }
   }
+  // The Elements pages' examples do what they say.
+  {
+    const wiki = await open('light');
+    try {
+      const { host } = wiki;
+      const { frame, settle } = windowed(host, target, W, H);
+      await frame();
+      const tap = async (element, fx = 0.5, fy = 0.5) => {
+        element.scrollIntoView({ block: 'center' });
+        await settle();
+        const [x, y, w, h] = element.viewBounds();
+        host.input.pointerMove(x + w * fx, y + h * fy);
+        host.input.pointerDown();
+        host.input.pointerUp();
+        await settle();
+      };
+      const text = (name) => findAll(host.root, name).map((e) => e.textContent);
+      // Events: a press is captured at the outer box before it reaches the inner one.
+      wiki.page.set('events');
+      await settle();
+      await tap(findAll(host.root, 'ev-inner')[0]);
+      const log = findAll(host.root, 'ev-log')[0].textContent;
+      const outer = log.lastIndexOf('pointerdown outer, captured');
+      const inner = log.lastIndexOf('pointerdown inner');
+      assert.ok(outer >= 0 && inner >= 0, `both heard it: ${log}`);
+      assert.ok(outer > inner, 'the capture first, so lower in a newest-first log');
+      // Controls: a checkbox made indeterminate says so; the range moves its readouts.
+      wiki.page.set('controls');
+      await settle();
+      await tap(buttonNamed(host.root, 'Make it indeterminate'));
+      assert.ok(
+        text('wiki-readout').includes('checkbox: indeterminate'),
+        String(text('wiki-readout')),
+      );
+      const range = findAll(host.root, 'wiki-example-preview')[0];
+      const ranges = [];
+      const walk = (n) => {
+        for (let c = n.firstChild; c; c = c.nextSibling) {
+          if (c.tag === 'input' && c.getAttribute('type') === 'range') ranges.push(c);
+          walk(c);
+        }
+      };
+      walk(range);
+      await tap(ranges[0], 0.95);
+      assert.ok(
+        text('wiki-readout').some((t) => /level: (9\d|100)/.test(t)),
+        String(text('wiki-readout')),
+      );
+      // Scrolling: into view, and back to the top.
+      wiki.page.set('scrolling');
+      await settle();
+      const box = findAll(host.root, 'sc-box')[0];
+      await tap(buttonNamed(host.root, 'center'));
+      assert.ok(box.scrollTop > 200, `scrolled to the item: ${box.scrollTop}`);
+      await tap(buttonNamed(host.root, 'top'));
+      assert.equal(box.scrollTop, 0, 'and back');
+      // Top layer: a popover opens beside its button.
+      wiki.page.set('top-layer');
+      await settle();
+      await tap(buttonNamed(host.root, 'Open a popover'));
+      const pop = findAll(host.root, 'tl-pop')[0];
+      assert.ok(pop, 'a popover is open');
+      const [, py] = pop.viewBounds();
+      const [, by, , bh] = buttonNamed(host.root, 'Open a popover').viewBounds();
+      assert.ok(py >= by + bh, 'below its button');
+      host.input.keyDown({ key: 'Escape', code: 'Escape' });
+      await settle();
+      // Inline text: the link counts its presses.
+      wiki.page.set('inline');
+      await settle();
+      const links = [];
+      const findLinks = (n) => {
+        for (let c = n.firstChild; c; c = c.nextSibling) {
+          if (c.tag === 'a') links.push(c);
+          findLinks(c);
+        }
+      };
+      findLinks(findAll(host.root, 'wiki-example-preview')[0]);
+      links[0].click();
+      await settle();
+      assert.ok(text('wiki-readout').includes('link pressed: 1'), String(text('wiki-readout')));
+      // The tree: list markers are reported, and a select's parts are not among its children.
+      wiki.page.set('tree');
+      await settle();
+      await tap(buttonNamed(host.root, 'Walk childNodes'));
+      const walked = findAll(host.root, 'wiki-example-preview')[0].textContent;
+      assert.match(walked, /<li>\s+marker: 3\./, 'the first item counts from 3');
+      assert.doesNotMatch(walked, /chevron/, "the select's chevron is owned, not a child");
+      assert.deepEqual(wiki.errors, []);
+    } finally {
+      wiki.close();
+    }
+  }
 } finally {
   target.dispose();
 }
