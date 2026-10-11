@@ -244,7 +244,7 @@ ${fields}, textarea {
   transition: background ${STATE}, border-color ${STATE}, outline-width ${RING};
 }
 ${fields} { flex-direction: row; align-items: center; width: 240px; height: 38px; padding: 0 10px; }
-textarea { min-height: 76px; padding: 8px 10px; }
+textarea { width: 240px; min-height: 76px; padding: 8px 10px; }
 ${fields}:hover, textarea:hover { background: var(--input-bg-hover); border-color: var(--border-hover); }
 ${fields}:focus, textarea:focus { background: var(--input-bg-focus); border-color: var(--border-focus); outline-width: 3px; }
 ${fields}:disabled, textarea:disabled { background: var(--input-bg-disabled); border-color: var(--border); cursor: default; }
@@ -255,7 +255,7 @@ ${fields}:user-invalid, textarea:user-invalid, ${ticks}:user-invalid {
 /* What shows through a text field: the text in a clip, the selection behind it, the caret and the placeholder over it. */
 ${fields} > .clip { position: relative; flex: 1 1 0; min-width: 0; height: 100%; overflow: hidden; }
 ${fields} > .clip > .strip { position: absolute; top: 0; bottom: 0; left: 2px; width: 4096px; flex-direction: row; align-items: center; }
-textarea > .clip { position: relative; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+textarea > .clip { position: relative; flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; }
 textarea > .clip > .strip { position: relative; width: 100%; }
 .clip .line { position: relative; flex-direction: row; align-items: center; }
 textarea .line { width: 100%; align-items: flex-start; }

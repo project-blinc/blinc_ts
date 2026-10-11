@@ -22,7 +22,8 @@
  * lines at the width it is given. After each layout pass the flow lays its
  * lines out again at that width and asks for another pass when anything
  * moved. Only an element that holds an inline element, a `br` or more than one
- * text is a flow; one that holds a single text is a plain wrapping text, as before.
+ * text is a flow, and a block that is not of the paragraph tags (a div) only when it
+ * holds text beside them; one that holds a single text is a plain wrapping text, as before.
  */
 import type { Host, HostElement, HostNode, HostText } from './host.js';
 import { HostElement as ElementClass, HostText as TextClass } from './host.js';
@@ -47,6 +48,30 @@ const FLOW_TAGS: ReadonlySet<string> = new Set([
   'li',
   'th',
   'td',
+]);
+
+/**
+ * Elements that never hold a flow of their own, though text may sit in them: controls and parts
+ * of a table or a list, which lay their children out as boxes.
+ */
+const NOT_FLOWS: ReadonlySet<string> = new Set([
+  'button',
+  'select',
+  'option',
+  'optgroup',
+  'textarea',
+  'input',
+  'img',
+  'summary',
+  'table',
+  'thead',
+  'tbody',
+  'tfoot',
+  'tr',
+  'ul',
+  'ol',
+  'dl',
+  'menu',
 ]);
 
 /** HTML's inline elements. */
@@ -565,9 +590,15 @@ export class InlineFlows {
    * inline element becomes one.
    */
   touch(node: HostNode | null): void {
+    let nearest = true;
     for (let n: HostNode | null = node; n; n = n.parentNode) {
-      if (n instanceof ElementClass && FLOW_TAGS.has(n.tag)) {
-        this.#pending.add(n);
+      if (n instanceof ElementClass) {
+        // The nearest element may become a flow whatever it is called; further out, only what
+        // is one already, or is called for one.
+        if (FLOW_TAGS.has(n.tag) || this.#flows.has(n) || (nearest && !NOT_FLOWS.has(n.tag))) {
+          this.#pending.add(n);
+        }
+        nearest = false;
       }
     }
     if (this.#pending.size > 0 && !this.#release) {
@@ -612,16 +643,25 @@ export class InlineFlows {
       return false;
     }
     let texts = 0;
+    let inline = false;
     for (let child = root.firstChild; child; child = child.nextSibling) {
       if (child instanceof ElementClass && (INLINE_TAGS.has(child.tag) || child.tag === 'br')) {
-        return true;
+        inline = true;
       }
       // Two pieces of text are a line made of both, as `Count: {n}` is, not two lines.
       if (child instanceof TextClass && child.data.trim() !== '') {
         texts++;
       }
     }
-    return texts >= 2;
+    if (FLOW_TAGS.has(root.tag)) {
+      return inline || texts >= 2;
+    }
+    // Any other block that holds text mixed with more text or an inline element is a paragraph
+    // too, as a div of prose is. One that holds elements alone, or an inline element or a control
+    // by itself, is laid out as its style says: a row of controls is a row.
+    return (
+      !NOT_FLOWS.has(root.tag) && !INLINE_TAGS.has(root.tag) && texts >= 1 && (inline || texts >= 2)
+    );
   }
 
   #layOut(): boolean {

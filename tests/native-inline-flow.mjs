@@ -334,6 +334,54 @@ try {
   assert.ok(find(frame, GREEN, [10, 0, 140, 40], 60), 'the last is :last-child');
   host.root.removeChild(counted);
 
+  // A div of prose is a paragraph as a p is: its text, its code and its text again are one run, wrapped
+  // together, and not a line each. One that holds elements alone is laid out as its style says.
+  {
+    nextLeft = 10;
+    const prose = el('div', '', [
+      'The parts are in ',
+      el('code', '', ['adapters']),
+      ', built on the runtime.',
+    ]);
+    prose.setAttribute(
+      'style',
+      'position: absolute; left: 10px; top: 10px; width: 140px; font-size: 16px; color: #ffffff; line-height: 1.5',
+    );
+    const paragraph = el('p', '', [
+      'The parts are in ',
+      el('code', '', ['adapters']),
+      ', built on the runtime.',
+    ]);
+    paragraph.setAttribute('style', 'left: 160px; top: 10px');
+    host.root.appendChild(prose);
+    host.root.appendChild(paragraph);
+    host.compute(W, H);
+    assert.equal(
+      prose.bounds()[3],
+      paragraph.bounds()[3],
+      'a div of prose is as tall as the paragraph',
+    );
+    assert.ok(prose.bounds()[3] < 24 * 6, 'which is a few lines, not one for each piece');
+    // A row of inline elements and nothing else stays a row.
+    const row = el('div', '', [el('span', '', ['one']), el('span', '', ['two'])]);
+    row.setAttribute(
+      'style',
+      'position: absolute; left: 10px; top: 120px; flex-direction: row; gap: 20px; font-size: 16px; color: #ffffff',
+    );
+    host.root.appendChild(row);
+    host.compute(W, H);
+    const [one, two] = row.childNodes;
+    assert.ok(
+      two.bounds()[0] > one.bounds()[0] + one.bounds()[2],
+      'spans in a row are side by side',
+    );
+    assert.equal(one.bounds()[1], two.bounds()[1], 'on one line');
+    host.root.removeChild(prose);
+    host.root.removeChild(paragraph);
+    host.root.removeChild(row);
+    nextLeft = 10;
+  }
+
   // Taking elements out of the tree takes their pieces with them.
   const gone = el('strong', '', ['bold text']);
   nextLeft = 10;
