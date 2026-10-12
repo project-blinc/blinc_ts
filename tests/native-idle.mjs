@@ -42,6 +42,7 @@ const watchdog = setTimeout(() => {
 watchdog.unref();
 try {
   const first = open();
+  assert.equal(native.window.Window.wake(), true, 'Application work can wake startup');
   const root = await mount(first);
   await until(first, () => first.frames > 0, 'First frame');
   await delay(700);

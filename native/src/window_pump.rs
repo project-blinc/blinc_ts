@@ -217,10 +217,6 @@ unsafe extern "C" fn check(handle: Handle) {
     if state.closed.get() || state.pending.load(Ordering::Acquire) {
         return;
     }
-    if backend::external_pending() {
-        state.notify();
-        return;
-    }
     uv_update_time(state.loop_);
     let timeout = uv_backend_timeout(state.loop_);
     let wait = if timeout < 0 {
@@ -234,6 +230,9 @@ unsafe extern "C" fn check(handle: Handle) {
             watcher.arm(timeout != 0);
         }
     }
+    // This also consumes application wakes and returns immediately for queued work.
+    // Skipping it while external_pending is true leaves Window.wake's flag set,
+    // repeatedly notifying JS without giving the platform another event pass.
     let events = backend::pump_external(wait);
     if let Some(watcher) = state.watcher.borrow().as_ref() {
         watcher.arm(false);
