@@ -2,6 +2,7 @@ import { tgpu, d, std } from 'typegpu';
 import { fields } from '../../src/renderer/records.js';
 import { inputs, field, scene, textures } from '../../src/renderer/gpu/shared.js';
 import { clipCoverage } from '../../src/renderer/gpu/sdf.js';
+import { gradientColor } from './fills.js';
 import { layerVertex, gaussian } from './layerShared.js';
 
 const maskAlpha = tgpu
@@ -25,11 +26,17 @@ const maskAlpha = tgpu
       let f = d.f32(0);
       if (a.x < 1.5) {
         const dir = std.sub(g.zw, g.xy);
-        f = std.clamp(std.dot(std.sub(uv, g.xy), dir) / std.max(std.dot(dir, dir), 0.000001), 0, 1);
+        f = std.dot(std.sub(uv, g.xy), dir) / std.max(std.dot(dir, dir), 0.000001);
+      } else if (a.x < 2.5) {
+        f = std.length(std.sub(uv, g.xy)) / std.max(g.z, 0.0001);
       } else {
-        f = std.clamp(std.length(std.sub(uv, g.xy)) / std.max(g.z, 0.0001), 0, 1);
+        const delta = std.mul(std.sub(uv, g.xy), frame.zw);
+        f = std.fract((std.atan2(delta.x, -delta.y) - g.z) / (2 * Math.PI));
       }
       const s = field(record, fields.stops);
+      if (s.w >= 2) {
+        return gradientColor(f, s.w).a;
+      }
       if (s.w > 0.5) {
         if (f <= s.y) {
           alpha = std.mix(a.y, a.z, std.clamp((f - s.x) / std.max(s.y - s.x, 0.0001), 0, 1));

@@ -58,7 +58,7 @@ const sheet = `
 .faded { background: #ffffff; opacity: 0.5 }
 .shadowed { background: #ffffff; box-shadow: 0 0 0 6px #ff0000 }
 .round { background: #ffffff; border-radius: 12px }
-.bad { background: conic-gradient(red, blue); opacity: 0.5 }
+.bad { background: conic-gradient(from left, red, blue); opacity: 0.5 }
 .green { background: #00ff00 }
 .through { pointer-events: none }
 .bordered { background: #ffffff; border: 4px solid #ff0000 }
@@ -190,7 +190,7 @@ try {
 
   // A value that cannot be read is reported with its reason; the rest of its rule applies.
   assert.ok(
-    errors.some((e) => e.startsWith('background: conic-gradient(red, blue):')),
+    errors.some((e) => e.startsWith('background: conic-gradient(from left, red, blue):')),
     String(errors),
   );
   const bad = at('bad', 30, 30);

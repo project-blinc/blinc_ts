@@ -1,8 +1,60 @@
 import { tgpu, d, std } from 'typegpu';
 
+import { scene } from '../../src/renderer/gpu/shared.js';
 import { quarterEllipseSdf } from '../../src/renderer/gpu/sdf.js';
 
-/** Solid, linear or radial fill, with up to three encoded stops. */
+/** Sample complete stop data in the shared scene tail. */
+export const gradientColor = tgpu
+  .fn(
+    [d.f32, d.f32],
+    d.vec4f,
+  )((position, marker) => {
+    const first = d.u32(marker - 2);
+    const header = scene.$.records[first]!;
+    const count = d.u32(header.x);
+    const start = scene.$.records[first + 3]!.x;
+    const end = scene.$.records[first + 1 + 2 * count]!.x;
+    let t = d.f32(position);
+    if (header.y > 0.5) {
+      const period = end - start;
+      if (period <= std.fwidth(position)) {
+        return scene.$.records[first + 1]!;
+      }
+      let phase = (t - start) / period;
+      if (header.y > 1.5) {
+        phase = 1 - std.abs(2 * std.fract(phase * 0.5) - 1);
+      } else {
+        phase = std.fract(phase);
+      }
+      t = start + phase * period;
+    }
+    let color = d.vec4f(scene.$.records[first + 2]!);
+    let offset = d.f32(start);
+    let i = d.u32(1);
+    while (i < count) {
+      const next = scene.$.records[first + 2 + 2 * i]!;
+      const at = scene.$.records[first + 3 + 2 * i]!.x;
+      if (t < at) {
+        const mix = std.clamp((t - offset) / std.max(at - offset, 1e-20), 0, 1);
+        const premult = std.mix(
+          d.vec4f(std.mul(color.rgb, color.a), color.a),
+          d.vec4f(std.mul(next.rgb, next.a), next.a),
+          mix,
+        );
+        if (premult.a > 0) {
+          return d.vec4f(std.div(premult.rgb, premult.a), premult.a);
+        }
+        return d.vec4f(0);
+      }
+      color = d.vec4f(next);
+      offset = at;
+      i++;
+    }
+    return color;
+  })
+  .$name('gradientColor');
+
+/** Solid, linear, radial or clockwise conic fill. */
 export const fillAt = tgpu
   .fn(
     [d.vec2f, d.vec4f, d.vec4f, d.vec4f, d.vec4f, d.vec4f, d.f32],
@@ -14,9 +66,15 @@ export const fillAt = tgpu
       let t = d.f32(0);
       if (fillType < 1.5) {
         const dir = std.sub(g.zw, g.xy);
-        t = std.dot(std.sub(p, g.xy), dir) / std.dot(dir, dir);
+        t = std.dot(std.sub(p, g.xy), dir) / std.max(std.dot(dir, dir), 1e-20);
+      } else if (fillType < 2.5) {
+        t = std.length(std.sub(p, g.xy)) / std.max(g.z, 1e-20);
       } else {
-        t = std.length(std.sub(p, g.xy)) / g.z;
+        const delta = std.sub(p, g.xy);
+        t = std.fract((std.atan2(delta.x, -delta.y) - g.z) / (2 * Math.PI));
+      }
+      if (stops.w >= 2) {
+        return gradientColor(t, stops.w);
       }
       if (stops.w > 0.5) {
         if (t <= stops.y) {

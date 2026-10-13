@@ -111,6 +111,27 @@ rendering path; it does not measure table row-span throughput.
 [Raw samples, source revisions and binary hashes](../benchmarks/results/2026-10-12-row-grid-ordinary.json.gz)
 retain all three alternating run pairs and the summary.
 
+## Gradient support ordinary-renderer comparison, 2026-10-13
+
+Compared the preserved SDK `8813432` and its shaders, using ABI `2818050`,
+with the conic/repeating gradient implementation on the Apple M1 Pro,
+Node 24.2.0 and Metal. Lists used 30/300 target nodes and the card scene used
+12 image cards; both ran at 1x/2x scale, with 20 warm-ups and 101 samples in
+four alternating process pairs.
+The harness uses each SDK's renderer; fixtures, timing harness, hardware,
+fonts and viewport match. The ABI skips pointer rebasing when a scene has no
+polygon or gradient data tail.
+
+All captured pixels, primitive counts, draw counts and record sizes matched.
+Across the twelve static/changed cases, the median of CPU-frame run medians
+ranged from 9.2% faster to 11.2% slower; completion time ranged from 10.8%
+faster to 7.1% slower. The largest CPU slowdown was the changing 30-row list at
+1x. Runs varied, so these timings establish neither a speedup nor the absence
+of small regressions. This checks ordinary rendering, including existing
+inline gradients; it does not measure conic or repeating-gradient throughput.
+[Raw samples, source details, binary/SDK hashes and the comparison harness](../benchmarks/results/2026-10-13-gradients-ordinary.json.gz)
+retain the initial three-pair investigation and final four-pair comparison.
+
 ## Large-tree mutation and frame benchmark
 
 ```sh

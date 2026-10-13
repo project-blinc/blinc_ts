@@ -421,10 +421,15 @@ export const stylingPages: readonly WikiPage[] = [
         <p>
           <code>background</code> takes a colour, <code>linear-gradient()</code>,{' '}
           <code>radial-gradient()</code> (a circle or an ellipse reaching the farthest corner),{' '}
-          <code>glass</code>, or a <code>url()</code>. Colours are hex, named, <code>rgb()</code>,{' '}
-          <code>hsl()</code>, <code>color-mix(in srgb, …)</code>, <code>transparent</code> and{' '}
-          <code>currentcolor</code>. A gradient is drawn from its first, middle and last stops;
-          conic gradients are not drawn yet.
+          <code>conic-gradient()</code>, their <code>repeating-</code> forms, <code>glass</code>, or
+          a <code>url()</code>. Colours are hex, named, <code>rgb()</code>, <code>hsl()</code>,{' '}
+          <code>color-mix(in srgb, …)</code>, <code>transparent</code> and <code>currentcolor</code>
+          .
+        </p>
+        <p>
+          Gradients retain every stop, including two-position stops for hard edges. Conic angles run
+          clockwise from the top; <code>from</code> turns the start and <code>at</code> moves the
+          centre. Linear/radial stops take percentages; conic stops also take angles.
         </p>
         <h2>Borders and outlines</h2>
         <Example name="paint-borders" view={PaintBorders} />

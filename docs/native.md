@@ -192,9 +192,9 @@ label.setPaint({ background: glass });
 ```
 
 Brushes construct native Blinc values once per context and reuse them on
-assignment. Gradient stops are added before assignment. The current shared
-encoder represents the first, middle and last stops; additional-stop and conic
-rendering remain renderer work. Glass carries blur, tint, noise, saturation,
+assignment. Gradient stops are added before assignment. The shared encoder
+retains every stop in its scene data tail when the inline two/three-stop fields
+are insufficient; the TypeGPU renderer samples the complete list. Glass carries blur, tint, noise, saturation,
 brightness, border and liquid rim settings through the existing backdrop records.
 `SceneRenderer` renders these effects with the TypeGPU passes described below.
 
@@ -365,7 +365,8 @@ The paint properties are read by the same engine as the sheet, so a value
 means the same in a stylesheet, an inline `style` and a compiled sheet:
 
 - `background`, `background-color` and `background-image` take a colour,
-  `none`, `linear-gradient()` or `radial-gradient()` (a circle or ellipse
+  `none`, `linear-gradient()`, `conic-gradient()` (clockwise from the top),
+  the `repeating-` forms of each gradient, or `radial-gradient()` (a circle or ellipse
   reaching the farthest corner), or `glass`, whose settings are `glass-blur`,
   `glass-tint`, `glass-aberration`, `glass-bevel`, `glass-noise`,
   `glass-mode` (`liquid` or `frosted`) and `glass-curvature` (`inset` or
@@ -418,6 +419,15 @@ means the same in a stylesheet, an inline `style` and a compiled sheet:
   `border-style` and `border-color` take one to four values, and
   `border-top-color`, `border-top-style` and the like set one side. `outline`, `outline-width`,
   `outline-color` and `outline-offset` draw a ring outside the border.
+
+Linear and radial stops take percentages or unitless fractions. Conic stops
+take percentages or angles. Linear/radial length stops, explicit radial sizes and colour hints
+remain unsupported. Repeating linear/radial gradients wrap between the first
+and last stop, including negative positions; zero-length and subpixel periods
+use the average colour. Repeating conic gradients expand periods over one turn
+because the shared core conic value has no spread field, with a diagnostic above
+4,096 expanded stops. Same-shaped gradients with equal stop counts interpolate
+colours, offsets and their native geometry; linear geometry blends endpoints.
 
 A node that loses a declaration gets that field's default back. Paint set
 directly with `element.setProperty('background', brush)` stays over the
@@ -1103,8 +1113,8 @@ card.setPaint({ filter: null, maskImage: null }); // Preserve the other paint fi
 A filter value replaces the previous filter; omitted members use identity values.
 Supported fields are brightness, contrast, grayscale, hueRotate (degrees), invert,
 saturate, sepia, blur and dropShadow. Masks take the alpha of a linear or radial
-Brush gradient in the element's transformed box. As with displayed gradients,
-the current record format samples the first, middle and last stops.
+Brush gradient, or a CSS conic gradient, in the element's transformed box. As with displayed gradients,
+all stops are retained, including hard edges and repeating periods.
 Content textures are pooled by nesting depth; sequential blur and shadow passes
 share scratch textures, allocated only when needed.
 

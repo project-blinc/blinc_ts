@@ -98,7 +98,7 @@ export interface PaintOptions {
   textColor?: Color;
 }
 export interface PaintInfo {
-  /** Primitive count; trailing polygon data is not a primitive. */
+  /** Primitive count; trailing polygon/gradient data is not a primitive. */
   count: number;
   /** Required Float32Array capacity, including trailing data. */
   floats: number;
