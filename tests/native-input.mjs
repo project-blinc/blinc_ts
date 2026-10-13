@@ -282,6 +282,24 @@ try {
     assert(!button.interaction.disabled);
     assert(states.includes('button:true') && states.at(-1) === 'button:false');
 
+    // Reparenting refreshes inherited disabled state and blurs a newly disabled control.
+    const fieldset = host2.createElement('fieldset');
+    fieldset.setAttribute('disabled', '');
+    root2.appendChild(fieldset);
+    button.focus();
+    fieldset.appendChild(button);
+    assert(button.interaction.disabled);
+    assert.equal(input2.focused, null);
+    root2.appendChild(button);
+    assert(!button.interaction.disabled, 'Leaving the fieldset clears :disabled');
+    assert(button.focus(), 'The control takes focus again');
+    button.setAttribute('disabled', '');
+    fieldset.appendChild(button);
+    root2.appendChild(button);
+    assert(button.interaction.disabled, 'An own disabled attribute survives reparenting');
+    button.removeAttribute('disabled');
+    fieldset.destroy();
+
     // The platform's shortcut sends copy, cut and paste to the focused element.
     const meta = process.platform === 'darwin';
     const mods = { shift: false, control: !meta, alt: false, meta };

@@ -281,7 +281,7 @@ export class Input {
    */
   refreshDisabled(root: HostElement): void {
     const walk = (element: HostElement) => {
-      if (element !== root && controlTags.has(element.tag)) {
+      if (controlTags.has(element.tag)) {
         this.#set(element, 'disabled', disabledIn(chainOf(element)));
       }
       for (const child of element.childNodes) {
@@ -291,6 +291,9 @@ export class Input {
       }
     };
     walk(root);
+    if (this.#focused && this.isDisabled(this.#focused)) {
+      this.blur();
+    }
   }
 
   setModifiers(modifiers: KeyModifiers): void {

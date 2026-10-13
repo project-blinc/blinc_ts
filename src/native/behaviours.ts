@@ -431,16 +431,13 @@ export class Behaviours {
         break;
       }
     }
-    // A control put into a disabled fieldset is disabled by it.
+    // Moving into or out of a disabled ancestor refreshes the whole control subtree.
     if (
-      parent instanceof ElementClass &&
       child instanceof ElementClass &&
+      parent instanceof ElementClass &&
       this.host.input.isDisabled(parent)
     ) {
       this.host.input.refreshDisabled(child);
-      if (CONTROLS.has(child.tag)) {
-        this.host.input.refreshDisabled(parent);
-      }
     }
     if (parent instanceof ElementClass && LISTS.has(parent.tag)) {
       this.#lists.add(parent);
