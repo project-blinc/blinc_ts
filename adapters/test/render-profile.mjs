@@ -1,10 +1,26 @@
 // Optional CI measurements; no timings or machine details affect test assertions.
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { availableParallelism, cpus, freemem, platform, release, totalmem } from 'node:os';
 import { basename, join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 
 const profiles = new WeakMap();
+
+function nativeThreads() {
+  if (platform() !== 'linux') {
+    return null;
+  }
+  try {
+    const names = readdirSync('/proc/self/task').map((id) =>
+      readFileSync(`/proc/self/task/${id}/comm`, 'utf8').trim(),
+    );
+    return Object.fromEntries(
+      [...new Set(names)].map((name) => [name, names.filter((n) => n === name).length]),
+    );
+  } catch {
+    return null;
+  }
+}
 
 export function renderProfile(target) {
   const directory = process.env.NATIVE_TEST_PROFILE_DIR;
@@ -28,6 +44,7 @@ export function renderProfile(target) {
     totalMemory: totalmem(),
     freeMemory: freemem(),
     adapter: { name: target.adapter.name(), backend: target.adapter.backend() },
+    nativeThreads: nativeThreads(),
     environment: Object.fromEntries(
       ['DISPLAY', 'WAYLAND_DISPLAY', 'VK_ICD_FILENAMES', 'WGPU_BACKEND', 'LP_NUM_THREADS'].map(
         (key) => [key, process.env[key] ?? null],
@@ -53,6 +70,9 @@ export function renderProfile(target) {
     JSON.stringify({ ...profile, samples: undefined, cpuTimes: undefined }),
   );
   const recorder = {
+    result(detail) {
+      profile.result = detail;
+    },
     start(stage, detail = {}) {
       const time = performance.now();
       const cpu = process.cpuUsage();

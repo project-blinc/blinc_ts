@@ -2,6 +2,7 @@
 // them: after each, every control shows what a model of the page says it should, and neither the
 // time a press takes nor the memory the process holds creeps up as they go on.
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { loadNative } from 'blinc_ts/native';
 import { Host } from 'blinc_ts/native/host';
 import { OffscreenRenderer } from 'blinc_ts/native/offscreen';
@@ -15,6 +16,7 @@ import { addBaseUi } from '../dist/base-ui/sheet.js';
 import { addWikiSheet } from '../dist/wiki/sheet.js';
 import { Wiki } from '../dist/wiki/wiki.js';
 import { buttonNamed, findAll, windowed } from './wiki-driver.mjs';
+import { renderProfile } from './render-profile.mjs';
 
 const STEPS = Number(process.env.STEPS ?? 300);
 const SEED = Number(process.env.SEED ?? 20261011);
@@ -35,6 +37,7 @@ function random(seed) {
 
 const native = loadNative();
 const target = await OffscreenRenderer.create(native, W, H, probeShader);
+const profile = renderProfile(target);
 const context = native.createReactive();
 const host = Host.create(native);
 const errors = [];
@@ -152,6 +155,14 @@ try {
   const grown = (process.memoryUsage().heapUsed - heapBefore) / 1024 / 1024;
   assert.ok(grown < 32, `the heap held steady: ${grown.toFixed(1)} MB more`);
   assert.deepEqual(errors, []);
+  profile?.result({
+    steps: STEPS,
+    seed: SEED,
+    earlyMs: early,
+    lateMs: late,
+    heapGrowthMb: grown,
+    pixelHash: createHash('sha256').update(pixels).digest('hex'),
+  });
   console.log(
     `Wiki stress: ${STEPS} presses in order ${SEED} matched the model; a press ${early.toFixed(1)} ms then ${late.toFixed(1)} ms; heap ${grown.toFixed(1)} MB`,
   );
