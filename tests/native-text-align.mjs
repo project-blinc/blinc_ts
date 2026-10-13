@@ -244,7 +244,11 @@ for (const scale of [1, 2]) {
       const dynamic = scene(compiled);
       const d = box(dynamic.host, 'h2', 'left');
       const r = new SceneRenderer(target.device, dynamic.host.layout);
+      const reference = scene(compiled);
+      const left = box(reference.host, 'h2', 'left', words);
+      const rr = new SceneRenderer(target.device, reference.host.layout);
       try {
+        const leftFrame = await capture(target, rr, reference.host, scale);
         let frame = await capture(target, r, dynamic.host, scale);
         aligned(frame, d.element, 'left');
         assert.equal(dynamic.host.inlineFlows.owns(d.text), false);
@@ -282,7 +286,7 @@ for (const scale of [1, 2]) {
         );
         d.element.className = 'box center';
         frame = await capture(target, r, dynamic.host, scale);
-        aligned(frame, d.element, 'center');
+        alignedAdvances(frame, leftFrame, d, left, dynamic.host, 'center');
         assert.equal(
           dynamic.host.inlineFlows.owns(d.text),
           false,
@@ -300,7 +304,7 @@ for (const scale of [1, 2]) {
         d.element.removeChild(span);
         span.destroy();
         frame = await capture(target, r, dynamic.host, scale);
-        aligned(frame, d.element, 'center');
+        alignedAdvances(frame, leftFrame, d, left, dynamic.host, 'center');
         assert.equal(
           dynamic.host.inlineFlows.owns(d.text),
           false,
@@ -359,7 +363,10 @@ for (const scale of [1, 2]) {
         aligned(frame, d.element, 'right');
         authored(d, short);
         assert.deepEqual(dynamic.errors, []);
+        assert.deepEqual(reference.errors, []);
       } finally {
+        rr.dispose();
+        reference.host.dispose();
         r.dispose();
         dynamic.host.dispose();
       }
