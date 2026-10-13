@@ -15,6 +15,9 @@ sleep 1
 npm run test:native
 npm --prefix adapters ci
 npm --prefix adapters test
+if [ "${NATIVE_TEST_COMPARE_DISPLAY:-0}" = 1 ]; then
+  node scripts/compare-ci-display.mjs
+fi
 X11
 fi
 export XDG_RUNTIME_DIR
@@ -41,3 +44,6 @@ unset DISPLAY
 npm run test:native
 npm --prefix adapters ci
 npm --prefix adapters test
+if [ "${NATIVE_TEST_COMPARE_DISPLAY:-0}" = 1 ]; then
+  node scripts/compare-ci-display.mjs
+fi

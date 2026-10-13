@@ -20,6 +20,13 @@ also records completed stages before a failed assertion. Compare the same source
 seed, viewport, CPU and software driver in separate processes; compare captures
 as well as timings before attributing a display-platform difference to rendering.
 
+`node scripts/compare-ci-display.mjs` runs two additional 80-press probes on the
+same machine, first under the current compositor and then headless. It requires
+matching adapters, seeded frame counts and final pixel hashes, and retains each
+process's log/profile and a summary under `.blinc/ci/display-comparison`.
+`NATIVE_TEST_COMPARE_DISPLAY=1` enables this additional check in the Linux test
+script; the ordinary stress test still exercises all 300 presses.
+
 The SDK's Linux addon enables only the Vulkan backend. Selecting a lavapipe ICD
 does not establish hardware or thread equivalence between two hosted runners;
 use the recorded adapter and runner details when assessing those jobs.

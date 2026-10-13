@@ -23,6 +23,7 @@ const details = {
   node: process.version,
   kernel: release(),
   cpus: [...new Set(cpus().map((cpu) => cpu.model))],
+  topology: JSON.parse(execFileSync('lscpu', ['--json'], { encoding: 'utf8' })),
   logicalCpus: cpus().length,
   parallelism: availableParallelism(),
   affinity: status?.match(/^Cpus_allowed_list:\s*(.+)$/m)?.[1] ?? null,

@@ -81,6 +81,7 @@ jobs:
       - name: GPU snapshots, ownership, idle wake and HMR
         env:
           NATIVE_TEST_DISPLAY: ${{ matrix.display }}
+          NATIVE_TEST_COMPARE_DISPLAY: '1'
         run: bash scripts/test-linux-native.sh
       - uses: actions/upload-artifact@v7
         if: always()
