@@ -39,6 +39,18 @@ rendered 1,875 frames in both jobs. Median layout was 0.14/0.10 ms and encoding
 frame also differed by about 2.4 times. These runs associate the large gap with
 software rendering on different CPUs; they do not isolate a display effect.
 
+The subsequent [paired CI run 38402597925](https://github.com/project-blinc/blinc_ts/actions/runs/38402597925)
+ran the same 80-press, 519-frame workload with and without a display on each
+runner. X11's EPYC 7763 took 60.96/60.97 seconds; Wayland's Xeon 8370C took
+46.09/45.88 seconds. Each pair selected the same Vulkan adapter and four
+lavapipe workers, and all four final pixel hashes matched. Median readback
+was 114.10/114.15 ms on the EPYC and 85.52/85.06 ms on the Xeon, while layout
+stayed below 0.14 ms and encoding below 0.90 ms. Removing the display did
+not reproduce the large cross-job gap. These single sequential pairs support
+investigating runner/software-rendering costs; they do not measure a source
+regression or a speedup. The extra paired probe remains opt-in, while ordinary
+CI retains profiles from the full wiki and 300-press stress tests.
+
 On an isolated i5-1250P NUC, a matched 80-press workload restricted to four
 CPUs produced the same 519 frames and final pixels with and without X11, in
 21.14/20.68 seconds. A separate sequential sweep using 1/2/4/8/16 lavapipe
