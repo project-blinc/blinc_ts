@@ -1,1 +1,1 @@
-{"author":{"id":"a51b5961cc6de343a64125d8eb6a0f965aa434020b9c46ed932a1bbf143eb532"},"ops":[{"type":3,"timestamp":1791879880,"nonce":"iF6rDOvVQySkfid4c26J+SxJzs0=","message":"Full native suite and native validity/input/select regressions now pass on macOS Metal/Node24.2.0 with 152a3d2. Publication/CI follows with ee0ef84.","files":null}]}
+{"author":{"id":"a51b5961cc6de343a64125d8eb6a0f965aa434020b9c46ed932a1bbf143eb532"},"ops":[{"type":5,"timestamp":1791880996,"nonce":"iGpQrsgysdsD81EtsijTPNJkC+s=","added":["area:ui","bug","priority:medium"],"removed":null}]}
