@@ -1,1 +1,1 @@
-{"author":{"id":"a51b5961cc6de343a64125d8eb6a0f965aa434020b9c46ed932a1bbf143eb532"},"ops":[{"type":3,"timestamp":1791880996,"nonce":"Y4cWvWeeK9dMHOTTCCUzv2DcD0s=","message":"Published152a3d2, included in final milestone8813432. Full macOS native and all four Node22/24/Linux X11/Wayland CI jobs pass at https://github.com/project-blinc/blinc_ts/actions/runs/38369110371 . Scope complete.","files":null}]}
+{"author":{"id":"a51b5961cc6de343a64125d8eb6a0f965aa434020b9c46ed932a1bbf143eb532"},"ops":[{"type":4,"timestamp":1791880996,"nonce":"qs+sg2tm/2fzBYRaEbhHnLrOu9U=","status":2}]}
