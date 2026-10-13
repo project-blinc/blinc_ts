@@ -31,6 +31,24 @@ The SDK's Linux addon enables only the Vulkan backend. Selecting a lavapipe ICD
 does not establish hardware or thread equivalence between two hosted runners;
 use the recorded adapter and runner details when assessing those jobs.
 
+In [CI run 38399798002](https://github.com/project-blinc/blinc_ts/actions/runs/38399798002),
+the X11 job used an EPYC 7763 and Wayland used an EPYC 9V74, both with four
+available CPUs and the same Mesa/Vulkan packages. The seeded stress workload
+rendered 1,875 frames in both jobs. Median layout was 0.14/0.10 ms and encoding
+0.82/0.67 ms; completion/readback was 113.44/47.06 ms. Process CPU time per
+frame also differed by about 2.4 times. These runs associate the large gap with
+software rendering on different CPUs; they do not isolate a display effect.
+
+On an isolated i5-1250P NUC, a matched 80-press workload restricted to four
+CPUs produced the same 519 frames and final pixels with and without X11, in
+21.14/21.37 seconds. A separate sequential sweep using 1/2/4/8/16 lavapipe
+workers took 44.33/24.64/16.33/13.70/11.77 seconds with identical final pixels.
+This measures worker scaling on that NUC, rather than a CI thread-setting
+recommendation or an SDK speedup. One separate four-CPU probe stalled after
+its exit callback; the retained measurements identify that incomplete shutdown.
+[Raw profiles, CPU/driver details, capture hashes and harness](../benchmarks/results/2026-10-13-ci-software-vulkan.json.gz)
+retain the observations and their limits.
+
 ## Current bridge benchmark
 
 ```sh
