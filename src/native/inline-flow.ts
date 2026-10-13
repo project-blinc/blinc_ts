@@ -21,9 +21,9 @@
  * longest line can be, no narrower than its longest word, and as tall as its
  * lines at the width it is given. After each layout pass the flow lays its
  * lines out again at that width and asks for another pass when anything
- * moved. Only an element that holds an inline element, a `br` or more than one
- * text is a flow, and a block that is not of the paragraph tags (a div) only when it
- * holds text beside them; one that holds a single text is a plain wrapping text, as before.
+ * moved. A block holding an inline element, a `br` or more than one text is a
+ * flow. A single text also uses a flow when its words may break inside or its
+ * lines are justified; otherwise native text wraps and aligns it directly.
  */
 import type { Host, HostElement, HostNode, HostText } from './host.js';
 import { HostElement as ElementClass, HostText as TextClass } from './host.js';
@@ -146,6 +146,26 @@ export function breaksWords(host: Host, element: HostElement): boolean {
     }
   }
   return false;
+}
+
+/** The alignment inherited by a paragraph through the host's composed tree. */
+export function textAlignment(host: Host, element: HostNode | null): InlineAlign {
+  for (let node: HostNode | null = element; node; node = node.composedParent) {
+    if (!(node instanceof ElementClass)) {
+      continue;
+    }
+    const align = host.declaredOf(node).get('text-align')?.trim().toLowerCase();
+    if (align === 'center' || align === 'right' || align === 'justify') {
+      return align;
+    }
+    if (align === 'left' || align === 'start' || align === 'initial') {
+      return 'left';
+    }
+    if (align === 'end') {
+      return 'right';
+    }
+  }
+  return 'left';
 }
 
 /** Where a line of a flow's text starts: wide enough that nothing wraps. */
@@ -453,28 +473,6 @@ class Flow {
     });
   }
 
-  #align(): InlineAlign {
-    for (let node: HostNode | null = this.root; node; node = node.composedParent) {
-      const value =
-        node instanceof ElementClass
-          ? this.#flows.host.declaredOf(node).get('text-align')
-          : undefined;
-      if (value) {
-        const align = value.trim();
-        if (align === 'center' || align === 'right' || align === 'justify') {
-          return align;
-        }
-        if (align === 'left' || align === 'start') {
-          return 'left';
-        }
-        if (align === 'end') {
-          return 'right';
-        }
-      }
-    }
-    return 'left';
-  }
-
   /**
    * Read what layout has made and work out what the flow should write: none
    * when it is as it should be. Reads only; every flow is read before any is
@@ -483,7 +481,7 @@ class Flow {
   plan(): (() => void) | null {
     const { native } = this.#flows;
     const items = this.#items();
-    const align = this.#align();
+    const align = textAlignment(this.#flows.host, this.root);
     const breakWords = breaksWords(this.#flows.host, this.root);
     const key = JSON.stringify([items, align, breakWords]);
     let natural = this.#natural;
@@ -689,11 +687,16 @@ export class InlineFlows {
   }
   /** @internal */
   own(node: HostText): void {
-    this.#owned.add(node);
+    if (!this.#owned.has(node)) {
+      this.#owned.add(node);
+      this.host.textFlowChanged(node);
+    }
   }
   /** @internal */
   disown(node: HostText): void {
-    this.#owned.delete(node);
+    if (this.#owned.delete(node)) {
+      this.host.textFlowChanged(node);
+    }
   }
 
   /** What the flow of `element` wants across, when it is one; see `Flow.widths`. */
@@ -809,6 +812,7 @@ export class InlineFlows {
       return false;
     }
     let texts = 0;
+    let text: HostText | undefined;
     let inline = false;
     for (const child of this.host.contentNodes(root)) {
       if (child instanceof ElementClass) {
@@ -825,6 +829,7 @@ export class InlineFlows {
       // Two pieces of text are a line made of both, as `Count: {n}` is, not two lines.
       if (child instanceof TextClass && child.data.trim() !== '') {
         texts++;
+        text ??= child;
       }
     }
     // Its children are flex or grid items, each a box laid out by its style, not words in a line.
@@ -843,8 +848,13 @@ export class InlineFlows {
     }
     // A word that may break inside is the flow's to break: plain text wraps at spaces only.
     const breaks = texts >= 1 && breaksWords(this.host, root);
+    // Justification needs the paragraph engine's word spacing, even for one text.
+    const justified =
+      text !== undefined &&
+      textAlignment(this.host, root) === 'justify' &&
+      this.host.textStyleOf(text).wrap !== false;
     if (FLOW_TAGS.has(root.tag)) {
-      return inline || texts >= 2 || breaks;
+      return inline || texts >= 2 || breaks || justified;
     }
     // Any other block that holds text mixed with more text or an inline element is a paragraph
     // too, as a div of prose is. One that holds elements alone, or an inline element or a control
@@ -856,7 +866,7 @@ export class InlineFlows {
       blocky &&
       how !== 'inline' &&
       texts >= 1 &&
-      (inline || texts >= 2 || breaks)
+      (inline || texts >= 2 || breaks || justified)
     );
   }
 

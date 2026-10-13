@@ -39,6 +39,7 @@ import PaintTextOverflow from '../examples/paint-text-overflow.js';
 import PaintTextShadow from '../examples/paint-text-shadow.js';
 import PaintTransforms from '../examples/paint-transforms.js';
 import TextTransform from '../examples/text-transform.js';
+import TextAlign from '../examples/text-align.js';
 import FontFace from '../examples/font-face.js';
 import GlassGallery from '../examples/glass-gallery.js';
 import LayoutLab from '../examples/layout-lab.js';
@@ -485,6 +486,15 @@ export const stylingPages: readonly WikiPage[] = [
           <code>none</code> restores the source case. It runs before shaping and wrapping, including
           across inline spans. Text content, editable values and copied text keep their original
           case.
+        </p>
+        <h2>Text alignment</h2>
+        <Example name="text-align" view={TextAlign} />
+        <p>
+          <code>text-align</code> aligns every line of a heading or paragraph, including a single
+          text node. It inherits through its boxes. <code>center</code> and <code>right</code>
+          align within the available content width; <code>justify</code> expands spaces on wrapped
+          lines and leaves the last line at its natural width. <code>left</code> restores the
+          default.
         </p>
         <h2>Bundled fonts</h2>
         <Example name="font-face" view={FontFace} />

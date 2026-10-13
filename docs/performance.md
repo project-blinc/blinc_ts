@@ -132,6 +132,23 @@ inline gradients; it does not measure conic or repeating-gradient throughput.
 [Raw samples, source details, binary/SDK hashes and the comparison harness](../benchmarks/results/2026-10-13-gradients-ordinary.json.gz)
 retain the initial three-pair investigation and final four-pair comparison.
 
+## Plain-text alignment ordinary-renderer comparison, 2026-10-13
+
+Compared preserved SDK `8afeb84`/ABI `50259a8` with the plain-text alignment
+SDK and ABI `ecdb2f0` on the Apple M1 Pro, Node 24.2.0 and Metal.
+Lists used 30/300 target nodes and cards used 12 image cards, at 1x/2x.
+Three alternating process pairs used 20 warm-ups and 101 samples per case;
+each SDK's renderer and frozen release addon ran the same fixtures.
+
+All captured pixels, primitive counts, draw counts and record sizes matched.
+Across twelve static/changed cases, the median of CPU-frame run medians ranged
+from 3.9% faster to 8.6% slower, and completion time from 2.4% faster to 7.2%
+slower. Individual runs varied, so this establishes neither a speedup nor the
+absence of small regressions. It checks ordinary rendering; it does not measure
+aligned paragraph throughput.
+[Raw samples, source details, binary/SDK hashes and comparison harness](../benchmarks/results/2026-10-13-plain-align-ordinary.json.gz)
+retain all three pairs and their summary.
+
 ## Large-tree mutation and frame benchmark
 
 ```sh

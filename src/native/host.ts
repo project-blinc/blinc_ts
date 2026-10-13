@@ -36,7 +36,8 @@ import type { Computed, Disposable, ReactiveContext, Signal } from './reactive.j
 import type { AffineTransform, Color, PaintStyle, TextStyle } from './scene.js';
 import type { ShapeTokens } from '../theme/shape.js';
 import { ScrollThumb, words } from './scrollbar.js';
-import { InlineFlows, INLINE_TAGS } from './inline-flow.js';
+import { InlineFlows, INLINE_TAGS, textAlignment } from './inline-flow.js';
+import { LayoutProperty } from './properties.js';
 import { textTransform, transformText, type TextTransform } from './text-transform.js';
 import { HostCanvases } from './canvases.js';
 import { HostImages } from './host-images.js';
@@ -986,11 +987,13 @@ export class Host {
   readonly root: HostElement;
   readonly #nodes = new Map<bigint, HostNode>();
   readonly #text = new Set<HostText>();
-  readonly #sentText = new WeakMap<HostText, { data: string; style: TextStyle }>();
+  readonly #sentText = new WeakMap<HostText, { data: string; style: TextStyle; align: number }>();
   /** Each text node's style, from its last restyle. */
   readonly #textStyles = new WeakMap<HostText, TextStyle>();
   /** Hosts that never declare casing keep the ordinary text/tree path. */
   #hasTextTransform = false;
+  /** Ordinary text keeps its natural width until alignment is declared. */
+  #hasTextAlign = false;
   /** Nodes whose element (names, attributes, inline declarations) changed. */
   readonly #styleDirty = new Set<HostElement | HostText>();
   /** Each element's paint and text declarations from its last restyle. */
@@ -1220,7 +1223,7 @@ export class Host {
   createTextNode(data: string): HostText {
     const layoutNode = this.layout.createText(data, {}, data === '' ? { display: 'none' } : {});
     const node = this.#register(new HostText(this, layoutNode, data));
-    this.#sentText.set(node, { data, style: { ...defaultText } });
+    this.#sentText.set(node, { data, style: { ...defaultText }, align: 0 });
     this.#text.add(node);
     this.styleChanged(node);
     return node;
@@ -1452,6 +1455,7 @@ export class Host {
       const before = this.#declared.get(node) ?? new Map<string, string>();
       this.#declared.set(node, now);
       this.#hasTextTransform ||= now.has('text-transform');
+      this.#hasTextAlign ||= now.has('text-align');
       if (node instanceof HostText) {
         const style: TextStyle = {};
         for (const [name, value] of now) {
@@ -1513,7 +1517,7 @@ export class Host {
       this.inlineFlows?.restyled(node);
       // What decides whether an element is a flow, or how its words break, changed: it may now be one.
       if (
-        ['display', 'overflow-wrap', 'word-wrap', 'word-break'].some(
+        ['display', 'overflow-wrap', 'word-wrap', 'word-break', 'text-align', 'white-space'].some(
           (name) => now.get(name) !== before.get(name),
         )
       ) {
@@ -1597,6 +1601,10 @@ export class Host {
   textStyleOf(node: HostText): TextStyle {
     const style = { ...defaultText, ...this.#textStyles.get(node) };
     return this.fonts?.resolve(style) ?? style;
+  }
+  /** @internal Ownership by a paragraph changes a text's width, alignment and wrapping. */
+  textFlowChanged(node: HostText): void {
+    this.#text.add(node);
   }
   /** @internal Presentation casing inherited through the host's composed tree. */
   textTransformOf(node: HostNode): TextTransform {
@@ -1738,12 +1746,24 @@ export class Host {
         ...(flowed ? { wrap: false } : {}),
       };
       const sent = this.#sentText.get(node);
+      const alignment =
+        !flowed && this.#hasTextAlign ? textAlignment(this, node.composedParent) : undefined;
+      const align = alignment === 'center' ? 1 : alignment === 'right' ? 2 : 0;
+      if ((sent?.align ?? 0) !== align) {
+        // Native text retains nowrap, ellipsis and line-clamp. Its box needs the
+        // container's content width so the renderer can align each shaped line.
+        node.layoutNode.setProperty(LayoutProperty.TextAlign, align === 0 ? null : align);
+        node.layoutNode.setLayoutProperty('width', align === 0 ? null : '100%');
+        if (sent) {
+          sent.align = align;
+        }
+      }
       const data = this.displayTextOf(node);
       if (sent?.data === data && sameText(sent.style, style)) {
         continue;
       }
       // Unchanged text and style are not sent again; crossing text costs per character.
-      this.#sentText.set(node, { data, style });
+      this.#sentText.set(node, { data, style, align });
       node.layoutNode.queueText(data, style);
       if (!flowed && (sent?.data === '') !== (data === '')) {
         // Empty text, which renderers use as anchors, takes no space, as in the DOM.

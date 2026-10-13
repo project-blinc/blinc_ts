@@ -896,8 +896,19 @@ or `td` that holds an inline element (`a`, `strong`, `em`, `span`, `small`,
 `sub`, `sup`, `abbr`, `label`, …) or a `br` lays its content out as one
 paragraph: text and inline elements wrap together at its width, every line's
 pieces on one baseline whatever their font, whitespace collapsing as HTML's
-does. One that holds only text is a plain wrapping text, as before, and costs
-nothing.
+does. A single text also uses paragraph layout for justification or breaking
+inside words. Otherwise it keeps the native text path, including its wrapping,
+ellipsis and line clamp.
+
+`text-align: center` and `right` work on a plain heading, paragraph or block
+without inline children: its text box takes the available content width and
+the native renderer aligns each line. `left` restores natural text sizing.
+Alignment inherits through composed parents and updates after a class/style
+change or reparenting. `initial` resets it; `inherit` and `unset` take it from
+the parent. `start` and `end` currently mean left and right.
+
+Wrapped native lines currently count trailing break spaces in their alignment
+width; removing those spaces before positioning remains a native follow-up.
 
 The elements keep their place in the tree, so CSS styles them, `childNodes`
 lists what you built, and they take input as before. Underneath, each text is
@@ -917,14 +928,17 @@ the host tree.
   A block takes a line of its own, as wide as the paragraph. A box does not
   wrap across lines.
 - `text-align` (`left`, `center`, `right`, `justify`) is read from the
-  paragraph or its nearest ancestor that sets it.
+  paragraph or its nearest ancestor that sets it. Justification expands word
+  spacing on wrapped lines, keeping the last line's natural spacing.
+  A single `nowrap` text stays native even when justification is declared.
 
 The flow runs after each layout, with `layout.onLaidOut`, and a window's
 layout settles it before the frame that first shows it. Without an addon to
 measure with (a `Host` built straight from a layout), nothing flows.
 `Paragraph` remains for runs given directly. Not done: hyphenation,
 `white-space: pre-wrap` inside a flow, `float`, the raised baseline of `sub`
-and `sup`, and a focus ring on a wrapped inline element.
+and `sup`, ellipsis/line-clamp on paragraph fragments (including justified text),
+and a focus ring on a wrapped inline element.
 
 ## Scrolling and scroll thumbs
 

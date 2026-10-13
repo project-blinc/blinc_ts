@@ -31,6 +31,8 @@ export const LayoutProperty = Object.freeze({
   Right: 31,
   Bottom: 32,
   Left: 33,
+  /** Native text alignment: 0 left, 1 centre, 2 right. */
+  TextAlign: 40,
   PaddingTop: 43,
   PaddingRight: 44,
   PaddingBottom: 45,
@@ -109,6 +111,7 @@ const enumIds = new Set<number>([
   P.Display,
   P.Overflow,
   P.Position,
+  P.TextAlign,
   ...range(P.OverflowX, P.JustifySelf),
   P.Order,
 ]);
