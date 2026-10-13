@@ -6,13 +6,13 @@ on:
 
 jobs:
   sdk:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         node: ['22', '24']
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
           cache: npm
@@ -35,30 +35,30 @@ jobs:
       run:
         working-directory: deps/blinc_ts
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: deps/blinc_ts
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: project-blinc/blinc_abi
-          ref: ecdb2f03b9309f692767218f862e229ac83cbc1b
+          ref: 83bb7c09c198b340f244c10e9a1fae5f75b87333
           path: deps/blinc_abi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: rayzor-blade/x-idl
           ref: d748d767fbaf9273e8c3fe3231ca94bb0716c59d
           path: deps/x-idl
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: rayzor-blade/xgpu
           ref: 71c25d19b99ef9557e56b2ac13cfce2715e582dd
           path: deps/xgpu
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: rayzor-blade/xwindow
           ref: 074097ce4ed614485e9738fca2885f88fd19930e
           path: deps/xwindow
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
@@ -82,7 +82,7 @@ jobs:
         env:
           NATIVE_TEST_DISPLAY: ${{ matrix.display }}
         run: bash scripts/test-linux-native.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: native-${{ matrix.display }}-diagnostics
