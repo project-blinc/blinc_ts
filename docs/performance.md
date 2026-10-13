@@ -41,7 +41,7 @@ software rendering on different CPUs; they do not isolate a display effect.
 
 On an isolated i5-1250P NUC, a matched 80-press workload restricted to four
 CPUs produced the same 519 frames and final pixels with and without X11, in
-21.14/21.37 seconds. A separate sequential sweep using 1/2/4/8/16 lavapipe
+21.14/20.68 seconds. A separate sequential sweep using 1/2/4/8/16 lavapipe
 workers took 44.33/24.64/16.33/13.70/11.77 seconds with identical final pixels.
 This measures worker scaling on that NUC, rather than a CI thread-setting
 recommendation or an SDK speedup. One separate four-CPU probe stalled after
