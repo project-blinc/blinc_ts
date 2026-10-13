@@ -1,6 +1,8 @@
 // Driving the wiki as a window does: a frame after each event, and pointer travel between them.
 import { FrameLayout } from 'blinc_ts/native/frame-layout';
 import { SceneRenderer } from 'blinc_ts/native/renderer';
+import { performance } from 'node:perf_hooks';
+import { renderProfile } from './render-profile.mjs';
 
 /** The button under `node` whose text is `text`. */
 export function buttonNamed(node, text) {
@@ -33,6 +35,7 @@ export function findAll(node, name, out = []) {
  * releases, a frame after each, and runs frames until the motion it started has played.
  */
 export function windowed(host, target, width, height) {
+  const profile = renderProfile(target);
   host.compute(width, height);
   const layout = new FrameLayout(host.layout, host.root.layoutNode);
   host.layout.onChange((change) => layout.changed(change));
@@ -48,12 +51,16 @@ export function windowed(host, target, width, height) {
     }
   });
   const frame = async () => {
+    const finish = profile?.start('frame');
+    const started = performance.now();
     const moving = layout.prepare(width, height, 1, () => (clock += 16));
-    await target.captureCommandsInto(
+    const prepareMs = performance.now() - started;
+    const stats = await target.captureCommandsInto(
       pixels,
       (encoder, view) =>
         renderer.encode(encoder, host.root.layoutNode, view, { width, height, scale: 1 }).drawCalls,
     );
+    finish?.({ prepareMs, ...stats });
     return moving;
   };
   /** Frames until nothing is moving, at most `limit`; how many it took. */

@@ -17,11 +17,13 @@ import { addWikiSheet } from '../dist/wiki/sheet.js';
 import { pages } from '../dist/wiki/pages.js';
 import { Wiki } from '../dist/wiki/wiki.js';
 import { buttonNamed, findAll, windowed } from './wiki-driver.mjs';
+import { renderProfile } from './render-profile.mjs';
 
 const native = loadNative();
 const W = 1100;
 const H = 760;
 const target = await OffscreenRenderer.create(native, W, H, probeShader);
+const profile = renderProfile(target);
 const output = new URL('../../.blinc/wiki/', import.meta.url);
 await mkdir(output, { recursive: true });
 
@@ -54,28 +56,38 @@ async function open(scheme) {
     host.compute(W, H);
   };
   const draw = async (name) => {
+    const finishSettle = profile?.start('settle', { name });
     await settle();
+    finishSettle?.();
+    const finishRenderer = profile?.start('renderer-create', { name });
     const renderer = new SceneRenderer(target.device, host.layout);
     const detach = host.canvases.attach(renderer);
+    finishRenderer?.();
     try {
       renderer.useImages(host.images.library);
       const pixels = new Uint8Array(W * H * 4);
-      await target.captureCommandsInto(
+      const finishCapture = profile?.start('capture', { name });
+      const stats = await target.captureCommandsInto(
         pixels,
         (encoder, view) =>
           renderer.encode(encoder, host.root.layoutNode, view, { width: W, height: H, scale: 1 })
             .drawCalls,
       );
+      finishCapture?.(stats);
       if (name) {
+        const finishPng = profile?.start('png', { name });
         await writeFile(
           new URL(`${name}.png`, output),
           PNG.sync.write({ width: W, height: H, data: Buffer.from(pixels) }),
         );
+        finishPng?.();
       }
       return pixels;
     } finally {
+      const finishDispose = profile?.start('renderer-dispose', { name });
       detach();
       renderer.dispose();
+      finishDispose?.();
     }
   };
   const close = () => {

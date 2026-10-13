@@ -4,6 +4,26 @@ Performance decisions require repeatable measurements alongside visual checks.
 Keep native calls coarse, reuse buffers and render resources, and process dirty
 work rather than walking the full UI every frame.
 
+## Software-GPU CI diagnostics
+
+Linux CI retains `.blinc/ci/runner.json` with CPU model, available parallelism,
+affinity, cgroup limits and Mesa/Vulkan package versions. The wiki and seeded
+stress tests also retain adapter name/backend and raw layout, encoding and
+readback timings, including process CPU time. Page captures record renderer
+creation/disposal and PNG writing separately. These measurements do not alter
+the model, pixel, memory or timing assertions.
+
+Enable the same optional measurements locally with
+`NATIVE_TEST_PROFILE_DIR=/path/to/output` when running `adapters/test/wiki.mjs`
+or `adapters/test/wiki-stress.mjs`. The profile is written at process exit, so it
+also records completed stages before a failed assertion. Compare the same source,
+seed, viewport, CPU and software driver in separate processes; compare captures
+as well as timings before attributing a display-platform difference to rendering.
+
+The SDK's Linux addon enables only the Vulkan backend. Selecting a lavapipe ICD
+does not establish hardware or thread equivalence between two hosted runners;
+use the recorded adapter and runner details when assessing those jobs.
+
 ## Current bridge benchmark
 
 ```sh

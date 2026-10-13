@@ -4,6 +4,8 @@ set -euo pipefail
 export VK_ICD_FILENAMES
 VK_ICD_FILENAMES=$(find /usr/share/vulkan/icd.d -name '*lvp*.json' -print -quit)
 [ -n "$VK_ICD_FILENAMES" ]
+node scripts/ci-native-diagnostics.mjs
+export NATIVE_TEST_PROFILE_DIR="$PWD/.blinc/ci"
 if [ "${NATIVE_TEST_DISPLAY:-x11}" = x11 ]; then
   mkdir -p .blinc
   exec xvfb-run -a -s '-screen 0 1280x800x24' bash -eu <<'X11'

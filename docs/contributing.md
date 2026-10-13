@@ -37,7 +37,9 @@ editing generated bindings. Build output, captures and temporary fixtures are
 excluded. The TypeScript version stays within typescript-eslint's supported
 range; upgrade them together.
 
-CI runs type checking, linting, formatting and tests on Node 22 and 24.
+CI runs type checking, linting, formatting and tests on Node 22 and 24 on Ubuntu
+24.04. Checkout, Node setup and artifact upload use their supported Node 24
+action runtimes; the SDK test matrix remains Node 22 and 24.
 
 ## Native and visual changes
 
@@ -46,9 +48,10 @@ capture representative scenes, inspect the PNGs or frame viewer, and compare
 against a reviewed baseline. Keep the capture and diff artifacts when diagnosing
 a failure. See [snapshots](snapshots.md) and [performance](performance.md).
 
-Platform execution gates currently run locally. Native CI needs published
-revisions of the new binding target before it can check out and build the same
-dependency set.
+Native CI builds the pinned dependency revisions and runs the native and adapter
+suites on Ubuntu 24.04 with software Vulkan under X11 and Wayland. Both jobs
+upload `.blinc` captures and diagnostics even when a test fails. Native changes
+need published dependency revisions before CI can build the same source pair.
 
 ## Issue tracking
 
