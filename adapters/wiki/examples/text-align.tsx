@@ -1,5 +1,5 @@
 import { signal } from '#jsx/owner';
-import { valueOf } from '../kit.js';
+import { useSheet, valueOf } from '../kit.js';
 
 const css = [
   '.ta-sample { display: block; padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-lg); }',
@@ -8,11 +8,11 @@ const css = [
 ].join('\n');
 
 export default function TextAlign() {
+  useSheet(css, 'text-align.css');
   const align = signal<'left' | 'center' | 'right' | 'justify'>('center');
   const width = signal(360);
   return (
     <div class="wiki-col">
-      <style>{css}</style>
       <div class="wiki-row">
         <div class="wiki-chips">
           {(['left', 'center', 'right', 'justify'] as const).map((mode) => (
