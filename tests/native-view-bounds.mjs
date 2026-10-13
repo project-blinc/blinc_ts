@@ -82,6 +82,24 @@ try {
   };
   const still = build(10);
   const moved = build(210);
+  // An owned part follows the same scroll ancestry as an authored child.
+  const ownedScroller = host.ownedElement(host.root, 'div');
+  ownedScroller.setAttribute(
+    'style',
+    'position:absolute;left:0;top:0;width:100px;height:40px;overflow-y:auto',
+  );
+  const ownedSpacer = host.ownedElement(ownedScroller, 'div');
+  ownedSpacer.setAttribute('style', 'height:120px;flex-shrink:0');
+  const ownedRow = host.ownedElement(ownedScroller, 'div');
+  ownedRow.setAttribute('style', 'height:20px;flex-shrink:0');
+  settle();
+  ownedRow.scrollIntoView({ block: 'nearest' });
+  settle();
+  assert.equal(ownedScroller.scrollTop, 100, 'Owned rows scroll their composed container');
+  assert.equal(ownedRow.viewBounds()[1], 20);
+  ownedRow.scrollIntoView({ block: 'nearest' });
+  assert.equal(ownedScroller.scrollTop, 100, 'An already visible part does not scroll again');
+  ownedScroller.destroy();
   settle();
   moved.scroller.scrollBy(0, 40);
   settle();

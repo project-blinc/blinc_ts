@@ -1883,7 +1883,7 @@ export class Host {
   scrollIntoView(element: HostElement, options: ScrollIntoViewOptions): void {
     const align = [options.inline ?? 'nearest', options.block ?? 'nearest'] as const;
     const [ex, ey, ew, eh] = this.boundsOf(element);
-    for (let container = element.parentNode; container; container = container.parentNode) {
+    for (let container = element.composedParent; container; container = container.composedParent) {
       const axes = this.scrollAxes(container);
       if (!axes[0] && !axes[1]) {
         continue;
@@ -1893,9 +1893,9 @@ export class Host {
       // without moving its layout.
       let moved = [0, 0];
       for (
-        let step: HostElement | null = element.parentNode;
+        let step: HostElement | null = element.composedParent;
         step;
-        step = step === container ? null : step.parentNode
+        step = step === container ? null : step.composedParent
       ) {
         const [sx, sy] = this.scrollOf(step);
         moved = [moved[0]! + sx, moved[1]! + sy];
