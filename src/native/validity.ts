@@ -223,7 +223,7 @@ export class Validity {
     }
     const value = control.value;
     if (control.tag === 'select') {
-      if (required && value === '') {
+      if (required && this.host.behaviours.selects.valueMissing(control)) {
         found.push({ flag: 'valueMissing', message: 'Please select an item in the list.' });
       }
       return found;

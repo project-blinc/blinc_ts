@@ -73,7 +73,9 @@ export class Forms {
         continue;
       }
       if (control.tag === 'select') {
-        data.append(name, control.value);
+        for (const value of this.host.behaviours.selects.values(control)) {
+          data.append(name, value);
+        }
         continue;
       }
       if (this.host.behaviours.textFields.has(control)) {

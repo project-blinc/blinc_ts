@@ -269,9 +269,13 @@ export const elementsPages: readonly WikiPage[] = [
       >
         <p>
           A <code>select</code> shows its chosen option and opens the rest as a list in the top
-          layer: arrows, typing and Enter choose. A <code>dialog</code> opens modally with{' '}
-          <code>showModal()</code>, keeps focus inside, closes on Escape, and a form of{' '}
-          <code>method="dialog"</code> closes it with the button's value as its{' '}
+          layer: arrows, typing and Enter choose. With <code>multiple</code> or <code>size</code>
+          greater than one, its options stay in a scrolling list. Ctrl/Cmd toggles options, Shift
+          extends a range, and a form submits every selected enabled value. A <code>
+            dialog
+          </code>{' '}
+          opens modally with <code>showModal()</code>, keeps focus inside, closes on Escape, and a
+          form of <code>method="dialog"</code> closes it with the button's value as its{' '}
           <code>returnValue</code>.
         </p>
         <Example name="select-dialog" view={SelectDialog} />

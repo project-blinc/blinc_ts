@@ -4,6 +4,7 @@ import { signal } from '#jsx/owner';
 export default function SelectDialog() {
   const fruit = signal('apple');
   const answer = signal('(not asked)');
+  const selected = signal('apple');
   let dialog: HostElement | undefined;
   return (
     <div class="wiki-col">
@@ -22,6 +23,35 @@ export default function SelectDialog() {
           </optgroup>
         </select>
         <span class="wiki-readout">fruit = {fruit}</span>
+      </div>
+      <div class="wiki-row">
+        <select
+          multiple
+          class="fruit-list"
+          size={4}
+          name="fruits"
+          onChange={(event: { target: unknown }) =>
+            selected.set(
+              (event.target as HostElement).selectedOptions
+                .map((option) => option.value)
+                .join(', ') || '(none)',
+            )
+          }
+        >
+          <option value="apple" selected>
+            Apple
+          </option>
+          <option value="banana">Banana</option>
+          <option value="lemon">Lemon</option>
+          <option value="lime" disabled>
+            Lime (none left)
+          </option>
+          <option value="pear">Pear</option>
+        </select>
+        <div class="wiki-col">
+          <span class="wiki-readout">selected = {selected}</span>
+          <span>Ctrl/Cmd toggles; Shift selects a range.</span>
+        </div>
       </div>
       <div class="wiki-row">
         <button onClick={() => dialog?.showModal()}>Ask</button>

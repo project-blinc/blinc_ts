@@ -451,7 +451,7 @@ export class Behaviours {
   attributeChanged(element: HostElement, name: string): void {
     this.inputs.attributeChanged(element, name);
     this.dialogs.attributeChanged(element, name);
-    this.selects.changed(element);
+    this.selects.attributeChanged(element, name);
     this.tables.attributeChanged(element, name);
     this.textFields.attributeChanged(element, name);
     this.validity.changed(element);

@@ -531,13 +531,18 @@ export class HostElement extends HostNode {
   /** An input's value as text: a range's number, else its `value` attribute; a select's chosen option's value. */
   get value(): string {
     const { inputs, selects, textFields } = this.host.behaviours;
+    if (this.tag === 'option') {
+      return selects.optionValue(this);
+    }
     return selects.has(this)
       ? selects.value(this)
       : (textFields.value(this) ?? inputs.value(this) ?? '');
   }
   set value(text: string) {
     const { inputs, selects, textFields } = this.host.behaviours;
-    if (selects.has(this)) {
+    if (this.tag === 'option') {
+      this.setAttribute('value', text);
+    } else if (selects.has(this)) {
       selects.setValue(this, text);
     } else if (textFields.has(this)) {
       textFields.setValue(this, text);
@@ -571,6 +576,37 @@ export class HostElement extends HostNode {
   /** A select's options, in order, those in an `optgroup` too. */
   get options(): HostElement[] {
     return this.host.behaviours.selects.options(this);
+  }
+  /** A select's selected options, in authored order. */
+  get selectedOptions(): HostElement[] {
+    return this.host.behaviours.selects.selectedOptions(this);
+  }
+  /** An option's current selection; its `selected` attribute remains the reset default. */
+  get selected(): boolean {
+    return this.host.behaviours.selects.selected(this);
+  }
+  set selected(on: boolean) {
+    this.host.behaviours.selects.setSelected(this, on);
+  }
+  get multiple(): boolean {
+    return this.hasAttribute('multiple');
+  }
+  set multiple(on: boolean) {
+    if (on) {
+      this.setAttribute('multiple', '');
+    } else {
+      this.removeAttribute('multiple');
+    }
+  }
+  /** A select's reflected row count, zero when unspecified. */
+  get size(): number {
+    return this.host.behaviours.selects.size(this);
+  }
+  set size(value: number) {
+    if (!Number.isInteger(value) || value < 0 || value > 0xffffffff) {
+      throw new RangeError('Select size must be an unsigned integer');
+    }
+    this.setAttribute('size', String(value));
   }
   /** A range's value as a number, NaN for any other element. */
   get valueAsNumber(): number {

@@ -374,6 +374,12 @@ select:disabled { opacity: 0.5; transform: none; cursor: default; }
 select[data-placeholder] { color: var(--text-tertiary); }
 select > .chevron { color: var(--text-secondary); transition: transform var(--duration-normal) var(--ease-state); }
 select[open] > .chevron { transform: rotate(180deg); }
+select[data-listbox] { flex-direction: column; align-items: stretch; gap: 0; padding: 4px; cursor: default; }
+select[data-listbox]:active { transform: none; }
+select > .options { flex-shrink: 1; overflow-y: auto; }
+select > .options option { flex-shrink: 0; line-height: 1.2; }
+select > .options option:checked { background: var(--accent-subtle); }
+select:focus > .options option[data-active] { outline: 1px solid var(--focus-ring); outline-offset: -1px; }
 listbox {
   padding: 4px;
   border: 1px solid var(--border);

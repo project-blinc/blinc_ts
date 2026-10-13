@@ -782,7 +782,8 @@ no text has focus, and for a read-only or disabled field.
 constraints unless they are disabled (alone or by a fieldset) or, for a text field,
 `readonly`; no other `input` is, and `required` means nothing to it. `required` needs a text
 value, a ticked box, a chosen radio in the set (those of one `name` under one form) or a
-non-empty select value. A text value is also checked against `type` (`email`: one `@`
+selected option (a single-row empty placeholder does not satisfy it). A text value is also
+checked against `type` (`email`: one `@`
 and no spaces; `url`: a scheme and a rest), `pattern` (matching the whole value; one that
 is not an expression constrains nothing), `minlength` (only once the user has typed in the
 field) and `maxlength`; a `number` against `min`, `max` and `step` counted from `min`, or
@@ -837,8 +838,23 @@ ArrowUp or ArrowDown and chooses by typing, also as a change. Which option is ch
 the user's or a script's, else, until one has chosen, the one with `selected`, else the
 first that is enabled. `select.value`, `selectedIndex` and `options` read and set it
 without an event; a value that matches no option leaves none chosen. A named select is in
-`form.formData()` and `form.reset()` puts it back. `multiple` and `size` are not
-supported.
+`form.formData()` and `form.reset()` puts it back.
+
+With `multiple`, or `size` greater than one, the options appear in an owned scrolling
+`.options` list inside the select. `size` sets the visible row count; a multiple select
+without it shows four rows. A single-choice list has no automatic initial choice.
+A click replaces the selection; Ctrl/Cmd-click toggles an option and Shift-click selects
+a range, skipping disabled options and disabled groups. Up/Down, Home/End and PageUp/PageDown
+move and choose; Shift extends or shrinks a range. Ctrl/Cmd moves the active row without
+changing selection, Space toggles it, and Ctrl/Cmd-A selects all enabled options. Typing
+finds an option, and Tab leaves the select as one tab stop. The active row scrolls into view.
+`option.selected` reads or sets current selection, independently of the `selected` reset
+attribute; `select.selectedOptions` returns the selected authored options in order.
+`value` and `selectedIndex` read the first selected option; setting either replaces the
+selection without an event. Every selected enabled option contributes a value to
+`form.formData()`, including repeated field names and empty values. Required listboxes
+need a selection. Original options and owned rows reflect `:checked`; rows are outside
+`childNodes` and are released on mode changes, option removal and destruction.
 
 **Dialogs.** A `dialog` is open while it has `open`. `dialog.show()` opens it where it
 is. `dialog.showModal()` opens it in the top layer, centred over a dimmed backdrop, with

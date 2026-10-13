@@ -771,6 +771,33 @@ try {
       links[0].click();
       await settle();
       assert.ok(text('wiki-readout').includes('link pressed: 1'), String(text('wiki-readout')));
+      // The listbox example uses authored options for its reactive readout.
+      wiki.page.set('select');
+      await settle();
+      const listSelect = findAll(host.root, 'fruit-list')[0];
+      assert.equal(listSelect.tag, 'select');
+      assert.equal(listSelect.multiple, true);
+      const optionRows = listSelect.options;
+      const selects = host.behaviours.selects;
+      host.input.setModifiers({ shift: false, control: true, meta: false, alt: false });
+      await tap(selects.row(listSelect, optionRows[1]));
+      host.input.setModifiers({ shift: false, control: false, meta: false, alt: false });
+      assert.ok(
+        text('wiki-readout').includes('selected = apple, banana'),
+        String(text('wiki-readout')),
+      );
+      assert.equal(optionRows[0].selected, true);
+      assert.equal(optionRows[1].selected, true);
+      host.input.keyDown({
+        key: 'End',
+        modifiers: { shift: true, control: false, meta: false, alt: false },
+      });
+      await settle();
+      assert.ok(
+        text('wiki-readout').includes('selected = banana, lemon, pear'),
+        String(text('wiki-readout')),
+      );
+      assert.equal(optionRows[3].selected, false, 'keyboard range skips disabled Lime');
       // The tree: list markers are reported, and a select's parts are not among its children.
       wiki.page.set('tree');
       await settle();
