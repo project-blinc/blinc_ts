@@ -263,6 +263,9 @@ unknown properties and unsupported values are false. Conditions accept `not`,
 inside style rules and media queries. Guarded font faces and keyframes retain
 earlier active fallbacks. Function-based support queries such as `selector()` and
 `font-tech()` currently return false.
+Feature checks for `initial`, `inherit` and `unset` currently advertise the
+implemented container-property semantics; other properties return false for
+these keywords.
 
 ```css
 .panel {
@@ -308,7 +311,11 @@ the same guards; ordinary version 2/3 compiled bytes remain unchanged.
 Rust hosts call `Styles::update_containers(host)` after layout and repeat
 restyle/layout while it returns true. HashLink exposes the same operation as
 `blinc_css_update_containers(styles, tree)` returning a nonzero integer for more
-work. The TypeScript `Layout.compute` loop performs these passes automatically.
+work. Hosts with independently computed or retained roots use
+`Styles::update_containers_under(host, Some(root))`, or HashLink's
+`blinc_css_update_containers_under(styles, tree, root)`, so a detached subtree
+cannot keep another root settling. The TypeScript `Layout.compute` loop
+performs these passes automatically for its root.
 `tests/native-css-conditions.mjs` checks geometry and exact 1×/2× pixels against
 explicit layouts for both sheet formats, plus dynamic ancestor selection and
 settling beyond the host-listener pass limit.

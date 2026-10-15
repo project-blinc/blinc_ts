@@ -675,15 +675,16 @@ impl NativeLayout {
     }
     /// Refresh native size-query dependencies after layout, before painting.
     #[napi]
-    pub fn css_update_containers(&self) -> Result<bool> {
+    pub fn css_update_containers(&self, root: &crate::layout::NativeLayoutNode) -> Result<bool> {
         self.owner.check()?;
         let tree = self.owner.tree.borrow();
+        tree.style(root.node).map_err(error)?;
         Ok(self
             .owner
             .styles
             .borrow_mut()
             .styles
-            .update_containers(&*tree))
+            .update_containers_under(&*tree, Some(root.node.raw())))
     }
 
     /// Match what changed under `root` and apply its layout declarations;

@@ -251,7 +251,7 @@ export interface NativeLayout extends BrushFactory {
     pseudo: string,
     intrinsic: number[],
   ): void;
-  cssUpdateContainers(): boolean;
+  cssUpdateContainers(root: NativeLayoutNode): boolean;
   cssRestyle(root: NativeLayoutNode): {
     errors: string[];
     restyled: number;
@@ -666,7 +666,7 @@ export class Layout {
       // Always laid out; a layout animation may have started a move.
       const moved = this.#native.compute(LayoutNode.unwrap(root, this), width, height);
       this.#motion ||= moved;
-      if (this.#native.cssUpdateContainers()) {
+      if (this.#native.cssUpdateContainers(LayoutNode.unwrap(root, this))) {
         // Size containment makes query dependencies run from ancestors to
         // descendants. Each level can require another layout before its
         // descendants see the new content box, including trees deeper than

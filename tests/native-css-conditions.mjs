@@ -33,6 +33,7 @@ const guards = `
   }
   @supports (display: made-up) { .support { width: 90px; } }
   @supports (unknown-property: 1) { .support { height: 90px; } }
+  @supports (width: inherit) { .support { width: 90px; } }
   @supports not (display: made-up) { .support { border-radius: 4px; } }
   @container Panel (width > 300px) { .card { flex-direction: row; } }
   @container future(foo) { .support { width: 90px; } }
@@ -212,6 +213,52 @@ for (const compiled of [false, true]) {
   outer.setProperty('display', null);
   assert.deepEqual(size(), [10, 1], 'a newly visible principal box is queried again');
   assert.deepEqual(errors, []);
+  host.dispose();
+}
+
+// Detached retained nodes belong to a different root until they are reinserted.
+{
+  const host = Host.create(native);
+  host.layout.addStyleSheet(`
+    .panel { position: absolute; container-type: inline-size; width: 400px; height: 50px; align-items: start; }
+    .box { width: 10px; height: 10px; }
+    @container (width > 50vw) { .box { height: 20px; } }
+  `);
+  const panels = [],
+    boxes = [];
+  for (let i = 0; i < 2; i++) {
+    const panel = host.createElement('div');
+    panel.className = 'panel';
+    const box = host.createElement('div');
+    box.className = 'box';
+    panel.appendChild(box);
+    host.root.appendChild(panel);
+    panels.push(panel);
+    boxes.push(box);
+  }
+  host.compute(600, H);
+  assert.deepEqual(
+    boxes.map((box) => box.bounds()[3]),
+    [20, 20],
+  );
+  host.root.removeChild(panels[1]);
+  host.compute(1000, H);
+  assert.equal(
+    boxes[0].bounds()[3],
+    10,
+    'a detached pending query cannot keep the visible root settling',
+  );
+  host.root.appendChild(panels[1]);
+  host.compute(1000, H);
+  assert.deepEqual(
+    boxes.map((box) => box.bounds()[3]),
+    [10, 10],
+  );
+  host.compute(600, H);
+  assert.deepEqual(
+    boxes.map((box) => box.bounds()[3]),
+    [20, 20],
+  );
   host.dispose();
 }
 
