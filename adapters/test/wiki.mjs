@@ -157,6 +157,34 @@ try {
       wiki.close();
     }
   }
+  // Container resizing changes the component while its viewport remains fixed.
+  {
+    const wiki = await open('light');
+    try {
+      const { host } = wiki;
+      wiki.page.set('css');
+      await wiki.settle();
+      const parts = findAll(host.root, 'condition-part');
+      const { frame, press } = windowed(host, target, W, H);
+      for (const [label, horizontal] of [
+        ['360px container', true],
+        ['240px container', false],
+      ]) {
+        const button = buttonNamed(host.root, label);
+        button.scrollIntoView({ block: 'center' });
+        await frame();
+        await press(button);
+        assert.equal(
+          parts[0].bounds()[1] === parts[1].bounds()[1],
+          horizontal,
+          `${label}: the container query changes direction`,
+        );
+      }
+      assert.deepEqual(wiki.errors, []);
+    } finally {
+      wiki.close();
+    }
+  }
   // Generated content follows reactive attributes and leaves authored JSX children intact.
   {
     const wiki = await open('light');

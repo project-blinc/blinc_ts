@@ -19,6 +19,7 @@ import CornerShapes from '../examples/corner-shapes.js';
 import CssEditor from '../examples/css-editor.js';
 import CssFeatures from '../examples/css-features.js';
 import CssMath from '../examples/css-math.js';
+import CssConditions from '../examples/css-conditions.js';
 import GeneratedContent from '../examples/generated-content.js';
 import ImagesBackgrounds from '../examples/images-backgrounds.js';
 import ImagesEffects from '../examples/images-effects.js';
@@ -121,6 +122,7 @@ export const stylingPages: readonly WikiPage[] = [
               </code>,
             ],
             ['Organisation', <code>{'@import, nesting with &, @mixin and @include'}</code>],
+            ['Conditions', <code>{'@supports (display: grid), @container (width > 300px)'}</code>],
             ['Weight', <code>{'!important, then specificity, then order'}</code>],
             ['Motion', <code>{'transition, animation, @keyframes'}</code>],
           ]}
@@ -128,6 +130,24 @@ export const stylingPages: readonly WikiPage[] = [
         <p>
           Units are px, <code>em</code>, <code>rem</code>, percentages and viewport units.
         </p>
+        <h2>Feature and container conditions</h2>
+        <p>
+          <code>@supports</code> tests whether the native engine accepts a property and value.
+          <code>@container</code> tests an eligible ancestor’s content size. Set{' '}
+          <code>container-type: inline-size</code> for width queries, or <code>size</code> for both
+          dimensions. Containers can have case-sensitive names, and nested conditions combine with
+          media queries.
+        </p>
+        <Example
+          name="css-conditions"
+          title="A card responds to its container"
+          view={CssConditions}
+        />
+        <Note>
+          Size containment removes descendant contributions to the queried dimension’s intrinsic
+          size. Give a container an authored size or let its parent allocate one. Style and scroll
+          queries, vertical writing modes and container-relative length units are not supported.
+        </Note>
         <h2>Generated content</h2>
         <p>
           <code>::before</code> and <code>::after</code> create parts when their{' '}

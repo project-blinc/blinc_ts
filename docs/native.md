@@ -254,6 +254,65 @@ reason to `host.onStyleErrors` listeners, or logged as a warning when there
 are none, and the rest of its rule still applies. A property the cascade does
 not know is skipped without a report.
 
+### Feature and container conditions
+
+`@supports (property: value)` tests the native layout/paint parsers and supported
+text/container declarations. It checks the value as well as the property name;
+unknown properties and unsupported values are false. Conditions accept `not`,
+`and` and `or`, with parentheses when combining different operators. They nest
+inside style rules and media queries. Guarded font faces and keyframes retain
+earlier active fallbacks. Function-based support queries such as `selector()` and
+`font-tech()` currently return false.
+
+```css
+.panel {
+  container: card / inline-size;
+  width: 360px;
+  padding: 12px;
+}
+.content {
+  flex-direction: column;
+}
+@supports (display: flex) and (width: calc(100% - 1rem)) {
+  @container card (width > 300px) {
+    .content {
+      flex-direction: row;
+    }
+  }
+}
+```
+
+`container-type: inline-size` contains intrinsic width; `size` contains both
+dimensions. Descendants no longer supply intrinsic size on the contained axes,
+so give the container a size or let its parent allocate one. `normal` resets it.
+`container-name` takes case-sensitive names or `none`; the `container` shorthand
+sets names and resets the type to `normal` unless `/ inline-size` or `/ size` is
+present. These properties are not inherited by default and accept explicit
+`inherit`, `initial` and `unset`.
+
+Each query selects the nearest eligible ancestor, optionally by name, using its
+unrounded content box. Width/inline-size queries accept `inline-size` or `size`
+containers; height/block-size, aspect-ratio and orientation require `size`.
+Ranges, min/max prefixes and grouped boolean conditions work. `em` uses the
+container's computed font; `rem` and viewport units use their usual bases.
+Container changes settle natively before the host paints, including nested
+containers, font changes and reparenting. A settled tree schedules no additional
+style work. Non-atomic inline boxes cannot supply query sizes.
+
+Style/scroll-state queries, vertical writing modes, custom-property substitution
+inside query conditions and container-relative units are outside this size-query
+baseline. Unsupported features evaluate as unknown, including through negation,
+and cannot make a rule match on their own. Runtime and compiled sheets retain
+the same guards; ordinary version 2/3 compiled bytes remain unchanged.
+
+Rust hosts call `Styles::update_containers(host)` after layout and repeat
+restyle/layout while it returns true. HashLink exposes the same operation as
+`blinc_css_update_containers(styles, tree)` returning a nonzero integer for more
+work. The TypeScript `Layout.compute` loop performs these passes automatically.
+`tests/native-css-conditions.mjs` checks geometry and exact 1×/2× pixels against
+explicit layouts for both sheet formats, plus dynamic ancestor selection and
+settling beyond the host-listener pass limit.
+
 ### Bundled fonts
 
 `@font-face` loads fonts owned by the host's active stylesheets. Give each face a

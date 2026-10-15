@@ -251,6 +251,7 @@ export interface NativeLayout extends BrushFactory {
     pseudo: string,
     intrinsic: number[],
   ): void;
+  cssUpdateContainers(): boolean;
   cssRestyle(root: NativeLayoutNode): {
     errors: string[];
     restyled: number;
@@ -652,7 +653,9 @@ export class Layout {
 
   compute(root: LayoutNode, width: number, height: number): void {
     this.#setEnvironment(width, height);
-    for (let pass = 0; ; pass++) {
+    let queryPasses = 0;
+    let listenerPasses = 0;
+    for (;;) {
       this.flush();
       if (this.#styled) {
         this.#setEnvironment(width, height);
@@ -663,8 +666,20 @@ export class Layout {
       // Always laid out; a layout animation may have started a move.
       const moved = this.#native.compute(LayoutNode.unwrap(root, this), width, height);
       this.#motion ||= moved;
+      if (this.#native.cssUpdateContainers()) {
+        // Size containment makes query dependencies run from ancestors to
+        // descendants. Each level can require another layout before its
+        // descendants see the new content box, including trees deeper than
+        // the separate onLaidOut listener pass limit.
+        if (++queryPasses > this.#native.size + 1) {
+          throw new Error('Container queries did not settle');
+        }
+        this.#styled = true;
+        continue;
+      }
+      queryPasses = 0;
       let again = false;
-      if (this.#laidOutListeners.size > 0 && pass < LAYOUT_PASSES) {
+      if (this.#laidOutListeners.size > 0 && listenerPasses++ < LAYOUT_PASSES) {
         for (const listener of [...this.#laidOutListeners]) {
           // One that wrote leaves the bounds unreadable until layout runs again, so the rest wait
           // for the next pass, in which every listener runs again.

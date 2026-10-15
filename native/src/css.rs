@@ -117,6 +117,16 @@ impl Host for Restyling<'_> {
     fn context(&self) -> Option<u64> {
         Host::context(&*self.tree)
     }
+    fn set_containment(
+        &mut self,
+        node: u64,
+        kind: blinc_abi::css::conditional::ContainerType,
+    ) -> std::result::Result<(), &'static str> {
+        Host::set_containment(&mut *self.tree, node, kind)
+    }
+    fn container_size(&self, node: u64) -> Option<(f64, f64)> {
+        Host::container_size(&*self.tree, node)
+    }
 }
 
 /// What applying motion's writes to a node touched.
@@ -663,6 +673,19 @@ impl NativeLayout {
             .set_generated(node.node, owner.node, pseudo, size);
         Ok(())
     }
+    /// Refresh native size-query dependencies after layout, before painting.
+    #[napi]
+    pub fn css_update_containers(&self) -> Result<bool> {
+        self.owner.check()?;
+        let tree = self.owner.tree.borrow();
+        Ok(self
+            .owner
+            .styles
+            .borrow_mut()
+            .styles
+            .update_containers(&*tree))
+    }
+
     /// Match what changed under `root` and apply its layout declarations;
     /// return the paint and text declarations of every node whose changed,
     /// with its overflow, which the host reads to know what scrolls.
