@@ -9,6 +9,8 @@ const { values } = parseArgs({
   options: {
     baseline: { type: 'string' },
     candidate: { type: 'string' },
+    'baseline-sdk': { type: 'string' },
+    'candidate-sdk': { type: 'string' },
     output: { type: 'string', default: '.blinc/benchmarks/renderer-comparison' },
     counts: { type: 'string', default: '30,300,3000' },
     scales: { type: 'string', default: '1,2' },
@@ -22,6 +24,11 @@ assert(values.baseline && values.candidate, 'Provide --baseline and --candidate 
 const runs = Number(values.runs);
 assert(Number.isSafeInteger(runs) && runs >= 2 && runs <= 20);
 const output = resolve(values.output);
+const defaultSdk = fileURLToPath(new URL('../', import.meta.url));
+const sdk = {
+  baseline: resolve(values['baseline-sdk'] ?? defaultSdk),
+  candidate: resolve(values['candidate-sdk'] ?? defaultSdk),
+};
 await mkdir(output, { recursive: true });
 const reports = [];
 let reference;
@@ -29,7 +36,7 @@ for (let run = 0; run < runs; run++) {
   for (const build of run % 2 ? ['candidate', 'baseline'] : ['baseline', 'candidate']) {
     const path = join(output, `${build}-${run}.json`);
     const args = [
-      fileURLToPath(new URL('./renderer.mjs', import.meta.url)),
+      join(sdk[build], 'benchmarks/renderer.mjs'),
       '--addon',
       resolve(values[build]),
       '--output',
@@ -65,7 +72,6 @@ for (const { build, data } of reports) {
     'os',
     'cpu',
     'buildProfile',
-    'sdkSha256',
     'fixtureSha256',
     'harnessSha256',
   ]) {
@@ -76,6 +82,14 @@ for (const { build, data } of reports) {
     reports.find((r) => r.build === build).data.addonSha256,
     'Each build must use the same binary throughout',
   );
+  assert.equal(
+    data.sdkSha256,
+    reports.find((r) => r.build === build).data.sdkSha256,
+    'Each build must use the same SDK throughout',
+  );
+  if (sdk.baseline === sdk.candidate) {
+    assert.equal(data.sdkSha256, first.sdkSha256, 'Shared SDK sources must match');
+  }
 }
 const median = (values) => {
   const sorted = [...values].sort((a, b) => a - b);
@@ -135,7 +149,16 @@ const summary = {
   samples: Number(values.samples),
   warmup: Number(values.warmup),
   sourceNote:
-    'Use otherwise matched release addons. Alternating fresh processes use the same SDK, fixtures, GPU, fonts and viewport. Pixels must match; records may differ.',
+    'Alternating fresh processes use each selected SDK with its addon and matching fixtures, harness, GPU, fonts and viewport. Pixels must match; records may differ.',
+  sdk: Object.fromEntries(
+    ['baseline', 'candidate'].map((build) => [
+      build,
+      {
+        path: sdk[build],
+        sha256: reports.find((r) => r.build === build).data.sdkSha256,
+      },
+    ]),
+  ),
   machine: Object.fromEntries(
     ['node', 'platform', 'arch', 'os', 'cpu', 'buildProfile'].map((key) => [key, first[key]]),
   ),

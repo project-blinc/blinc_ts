@@ -206,6 +206,30 @@ aligned paragraph throughput.
 [Raw samples, source details, binary/SDK hashes and comparison harness](../benchmarks/results/2026-10-13-plain-align-ordinary.json.gz)
 retain all three pairs and their summary.
 
+## Conditional CSS ordinary-renderer comparison, 2026-10-15
+
+Compared SDK `e6bbc71` / ABI `e1039c3` with frozen SDK `082669e` /
+ABI `ecdb2f0` release builds on the Apple M1 Pro, Node 24.2.0 and Metal.
+Each addon used its corresponding built SDK. Three alternating fresh-process
+pairs used 20 warmups and 101 samples for ordinary 30/300-row lists and 12 cards,
+static and changed at 1x/2x. All pixels, primitive counts, draw counts and record
+sizes matched.
+
+The final protocol waited for ten quiet one-second observations before each
+pair, then sampled selected compiler processes every 250 ms. None exceeded its
+5% activity threshold during the three retained pairs. Selection used compiler
+observations, never timing outcomes; earlier exploratory and overlapped runs
+are also retained. This monitoring does not control all CPU/GPU activity.
+
+Median-of-run-medians CPU varied from 30.2% slower to 24.1% faster; completion
+from 9.3% slower to 8.3% faster. Even the frozen baseline's changing-card 2x CPU
+medians ranged from 0.42 to 2.89 ms across runs. These timings remain
+inconclusive about a regression or speedup; the ordinary-renderer timing
+investigation stays open. This checks ordinary scenes, not query scaling or
+startup.
+[Raw samples, all exploratory attempts, compiler observations, both SDK/binary hashes and harnesses](../benchmarks/results/2026-10-15-conditional-ordinary.json.gz)
+retain the evidence and its limits.
+
 ## Large-tree mutation and frame benchmark
 
 ```sh
@@ -380,7 +404,11 @@ npm run bench:renderer:compare -- \
 ```
 
 The driver alternates fresh processes for three runs per build, with the same
-SDK, fixtures, machine, GPU and viewport. Each state must match the baseline's
+fixtures, machine, GPU and viewport. Both builds use the current SDK by default;
+use `--baseline-sdk /path/to/frozen/sdk` and `--candidate-sdk /path/to/sdk` when
+the native interface changes and each addon needs its corresponding SDK.
+Both SDKs must be built first. The driver records and checks each SDK's hash
+throughout the comparison. Each state must match the baseline's
 pixel hash; the number of records may change. The summary retains individual
 run medians and record/draw/upload ranges; companion reports retain all samples.
 Use `--counts`, `--scales`, `--cases`, `--samples`, `--warmup` or `--runs` to select
