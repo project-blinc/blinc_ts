@@ -71,6 +71,16 @@ interface Layer {
   shadowed: boolean;
 }
 const whole = (width: number, height: number): Region => ({ x: 0, y: 0, width, height });
+/** No pixels at all. */
+const NOWHERE: Region = { x: 0, y: 0, width: 0, height: 0 };
+/** What two regions share; none, when they do not meet. */
+const meet = (a: Region, b: Region): Region => {
+  const x = Math.max(a.x, b.x);
+  const y = Math.max(a.y, b.y);
+  const right = Math.min(a.x + a.width, b.x + b.width);
+  const bottom = Math.min(a.y + a.height, b.y + b.height);
+  return right > x && bottom > y ? { x, y, width: right - x, height: bottom - y } : NOWHERE;
+};
 interface Texture {
   texture: gpu.GpuTexture;
   view: gpu.GpuTextureView;
@@ -622,6 +632,9 @@ export class SceneRenderer {
     const deepest: [number, number][] = [];
     let rowsSize: [number, number] = [0, 0];
     let shadowSize: [number, number] = [0, 0];
+    // What each backdrop reads, which its blurred rows are drawn for: no more of the screen.
+    const backdrops = new Map<number, Region>();
+    const backdropRows = new Map<number, Region>();
     let slots = 4;
     for (let i = 0; i < info.count; i++) {
       const at = i * R;
@@ -669,7 +682,10 @@ export class SceneRenderer {
           layer.full = true;
         }
         if (kind === 42) {
-          rowsSize = [width, height];
+          const region = this.#backdropRegion(i, width, height, scale);
+          backdrops.set(i, region);
+          backdropRows.set(i, this.#backdropRows(i, width, height, scale));
+          rowsSize = [Math.max(rowsSize[0], region.width), Math.max(rowsSize[1], region.height)];
           slots += 2;
         }
       }
@@ -904,6 +920,23 @@ export class SceneRenderer {
     let current = { texture: frame, region: screen, base: slot(frame, screen) };
     const clear = options.clear ?? [0, 0, 0, 0];
     this.#begin(encoder, frame.view, current.base, clear);
+    /** Blur the rows backdrop `i` reads, out of `source` at `from`, into the rows texture. */
+    const blurRows = (i: number, source: Texture, from: Region) => {
+      const read = backdrops.get(i)!;
+      const wanted = meet(backdropRows.get(i)!, read);
+      this.#begin(encoder, this.#rows!.view, slot(this.#rows!, read, from), [0, 0, 0, 0]);
+      if (wanted.width > 0) {
+        encoder.renderSetScissorRect(
+          wanted.x - read.x,
+          wanted.y - read.y,
+          wanted.width,
+          wanted.height,
+        );
+        this.#draw(encoder, -1, i, 1, source.view);
+      }
+      encoder.renderEnd();
+      return read;
+    };
     for (let i = 0; i < info.count;) {
       const kind = this.#records[i * R + KIND]!;
       if (kind === 40) {
@@ -956,11 +989,10 @@ export class SceneRenderer {
         i++;
       } else if (kind === 42) {
         encoder.renderEnd();
-        this.#begin(encoder, this.#rows!.view, slot(this.#rows!, screen), [0, 0, 0, 0]);
-        this.#draw(encoder, -1, i, 1, current.texture.view);
-        encoder.renderEnd();
-        this.#begin(encoder, current.texture.view, current.base);
+        const region = blurRows(i, current.texture, current.region);
+        this.#begin(encoder, current.texture.view, slot(current.texture, current.region, region));
         this.#draw(encoder, 42, i, 1, this.#rows!.view);
+        this.#use(current.base);
         drawCalls += 2;
         i++;
       } else if (kind === 33) {
@@ -1163,16 +1195,6 @@ export class SceneRenderer {
    */
   #region(at: number, width: number, height: number, scale: number): Region {
     const r = this.#records;
-    const [x, y, w, h] = [
-      r[at + BOUNDS]!,
-      r[at + BOUNDS + 1]!,
-      r[at + BOUNDS + 2]!,
-      r[at + BOUNDS + 3]!,
-    ];
-    const m = at + fields.affine * 4;
-    const [a, b, c, d] = [r[m]!, r[m + 1]!, r[m + 2]!, r[m + 3]!];
-    const xs = [0, a * w, c * h, a * w + c * h];
-    const ys = [0, b * w, d * h, b * w + d * h];
     const blur = Math.max(r[at + fields.color * 4]!, 0);
     const offset = at + fields.gradient * 4;
     const reach =
@@ -1180,16 +1202,70 @@ export class SceneRenderer {
       Math.ceil(Math.abs(r[offset]!)) +
       Math.ceil(Math.abs(r[offset + 1]!)) +
       2;
+    return this.#onScreen(at, reach, width, height, scale);
+  }
+
+  /** The device pixels a backdrop reads: its box, as far out as its blur and its rim reach. */
+  #backdropRegion(record: number, width: number, height: number, scale: number): Region {
+    const o = record * R;
+    const reach = Math.max(this.#records[o + fields.color * 4 + 1]!, 0) * scale;
+    return this.#onScreen(o, Math.ceil(reach) + 2, width, height, scale);
+  }
+
+  /**
+   * The blurred rows a backdrop goes on to read: across, only as far as its rim bends what is
+   * behind it; up and down, as far as its blur reaches too. Its record holds the blur in device
+   * pixels and the whole reach in layout pixels.
+   */
+  #backdropRows(record: number, width: number, height: number, scale: number): Region {
+    const r = this.#records;
+    const o = record * R;
+    const blur = Math.max(r[o + fields.color * 4]!, 0);
+    const reach = Math.max(r[o + fields.color * 4 + 1]!, 0) * scale;
+    const m = o + fields.affine * 4;
+    const gx = 1.5 / Math.max(Math.hypot(r[m]!, r[m + 1]!), 0.01);
+    const gy = 1.5 / Math.max(Math.hypot(r[m + 2]!, r[m + 3]!), 0.01);
+    const across = Math.ceil(Math.max(reach - 3 * blur, 0)) + 2;
+    return this.#onScreen(o, across, width, height, scale, gx, gy, NOWHERE, Math.ceil(reach) + 2);
+  }
+
+  /** A record's box as placed on screen, `reach` device pixels larger on every side, in the frame. */
+  #onScreen(
+    at: number,
+    reach: number,
+    width: number,
+    height: number,
+    scale: number,
+    gx = 0,
+    gy = 0,
+    offscreen?: Region,
+    reachY = reach,
+  ): Region {
+    const r = this.#records;
+    const [x, y] = [r[at + BOUNDS]!, r[at + BOUNDS + 1]!];
+    // The box, grown by `gx` and `gy` before it is placed.
+    const [l, t, rt, bm] = [-gx, -gy, r[at + BOUNDS + 2]! + gx, r[at + BOUNDS + 3]! + gy];
+    const m = at + fields.affine * 4;
+    const [a, b, c, d] = [r[m]!, r[m + 1]!, r[m + 2]!, r[m + 3]!];
+    const xs = [a * l + c * t, a * rt + c * t, a * l + c * bm, a * rt + c * bm];
+    const ys = [b * l + d * t, b * rt + d * t, b * l + d * bm, b * rt + d * bm];
     const x0 = Math.max(0, Math.floor((x + Math.min(...xs)) * scale) - reach);
-    const y0 = Math.max(0, Math.floor((y + Math.min(...ys)) * scale) - reach);
+    const y0 = Math.max(0, Math.floor((y + Math.min(...ys)) * scale) - reachY);
     const x1 = Math.min(width, Math.ceil((x + Math.max(...xs)) * scale) + reach);
-    const y1 = Math.min(height, Math.ceil((y + Math.max(...ys)) * scale) + reach);
+    const y1 = Math.min(height, Math.ceil((y + Math.max(...ys)) * scale) + reachY);
     if (![x0, y0, x1, y1].every(Number.isFinite)) {
       return { x: 0, y: 0, width, height };
     }
     if (x1 <= x0 || y1 <= y0) {
       // Wholly off screen: nothing of it is seen, so a pixel holds it.
-      return { x: Math.min(x0, width - 1), y: Math.min(y0, height - 1), width: 1, height: 1 };
+      return (
+        offscreen ?? {
+          x: Math.min(x0, width - 1),
+          y: Math.min(y0, height - 1),
+          width: 1,
+          height: 1,
+        }
+      );
     }
     return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
   }

@@ -13,6 +13,25 @@ import {
 } from '../../src/renderer/gpu/sdf.js';
 import { noise, rimLine, rimLens, glassEnvironment } from './glass.js';
 
+/**
+ * Where `p`, a point on screen in device pixels, is in the blurred rows this reads: held to the
+ * screen, as a read past its edge takes the edge, and moved to the region the rows were drawn in.
+ */
+const rowsAt = tgpu
+  .fn(
+    [d.vec2f, d.vec2f, d.vec2f],
+    d.vec2f,
+  )((p, screen, size) =>
+    std.div(
+      std.add(
+        std.clamp(p, d.vec2f(0.5, 0.5), std.sub(screen, d.vec2f(0.5, 0.5))),
+        scene.$.viewport.offsets.zw,
+      ),
+      size,
+    ),
+  )
+  .$name('rowsAt');
+
 const vertex = tgpu
   .vertexFn({
     in: { vertexIndex: d.builtin.vertexIndex, instanceIndex: d.builtin.instanceIndex },
@@ -39,6 +58,9 @@ const fragment = tgpu
     const place = input.place;
     const local = place.xy;
     const aa = halfPixel(local);
+    // Layout pixels a device pixel: the scale of the screen, which the rows' own size is not.
+    const unit = std.max(std.length(std.dpdx(place.zw)), 0.000001);
+    const screen = std.div(scene.$.viewport.frame.xy, unit);
     const clips = field(input.record, fields.typeInfo).z;
     const n = field(input.record, fields.typeInfo).w;
     const box = field(input.record, fields.bounds).zw;
@@ -97,7 +119,7 @@ const fragment = tgpu
       const g = d.vec2f(m.x * gx + m.z * gy, m.y * gx + m.w * gy);
       normal = std.div(g, std.max(std.length(g), 0.0001));
       lens = rimLens(inner, rim);
-      const k = (size.x / scene.$.viewport.frame.x) * std.length(m.xy);
+      const k = std.length(m.xy) / unit;
       offset = std.mul(
         std.mul(std.mul(std.mul(normal, lens), 60), field(input.record, fields.gradient).y),
         k,
@@ -128,7 +150,12 @@ const fragment = tgpu
       sum = std.add(
         sum,
         std.mul(
-          std.textureSampleLevel(textures.$.layer, textures.$.linearSampler, std.div(at, size), 0),
+          std.textureSampleLevel(
+            textures.$.layer,
+            textures.$.linearSampler,
+            rowsAt(at, screen, size),
+            0,
+          ),
           w,
         ),
       );
@@ -136,13 +163,13 @@ const fragment = tgpu
         const r = std.textureSampleLevel(
           textures.$.layer,
           textures.$.linearSampler,
-          std.div(std.add(at, split), size),
+          rowsAt(std.add(at, split), screen, size),
           0,
         );
         const b = std.textureSampleLevel(
           textures.$.layer,
           textures.$.linearSampler,
-          std.div(std.sub(at, split), size),
+          rowsAt(std.sub(at, split), screen, size),
           0,
         );
         red = std.add(red, std.mul(d.vec2f(r.r, r.a), w));

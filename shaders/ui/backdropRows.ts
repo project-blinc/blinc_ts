@@ -39,6 +39,8 @@ const vertex = tgpu
 const fragment = tgpu
   .fragmentFn({ in: inputs, out: d.vec4f })((input) => {
     const size = d.vec2f(std.textureDimensions(textures.$.layer));
+    // This pass draws into a region of its own; what it reads is where that region is on screen.
+    const at = std.add(input.position.xy, scene.$.viewport.offsets.zw);
     const sigma = std.max(field(input.record, fields.color).x, 0.0001);
     const reach = std.ceil(sigma * 3);
     let sum = d.vec4f(0, 0, 0, 0);
@@ -54,7 +56,7 @@ const fragment = tgpu
           std.textureSampleLevel(
             textures.$.layer,
             textures.$.linearSampler,
-            std.div(d.vec2f(input.position.x + i + w1 / std.max(w, 1e-30), input.position.y), size),
+            std.div(d.vec2f(at.x + i + w1 / std.max(w, 1e-30), at.y), size),
             0,
           ),
           w,
