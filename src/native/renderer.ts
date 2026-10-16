@@ -25,7 +25,7 @@ import { shadowShader } from '../renderer/generated/shadow.js';
 import { textShader } from '../renderer/generated/text.js';
 import { imageShader } from '../renderer/generated/image.js';
 import { backdropShader } from '../renderer/generated/backdrop.js';
-import { backdropRowsShader } from '../renderer/generated/backdropRows.js';
+import { backdropRowsComputeShader } from '../renderer/generated/backdropRowsCompute.js';
 import { layerShader } from '../renderer/generated/layer.js';
 import { layerRowsShader } from '../renderer/generated/layerRows.js';
 import { layerShadowShader } from '../renderer/generated/layerShadow.js';
@@ -139,7 +139,6 @@ const SHADERS = new Map<number, Shader>([
   [41, layerShader],
   [-3, layerRowsShader],
   [-4, layerShadowShader],
-  [-1, backdropRowsShader],
   [-2, blitShader],
 ]);
 
@@ -154,6 +153,10 @@ export class SceneRenderer {
   readonly #pipelines = new Map<number, gpu.GpuPipeline>();
   readonly #frameLayout: gpu.GpuBindGroupLayout;
   readonly #textureLayout: gpu.GpuBindGroupLayout;
+  /** The blurred rows a compute pass writes, and the pass. */
+  readonly #rowsLayout: gpu.GpuBindGroupLayout;
+  #rowsPipeline: gpu.GpuPipeline | undefined;
+  readonly #rowsGroups = new Map<gpu.GpuTextureView, gpu.GpuBindGroup>();
   /** One uniform slot per pass of a frame: the target it draws into, and what it reads. */
   #viewport: gpu.GpuBuffer | undefined;
   #slotData = new Float32Array(0);
@@ -253,12 +256,12 @@ export class SceneRenderer {
         entries: [
           {
             binding: 0,
-            visibility: gpu.ShaderStage.VERTEX | gpu.ShaderStage.FRAGMENT,
+            visibility: gpu.ShaderStage.VERTEX | gpu.ShaderStage.FRAGMENT | gpu.ShaderStage.COMPUTE,
             buffer: { type: gpu.BufferBindingType.Uniform, hasDynamicOffset: true },
           },
           {
             binding: 1,
-            visibility: gpu.ShaderStage.VERTEX | gpu.ShaderStage.FRAGMENT,
+            visibility: gpu.ShaderStage.VERTEX | gpu.ShaderStage.FRAGMENT | gpu.ShaderStage.COMPUTE,
             buffer: { type: gpu.BufferBindingType.ReadOnlyStorage },
           },
         ],
@@ -269,7 +272,7 @@ export class SceneRenderer {
         entries: [
           ...[0, 1, 2, 3, 5].map((binding) => ({
             binding,
-            visibility: gpu.ShaderStage.FRAGMENT,
+            visibility: gpu.ShaderStage.FRAGMENT | gpu.ShaderStage.COMPUTE,
             texture: {
               sampleType: gpu.TextureSampleType.Float,
               viewDimension: gpu.TextureViewDimension.D2d,
@@ -277,7 +280,7 @@ export class SceneRenderer {
           })),
           {
             binding: 4,
-            visibility: gpu.ShaderStage.FRAGMENT,
+            visibility: gpu.ShaderStage.FRAGMENT | gpu.ShaderStage.COMPUTE,
             sampler: { type: gpu.SamplerBindingType.Filtering },
           },
         ],
@@ -285,6 +288,21 @@ export class SceneRenderer {
     );
     this.#pipelineLayout = keep(
       device.createPipelineLayout({ bindGroupLayouts: [this.#frameLayout, this.#textureLayout] }),
+    );
+    this.#rowsLayout = keep(
+      device.createBindGroupLayout({
+        entries: [
+          {
+            binding: 0,
+            visibility: gpu.ShaderStage.COMPUTE,
+            storageTexture: {
+              access: gpu.StorageTextureAccess.WriteOnly,
+              format: gpu.TextureFormat.Rgba8unorm,
+              viewDimension: gpu.TextureViewDimension.D2d,
+            },
+          },
+        ],
+      }),
     );
     this.#sampler = keep(
       device.sampler({ minFilter: gpu.FilterMode.Linear, magFilter: gpu.FilterMode.Linear }),
@@ -808,7 +826,7 @@ export class SceneRenderer {
     // Only simultaneously active groups need distinct content textures.
     const now = this.#frameCount;
     if (rowsSize[0] > 0) {
-      this.#rows = this.#fit(this.#rows, rowsSize, width, height);
+      this.#rows = this.#fit(this.#rows, rowsSize, width, height, true);
       this.#rowsUsed = now;
     }
     if (shadowSize[0] > 0) {
@@ -954,19 +972,26 @@ export class SceneRenderer {
       const read = backdrops.get(i)!;
       const step = backdropSteps.get(i)!;
       const wanted = meet(backdropRows.get(i)!, read);
-      this.#begin(encoder, this.#rows!.view, slot(this.#rows!, read, from, step), [0, 0, 0, 0]);
-      if (wanted.width > 0) {
-        const x = Math.floor((wanted.x - read.x) / step);
-        const y = Math.floor((wanted.y - read.y) / step);
-        encoder.renderSetScissorRect(
-          x,
-          y,
-          Math.ceil((wanted.x + wanted.width - read.x) / step) - x,
-          Math.ceil((wanted.y + wanted.height - read.y) / step) - y,
-        );
-        this.#draw(encoder, -1, i, 1, source.view);
+      if (wanted.width <= 0) {
+        return read;
       }
-      encoder.renderEnd();
+      // In a compute pass: a tiled GPU bins nothing for it, as it does for a render pass.
+      const x = Math.floor((wanted.x - read.x) / step);
+      const y = Math.floor((wanted.y - read.y) / step);
+      const across = Math.ceil((wanted.x + wanted.width - read.x) / step) - x;
+      const down = Math.ceil((wanted.y + wanted.height - read.y) / step) - y;
+      const index = slot(this.#rows!, read, from, step);
+      const o = index * SLOT_FLOATS;
+      this.#slotData.set([x, y, across, down], o);
+      this.#slotData[o + 10] = i;
+      this.#use(index);
+      encoder.beginComputePass({});
+      encoder.computeSetPipeline(this.#rowsCompute());
+      encoder.computeSetBindGroupOffsets(0, this.#frameGroup!, this.#slotOffset, 0n, 1);
+      encoder.computeSetBindGroup(1, this.#textureGroup(source.view, this.#dummy.view));
+      encoder.computeSetBindGroup(2, this.#rowsGroup(this.#rows!.view));
+      encoder.computeDispatch(Math.ceil(across / 8), Math.ceil(down / 8), 1);
+      encoder.computeEnd();
       return read;
     };
     for (let i = 0; i < info.count;) {
@@ -1241,11 +1266,18 @@ export class SceneRenderer {
     return this.#onScreen(at, reach, width, height, scale);
   }
 
-  /** The device pixels a backdrop reads: its box, as far out as its blur and its rim reach. */
+  /**
+   * The device pixels a backdrop reads: its box and the pixel and a half its quad grows by for
+   * antialiasing, as far out as its blur and its rim reach.
+   */
   #backdropRegion(record: number, width: number, height: number, scale: number): Region {
+    const r = this.#records;
     const o = record * R;
-    const reach = Math.max(this.#records[o + fields.color * 4 + 1]!, 0) * scale;
-    return this.#onScreen(o, Math.ceil(reach) + 2, width, height, scale);
+    const reach = Math.max(r[o + fields.color * 4 + 1]!, 0) * scale;
+    const m = o + fields.affine * 4;
+    const gx = 1.5 / Math.max(Math.hypot(r[m]!, r[m + 1]!), 0.01);
+    const gy = 1.5 / Math.max(Math.hypot(r[m + 2]!, r[m + 3]!), 0.01);
+    return this.#onScreen(o, Math.ceil(reach) + 2, width, height, scale, gx, gy);
   }
 
   /**
@@ -1312,6 +1344,7 @@ export class SceneRenderer {
     [w, h]: [number, number],
     width: number,
     height: number,
+    storage = false,
   ): Texture {
     if (texture && texture.width >= w && texture.height >= h) {
       return texture;
@@ -1323,6 +1356,7 @@ export class SceneRenderer {
       Math.max(texture?.height ?? 0, step(h, height)),
       gpu.TextureFormat.Rgba8unorm,
       true,
+      storage,
     );
     if (texture) {
       this.#clearGroups();
@@ -1371,14 +1405,21 @@ export class SceneRenderer {
     }
     return bytes;
   }
-  #texture(width: number, height: number, format: gpu.TextureFormat, target = false): Texture {
+  #texture(
+    width: number,
+    height: number,
+    format: gpu.TextureFormat,
+    target = false,
+    storage = false,
+  ): Texture {
     const texture = this.#device.texture({
       size: { width, height, depthOrArrayLayers: 1 },
       format,
       usage:
         gpu.TextureUsage.TEXTURE_BINDING |
         gpu.TextureUsage.COPY_DST |
-        (target ? gpu.TextureUsage.RENDER_ATTACHMENT : 0),
+        (target ? gpu.TextureUsage.RENDER_ATTACHMENT : 0) |
+        (storage ? gpu.TextureUsage.STORAGE_BINDING : 0),
     });
     return { texture, view: texture.createView({}), width, height };
   }
@@ -1464,6 +1505,11 @@ export class SceneRenderer {
     layer: gpu.GpuTextureView,
     shadow: gpu.GpuTextureView,
   ): void {
+    const group = this.#textureGroup(layer, shadow);
+    encoder.renderSetBindGroupOffsets(0, this.#frameGroup!, this.#slotOffset, 0n, 1);
+    encoder.renderSetBindGroup(1, group);
+  }
+  #textureGroup(layer: gpu.GpuTextureView, shadow: gpu.GpuTextureView): gpu.GpuBindGroup {
     let groups = this.#textureGroups.get(layer);
     if (!groups) {
       groups = new Map();
@@ -1486,8 +1532,41 @@ export class SceneRenderer {
       });
       groups.set(shadow, group);
     }
-    encoder.renderSetBindGroupOffsets(0, this.#frameGroup!, this.#slotOffset, 0n, 1);
-    encoder.renderSetBindGroup(1, group);
+    return group;
+  }
+  /** The pipeline that blurs a backdrop's rows in a compute pass, made when first needed. */
+  #rowsCompute(): gpu.GpuPipeline {
+    if (this.#rowsPipeline) {
+      return this.#rowsPipeline;
+    }
+    const module = this.#device.createShader(backdropRowsComputeShader.code);
+    const layout = this.#device.createPipelineLayout({
+      bindGroupLayouts: [this.#frameLayout, this.#textureLayout, this.#rowsLayout],
+    });
+    try {
+      const pipeline = this.#device.createComputePipeline({
+        layout,
+        compute: { module, entryPoint: backdropRowsComputeShader.computeEntryPoint },
+      });
+      this.#check();
+      this.#owned.push(pipeline);
+      this.#rowsPipeline = pipeline;
+      return pipeline;
+    } finally {
+      layout.destroy();
+      module.destroy();
+    }
+  }
+  #rowsGroup(view: gpu.GpuTextureView): gpu.GpuBindGroup {
+    let group = this.#rowsGroups.get(view);
+    if (!group) {
+      group = this.#device.createBindGroup({
+        layout: this.#rowsLayout,
+        entries: [{ binding: 0, resource: { kind: 'TextureView', value: view } }],
+      });
+      this.#rowsGroups.set(view, group);
+    }
+    return group;
   }
   /**
    * Let go of what the last frame did not draw with: layers deeper than it went, scratch
@@ -1555,6 +1634,10 @@ export class SceneRenderer {
       }
     }
     this.#textureGroups.clear();
+    for (const group of this.#rowsGroups.values()) {
+      group.destroy();
+    }
+    this.#rowsGroups.clear();
   }
   #drop(texture: Texture | undefined): void {
     texture?.view.destroy();

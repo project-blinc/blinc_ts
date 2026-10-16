@@ -22,7 +22,7 @@ export default defineConfig(({ mode }) => ({
               text: 'shaders/ui/text.ts',
               image: 'shaders/ui/image.ts',
               backdrop: 'shaders/ui/backdrop.ts',
-              backdropRows: 'shaders/ui/backdropRows.ts',
+              backdropRowsCompute: 'shaders/ui/backdropRowsCompute.ts',
 
               motion: 'shaders/motion.ts',
               'layout-bench': 'shaders/layout-bench.ts',

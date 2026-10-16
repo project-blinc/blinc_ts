@@ -8,7 +8,7 @@ import { compileShadowShader } from '../.shader-build/shadow.mjs';
 import { compileTextShader } from '../.shader-build/text.mjs';
 import { compileImageShader } from '../.shader-build/image.mjs';
 import { compileBackdropShader } from '../.shader-build/backdrop.mjs';
-import { compileBackdropRowsShader } from '../.shader-build/backdropRows.mjs';
+import { compileBackdropRowsComputeShader } from '../.shader-build/backdropRowsCompute.mjs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { compileProbeShader } from '../.shader-build/probe.mjs';
 import { compileLayoutBenchShader } from '../.shader-build/layout-bench.mjs';
@@ -39,7 +39,7 @@ for (const [name, shader] of [
   ['text', compileTextShader()],
   ['image', compileImageShader()],
   ['backdrop', compileBackdropShader()],
-  ['backdropRows', compileBackdropRowsShader()],
+  ['backdropRowsCompute', compileBackdropRowsComputeShader()],
   ['motion', compileMotionShader()],
   ['layoutBench', compileLayoutBenchShader()],
   ['sceneProbe', compileSceneProbeShader()],
@@ -63,7 +63,7 @@ for (const [name, shader] of [
                   'text',
                   'image',
                   'backdrop',
-                  'backdropRows',
+                  'backdropRowsCompute',
                   'blit',
                 ].includes(name)
               ? 'ui/' + name
