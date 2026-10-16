@@ -41,7 +41,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: project-blinc/blinc_abi
-          ref: e1039c374c85e5581fc7290760095eb15f71aa8d
+          ref: b4270a7c228150550fe2afb7957e21be1a2876a9
           path: deps/blinc_abi
       - uses: actions/checkout@v7
         with:
