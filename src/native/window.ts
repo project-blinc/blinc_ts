@@ -10,10 +10,12 @@ export type { CapturedFrame } from './frame-tap.js';
 /** How long a scene is quiet before its renderer lets go of what the last frame did not use. */
 const TRIM_AFTER_MS = 1000;
 /**
- * A frame this long after the last, drawn in succession, missed the display's refresh: drawing
- * one while the GPU finishes the other would have made it.
+ * A frame more than this many refreshes after the last, and under `BURST_MS`, missed the
+ * display's refresh while drawing in succession: drawing one while the GPU finishes the other
+ * would have made it.
  */
-const SLOW_FRAME_MS = [20, 100] as const;
+const SLOW_REFRESHES = 1.5;
+const BURST_MS = 100;
 
 export interface NativeWindowOptions extends window.WindowAttributes {
   /** Global native-loop raw-device policy; GUI hosts default to Never. */
@@ -88,6 +90,9 @@ export class NativeWindowHost {
   /** When frames last came too slowly in succession, and how many in a row have. */
   #lastBusy = -Infinity;
   #slowFrames = 0;
+  /** The display's refresh, in milliseconds, and when it was last asked. */
+  #refresh = 1000 / 60;
+  #refreshAsked = -Infinity;
   #frames = 0;
   #error: unknown;
   #stats: SceneRenderStats | undefined;
@@ -612,8 +617,8 @@ export class NativeWindowHost {
       state.queue.presentSurface(state.surface);
       const presented = performance.now();
       const since = presented - this.#lastPresent;
-      this.#slowFrames =
-        since > SLOW_FRAME_MS[0] && since < SLOW_FRAME_MS[1] ? this.#slowFrames + 1 : 0;
+      const slow = since > this.#refreshPeriod(presented) * SLOW_REFRESHES && since < BURST_MS;
+      this.#slowFrames = slow ? this.#slowFrames + 1 : 0;
       // A few in a row: a page settling after it opens is not one.
       if (this.#slowFrames >= 3) {
         this.#lastBusy = presented;
@@ -653,6 +658,15 @@ export class NativeWindowHost {
     this.#width = width;
     this.#height = height;
     this.#latency = latency;
+  }
+  /** The display's refresh period, asked of the monitor at most once a second: it can move. */
+  #refreshPeriod(now: number): number {
+    if (now - this.#refreshAsked >= 1000) {
+      this.#refreshAsked = now;
+      const millihertz = this.window.currentMonitor().refreshRate();
+      this.#refresh = millihertz > 0 ? 1e6 / millihertz : 1000 / 60;
+    }
+    return this.#refresh;
   }
   /** Back to one frame in flight once the window has gone quiet. */
   #settle(): void {

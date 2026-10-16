@@ -13,6 +13,7 @@ function fixture(options = {}) {
     width: 600,
     height: 400,
     scale: 2,
+    refresh: 60000,
     frames: 0,
     unavailable: 0,
   };
@@ -62,6 +63,7 @@ function fixture(options = {}) {
     width: () => state.width,
     height: () => state.height,
     scaleFactor: () => state.scale,
+    currentMonitor: () => ({ refreshRate: () => state.refresh }),
     prePresentNotify() {},
   };
   const bindings = {
@@ -210,11 +212,15 @@ test('stale painter cleanup is safe and a failed frame releases the held surface
 test('frames that keep missing the display get a second frame in flight; fast ones do not', async () => {
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const latency = (f) => f.configured.at(-1).desiredMaximumFrameLatency;
-  for (const [gap, expected] of [
-    [30, 2],
-    [5, 1],
+  // A display's refresh in millihertz, frames this far apart, and frames in flight after them.
+  for (const [refresh, gap, expected] of [
+    [60000, 30, 2],
+    [60000, 5, 1],
+    [60000, 17, 1],
+    [120000, 17, 2],
   ]) {
     const f = fixture();
+    f.state.refresh = refresh;
     const host = new Host(f.bindings);
     try {
       await host.ready;
@@ -226,10 +232,10 @@ test('frames that keep missing the display get a second frame in flight; fast on
       }
       host.requestFrame();
       host.render();
-      assert.equal(latency(f), expected, `frames ${gap} ms apart`);
+      assert.equal(latency(f), expected, `frames ${gap} ms apart at ${refresh / 1000} Hz`);
       // One slow frame alone, as a page settling after it opens, is not enough.
-      if (expected === 1) {
-        await wait(30);
+      if (expected === 1 && gap === 5) {
+        await wait(40);
         host.requestFrame();
         host.render();
         host.requestFrame();
