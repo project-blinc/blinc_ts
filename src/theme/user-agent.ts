@@ -196,8 +196,8 @@ button {
   cursor: pointer;
   transition: background ${STATE}, opacity ${STATE}, box-shadow ${STATE}, transform ${PRESS}, outline-width ${RING};
 }
-/* Under the pointer a button lifts a pixel onto a deeper shadow; pressed, it sinks back. */
-button:hover { background: var(--primary-hover); box-shadow: var(--shadow-lg); transform: translateY(-1px); }
+/* Under the pointer a button takes its hover colour, where it is; pressed, it sinks. */
+button:hover { background: var(--primary-hover); }
 button:active { background: var(--primary-active); box-shadow: var(--shadow-sm); transform: scale(0.97); }
 button:disabled { opacity: 0.5; box-shadow: none; transform: none; cursor: default; }
 

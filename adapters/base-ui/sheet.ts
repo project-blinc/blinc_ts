@@ -4,8 +4,8 @@
  * token: colours, spacing, type, shadows and motion, and shape through the radius tokens, so
  * the theme's corner smoothing reaches every part and the sheet never sets a corner of its own.
  * Shadows are the theme's tokens too, as a surface of its own stands on one: an outline button
- * on `shadow-sm`, a knob, an accordion and a popover on `shadow-md`, a dialog on `shadow-xl`;
- * what is flat has none. Only the size of a box, which has no token, is written as a length. It goes over the
+ * on `shadow-sm`, a knob and a popover on `shadow-md`, a dialog on `shadow-xl`; what lies in
+ * the page, as an accordion does, and what is flat have none, and nothing rises on hover. Only the size of a box, which has no token, is written as a length. It goes over the
  * user-agent sheet and under the app's own, so an app restyles any part by its class or attribute.
  */
 import type { Layout, StyleSheet } from 'blinc_ts/native';
@@ -174,7 +174,6 @@ ${flat.flatMap((s) => [s, `${s}:hover`, `${s}:active`]).join(', ')} { box-shadow
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface);
-  box-shadow: var(--shadow-md);
   overflow: hidden;
 }
 .bui-accordion-item { border-bottom: 1px solid var(--border); overflow: hidden; }

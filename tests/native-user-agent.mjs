@@ -473,8 +473,8 @@ try {
       host.dispose();
     }
   }
-  // Under the pointer a button lifts a pixel: the row just above its top edge, the page's at rest,
-  // is the button's when it is hovered.
+  // Under the pointer a button takes its hover colour where it is: the row just above its top edge
+  // stays the page's.
   {
     const host = Host.create(native);
     try {
@@ -494,15 +494,16 @@ try {
       settle();
       const [x, y, w, h] = button.bounds();
       const above = (pixels) => pixel(pixels, x + w / 2, Math.floor(y) - 1);
-      const rest = above(await capture(host));
+      const resting = await capture(host);
+      const rest = above(resting);
+      const restFill = pixel(resting, x + w / 2, y + h / 2);
       host.input.pointerMove(x + w / 2, y + h / 2);
       settle();
-      const lifted = above(await capture(host));
-      const fill = pixel(await capture(host), x + w / 2, y + h / 2);
-      assert.ok(!near(rest, fill, 30), `at rest the row above is the page: ${rest}`);
+      const hovered = await capture(host);
+      assert.ok(near(above(hovered), rest, 2), `hovered, it stays where it was: ${above(hovered)}`);
       assert.ok(
-        near(lifted, fill, 30),
-        `hovered, the button is drawn over it: ${lifted} as ${fill}`,
+        !near(pixel(hovered, x + w / 2, y + h / 2), restFill, 4),
+        `and takes its hover colour: ${pixel(hovered, x + w / 2, y + h / 2)} from ${restFill}`,
       );
     } finally {
       host.dispose();
