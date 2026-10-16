@@ -206,3 +206,38 @@ test('stale painter cleanup is safe and a failed frame releases the held surface
   assert.equal(f.destroyed.filter((name) => name === 'surface').length, 1);
   host.dispose();
 });
+
+test('frames that keep missing the display get a second frame in flight; fast ones do not', async () => {
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const latency = (f) => f.configured.at(-1).desiredMaximumFrameLatency;
+  for (const [gap, expected] of [
+    [30, 2],
+    [5, 1],
+  ]) {
+    const f = fixture();
+    const host = new Host(f.bindings);
+    try {
+      await host.ready;
+      host.paint(() => {});
+      for (let i = 0; i < 6; i++) {
+        host.requestFrame();
+        assert.equal(host.render(), true);
+        await wait(gap);
+      }
+      host.requestFrame();
+      host.render();
+      assert.equal(latency(f), expected, `frames ${gap} ms apart`);
+      // One slow frame alone, as a page settling after it opens, is not enough.
+      if (expected === 1) {
+        await wait(30);
+        host.requestFrame();
+        host.render();
+        host.requestFrame();
+        host.render();
+        assert.equal(latency(f), 1, 'a lone slow frame');
+      }
+    } finally {
+      host.dispose();
+    }
+  }
+});

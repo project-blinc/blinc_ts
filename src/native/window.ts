@@ -9,6 +9,11 @@ export type { CapturedFrame } from './frame-tap.js';
 
 /** How long a scene is quiet before its renderer lets go of what the last frame did not use. */
 const TRIM_AFTER_MS = 1000;
+/**
+ * A frame this long after the last, drawn in succession, missed the display's refresh: drawing
+ * one while the GPU finishes the other would have made it.
+ */
+const SLOW_FRAME_MS = [20, 100] as const;
 
 export interface NativeWindowOptions extends window.WindowAttributes {
   /** Global native-loop raw-device policy; GUI hosts default to Never. */
@@ -73,6 +78,16 @@ export class NativeWindowHost {
   #suspended = false;
   #width = 0;
   #height = 0;
+  /**
+   * Frames the surface lets be in flight: two once frames in succession come too slowly for the
+   * display, so one is drawn while the GPU finishes the last; one when quiet. A window-sized
+   * drawable more is what two cost.
+   */
+  #latency = 1;
+  #lastPresent = -Infinity;
+  /** When frames last came too slowly in succession, and how many in a row have. */
+  #lastBusy = -Infinity;
+  #slowFrames = 0;
   #frames = 0;
   #error: unknown;
   #stats: SceneRenderStats | undefined;
@@ -325,6 +340,7 @@ export class NativeWindowHost {
           trimTimer ??= setTimeout(() => {
             trimTimer = undefined;
             renderer.trim();
+            this.#settle();
             // The GPU frees what was destroyed only when the device is polled; no frame may follow.
             this.#gpu?.device.poll();
             this.bindings.releaseFreeMemory();
@@ -566,19 +582,9 @@ export class NativeWindowHost {
     if (width <= 0 || height <= 0) {
       return false;
     }
-    if (width !== this.#width || height !== this.#height) {
-      state.device.configureSurfaceWith(state.surface, {
-        format: state.format,
-        width,
-        height,
-        alphaMode: state.alpha,
-        presentMode: gpu.PresentMode.Fifo,
-        // Two drawables rather than three: a frame here takes far less than a vsync to encode,
-        // and each drawable is a window-sized texture.
-        desiredMaximumFrameLatency: 1,
-      });
-      this.#width = width;
-      this.#height = height;
+    const latency = this.#slowFrames >= 3 ? 2 : this.#latency;
+    if (width !== this.#width || height !== this.#height || latency !== this.#latency) {
+      this.#configure(state, width, height, latency);
     }
     const view = state.surface.acquire();
     if (!view.valid()) {
@@ -604,6 +610,15 @@ export class NativeWindowHost {
       encoder.submit(state.queue);
       this.window.prePresentNotify();
       state.queue.presentSurface(state.surface);
+      const presented = performance.now();
+      const since = presented - this.#lastPresent;
+      this.#slowFrames =
+        since > SLOW_FRAME_MS[0] && since < SLOW_FRAME_MS[1] ? this.#slowFrames + 1 : 0;
+      // A few in a row: a page settling after it opens is not one.
+      if (this.#slowFrames >= 3) {
+        this.#lastBusy = presented;
+      }
+      this.#lastPresent = presented;
       // Frees what earlier frames destroyed once the GPU is done with it; it does not wait.
       state.device.poll();
       this.#check(state.device);
@@ -624,6 +639,32 @@ export class NativeWindowHost {
       if (failed) {
         this.dispose();
       }
+    }
+  }
+  #configure(state: WindowGpu, width: number, height: number, latency: number): void {
+    state.device.configureSurfaceWith(state.surface, {
+      format: state.format,
+      width,
+      height,
+      alphaMode: state.alpha,
+      presentMode: gpu.PresentMode.Fifo,
+      desiredMaximumFrameLatency: latency,
+    });
+    this.#width = width;
+    this.#height = height;
+    this.#latency = latency;
+  }
+  /** Back to one frame in flight once the window has gone quiet. */
+  #settle(): void {
+    const state = this.#gpu;
+    if (
+      state &&
+      this.#latency > 1 &&
+      this.#width > 0 &&
+      performance.now() - this.#lastBusy >= TRIM_AFTER_MS / 2 &&
+      !this.#painting
+    ) {
+      this.#configure(state, this.#width, this.#height, 1);
     }
   }
   #check(device: gpu.GpuDevice): void {
