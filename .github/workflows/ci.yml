@@ -56,7 +56,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: rayzor-blade/xwindow
-          ref: 074097ce4ed614485e9738fca2885f88fd19930e
+          ref: 02e96ee6cc1c5f1f6c62e9d06c28f6d2b0404470
           path: deps/xwindow
       - uses: actions/setup-node@v7
         with:
