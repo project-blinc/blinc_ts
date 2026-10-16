@@ -155,6 +155,69 @@ try {
   context.dispose();
 }
 
+// What a box draws of what is behind it does not include its own shadow: with one or without,
+// the inside is the same. Stripes behind, so the rim of liquid glass, which bends what is just
+// outside the box into it, would show the shadow if it were there.
+{
+  const boxes = {
+    liquid: ['background: glass; border-radius: 9999px', 60],
+    frosted: ['background: glass; glass-mode: frosted; border-radius: 24px', 24],
+    filter: ['backdrop-filter: blur(6px)', 0],
+  };
+  const draw = async (shadow) => {
+    const host = Host.create(native);
+    try {
+      for (let x = 0; x < W; x += 20) {
+        const stripe = host.createElement('div');
+        stripe.setAttribute(
+          'style',
+          `position: absolute; left: ${x}px; top: 0; width: 10px; height: ${H}px; background: #f0d080`,
+        );
+        host.root.appendChild(stripe);
+      }
+      host.root.setAttribute('style', 'background: #602080');
+      Object.values(boxes).forEach(([style], i) => {
+        const box = host.createElement('div');
+        box.setAttribute(
+          'style',
+          `position: absolute; left: ${40 + i * 240}px; top: 20px; width: 120px; height: 120px; ${style};` +
+            (shadow ? ' box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5)' : ''),
+        );
+        host.root.appendChild(box);
+      });
+      return await capture(host);
+    } finally {
+      host.dispose();
+    }
+  };
+  const [without, withShadow] = [await draw(false), await draw(true)];
+  Object.entries(boxes).forEach(([name, [, radius]], i) => {
+    let changed = 0;
+    // Inside, two pixels clear of the edge, which the shadow meets.
+    const inside = (x, y) => {
+      const dx = Math.abs(x + 0.5 - (100 + i * 240)) - (60 - radius);
+      const dy = Math.abs(y + 0.5 - 80) - (60 - radius);
+      const d = Math.hypot(Math.max(dx, 0), Math.max(dy, 0)) + Math.min(Math.max(dx, dy), 0);
+      return d - radius < -2;
+    };
+    for (let y = 20; y < 140; y++) {
+      for (let x = 40 + i * 240; x < 160 + i * 240; x++) {
+        if (!inside(x, y)) {
+          continue;
+        }
+        const a = pixel(without, x, y);
+        const b = pixel(withShadow, x, y);
+        if (a.some((c, k) => Math.abs(c - b[k]) > 1)) {
+          changed++;
+        }
+      }
+    }
+    assert.equal(changed, 0, `${name}: its own shadow is not drawn through it`);
+  });
+  // Outside, the shadow is there.
+  assert.ok(!near(pixel(withShadow, 100, 150), pixel(without, 100, 150), 4), 'the shadow shows');
+}
+
 // A heavy blur is kept at half resolution and differs from a full-resolution one by a level or
 // two; a light one is not, and is the same to the bit. One at the bottom edge of the screen reads
 // no further than what was blurred. At 1x and 2x.
@@ -231,5 +294,5 @@ try {
   target.dispose();
 }
 console.log(
-  'Native backdrop-filter: blur, colour filters, tint, transitions, errors and half-resolution blur passed',
+  'Native backdrop-filter: blur, colour filters, tint, transitions, errors, own shadows and half-resolution blur passed',
 );
