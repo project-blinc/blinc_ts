@@ -153,6 +153,83 @@ try {
 } finally {
   host.dispose();
   context.dispose();
+}
+
+// A heavy blur is kept at half resolution and differs from a full-resolution one by a level or
+// two; a light one is not, and is the same to the bit. One at the bottom edge of the screen reads
+// no further than what was blurred. At 1x and 2x.
+try {
+  const blurred = async (blur, top, scale, half) => {
+    const host = Host.create(native);
+    try {
+      host.root.setAttribute('style', 'background: #000000');
+      // A sharp edge across the box, for the blur to soften.
+      const edge = host.createElement('div');
+      edge.setAttribute(
+        'style',
+        `position: absolute; left: 350px; top: 0; width: ${W - 350}px; height: ${H}px; background: #ffffff`,
+      );
+      host.root.appendChild(edge);
+      const box = host.createElement('div');
+      box.setAttribute(
+        'style',
+        `position: absolute; left: 200px; top: ${top}px; width: 300px; height: 100px; backdrop-filter: blur(${blur}px)`,
+      );
+      host.root.appendChild(box);
+      host.compute(W, H);
+      const high = await OffscreenRenderer.create(native, W * scale, H * scale, probeShader);
+      const renderer = new SceneRenderer(high.device, host.layout, undefined, {
+        halfResolutionBlur: half ? 16 : Infinity,
+      });
+      try {
+        const pixels = new Uint8Array(W * H * scale * scale * 4);
+        await high.captureCommandsInto(
+          pixels,
+          (encoder, view) =>
+            renderer.encode(encoder, host.root.layoutNode, view, {
+              width: W * scale,
+              height: H * scale,
+              scale,
+            }).drawCalls,
+        );
+        return pixels;
+      } finally {
+        renderer.dispose();
+        high.dispose();
+      }
+    } finally {
+      host.dispose();
+    }
+  };
+  const most = (a, b) => a.reduce((m, v, i) => Math.max(m, Math.abs(v - b[i])), 0);
+  for (const scale of [1, 2]) {
+    const heavy = 24 / scale;
+    // Heavy: 24 device pixels, at half resolution; close to full resolution, not the same.
+    let [half, full] = [
+      await blurred(heavy, 30, scale, true),
+      await blurred(heavy, 30, scale, false),
+    ];
+    const difference = most(half, full);
+    assert.ok(
+      difference > 0 && difference <= 3,
+      `${scale}x: a heavy blur at half resolution, ${difference}`,
+    );
+    // At the bottom of the screen, the same.
+    [half, full] = [
+      await blurred(heavy, H - 100, scale, true),
+      await blurred(heavy, H - 100, scale, false),
+    ];
+    assert.ok(most(half, full) <= 3, `${scale}x: and at the screen's edge, ${most(half, full)}`);
+    // Light: 8 device pixels, at full resolution either way.
+    [half, full] = [
+      await blurred(8 / scale, 30, scale, true),
+      await blurred(8 / scale, 30, scale, false),
+    ];
+    assert.equal(most(half, full), 0, `${scale}x: a light blur is not halved`);
+  }
+} finally {
   target.dispose();
 }
-console.log('Native backdrop-filter: blur, colour filters, tint, transitions and errors passed');
+console.log(
+  'Native backdrop-filter: blur, colour filters, tint, transitions, errors and half-resolution blur passed',
+);

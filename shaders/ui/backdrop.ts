@@ -16,20 +16,24 @@ import { noise, rimLine, rimLens, glassEnvironment } from './glass.js';
 /**
  * Where `p`, a point on screen in device pixels, is in the blurred rows this reads: held to the
  * screen, as a read past its edge takes the edge, and moved to the region the rows were drawn in.
+ * Rows kept at half resolution are held to the middle of their last texel on screen, so a read
+ * at the edge does not reach past what was drawn.
  */
 const rowsAt = tgpu
   .fn(
     [d.vec2f, d.vec2f, d.vec2f],
     d.vec2f,
-  )((p, screen, size) =>
-    std.div(
-      std.add(
-        std.clamp(p, d.vec2f(0.5, 0.5), std.sub(screen, d.vec2f(0.5, 0.5))),
-        scene.$.viewport.offsets.zw,
-      ),
-      size,
-    ),
-  )
+  )((p, screen, size) => {
+    const offsets = scene.$.viewport.offsets.zw;
+    const step = scene.$.viewport.steps.y;
+    const at = std.div(
+      std.add(std.clamp(p, d.vec2f(0.5, 0.5), std.sub(screen, d.vec2f(0.5, 0.5))), offsets),
+      step,
+    );
+    const first = std.add(std.div(offsets, step), d.vec2f(0.5, 0.5));
+    const last = std.sub(std.ceil(std.div(std.add(screen, offsets), step)), d.vec2f(0.5, 0.5));
+    return std.div(std.clamp(at, first, last), size);
+  })
   .$name('rowsAt');
 
 const vertex = tgpu
@@ -132,20 +136,23 @@ const fragment = tgpu
     // Dispersion retains its strength when bevel is reduced; it does not widen the rim.
     const split = std.mul(offset, dispersion / std.max(bevel, 0.0001));
     const disperse = std.dot(split, split) > 0.000001;
-    // A filtered read between each pair of texels yields their weighted Gaussian sum.
-    const reach = std.ceil(sigma * 3);
+    // A filtered read between each pair of texels yields their weighted Gaussian sum, in texels
+    // of the rows, which may each span two pixels.
+    const step = scene.$.viewport.steps.y;
+    const spread = sigma / step;
+    const reach = std.ceil(spread * 3);
     let sum = d.vec4f(0, 0, 0, 0);
     let red = d.vec2f(0, 0);
     let blue = d.vec2f(0, 0);
     let weights = d.f32(0);
     let i = -reach;
     while (i <= reach) {
-      const w0 = std.exp((-i * i) / (2 * sigma * sigma));
-      const w1 = std.exp((-(i + 1) * (i + 1)) / (2 * sigma * sigma));
+      const w0 = std.exp((-i * i) / (2 * spread * spread));
+      const w1 = std.exp((-(i + 1) * (i + 1)) / (2 * spread * spread));
       const w = w0 + w1;
       const at = d.vec2f(
         input.position.x + offset.x,
-        input.position.y + offset.y + i + w1 / std.max(w, 1e-30),
+        input.position.y + offset.y + i * step + (w1 / std.max(w, 1e-30)) * step,
       );
       sum = std.add(
         sum,

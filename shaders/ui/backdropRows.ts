@@ -40,7 +40,10 @@ const fragment = tgpu
   .fragmentFn({ in: inputs, out: d.vec4f })((input) => {
     const size = d.vec2f(std.textureDimensions(textures.$.layer));
     // This pass draws into a region of its own; what it reads is where that region is on screen.
-    const at = std.add(input.position.xy, scene.$.viewport.offsets.zw);
+    const at = std.add(
+      std.mul(input.position.xy, scene.$.viewport.steps.x),
+      scene.$.viewport.offsets.zw,
+    );
     const sigma = std.max(field(input.record, fields.color).x, 0.0001);
     const reach = std.ceil(sigma * 3);
     let sum = d.vec4f(0, 0, 0, 0);

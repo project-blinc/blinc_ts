@@ -37,6 +37,15 @@ export interface RenderOptions extends PaintOptions {
   height: number;
   clear?: readonly [number, number, number, number];
 }
+export interface SceneRendererOptions {
+  /**
+   * A backdrop blurred by at least this many device pixels (its Gaussian's deviation) is blurred
+   * at half resolution: the rows are read at full resolution and kept at half, a quarter of the
+   * work. At such blurs no detail finer than two pixels survives either way, but the result is
+   * not the same to the bit. Infinity blurs every backdrop at full resolution.
+   */
+  halfResolutionBlur?: number;
+}
 export interface SceneRenderStats {
   primitives: number;
   drawCalls: number;
@@ -106,6 +115,8 @@ const SLOT_FLOATS = 64;
 const LAYER_STEP = 64;
 /** Frames a scratch texture outlives the last frame that needed it. */
 const KEEP_FRAMES = 60;
+/** See `SceneRendererOptions.halfResolutionBlur`. */
+const HALF_RESOLUTION_BLUR = 16;
 const IMAGE_STEPS_PER_OCTAVE = 12;
 /** The largest side an image is resampled to; beyond it, it is magnified. */
 const IMAGE_MAX_SIDE = 2048;
@@ -181,6 +192,8 @@ export class SceneRenderer {
   #shadow: Texture | undefined;
   /** Frames encoded, and the last that needed each scratch texture: each layer depth, rows, shadow. */
   #frameCount = 0;
+  /** The blur, in device pixels, from which backdrops are blurred at half resolution. */
+  readonly #halfBlur: number;
   readonly #layerUsed: number[] = [];
   #rowsUsed = 0;
   #shadowUsed = 0;
@@ -210,7 +223,9 @@ export class SceneRenderer {
     device: gpu.GpuDevice,
     layout: Layout,
     format: gpu.TextureFormat = gpu.TextureFormat.Rgba8unorm,
+    options: SceneRendererOptions = {},
   ) {
+    this.#halfBlur = options.halfResolutionBlur ?? HALF_RESOLUTION_BLUR;
     this.#device = device;
     this.#format = format;
     this.#canvasFrame = new CanvasFrame({
@@ -635,6 +650,8 @@ export class SceneRenderer {
     // What each backdrop reads, which its blurred rows are drawn for: no more of the screen.
     const backdrops = new Map<number, Region>();
     const backdropRows = new Map<number, Region>();
+    // How many pixels a texel of each backdrop's blurred rows spans.
+    const backdropSteps = new Map<number, number>();
     let slots = 4;
     for (let i = 0; i < info.count; i++) {
       const at = i * R;
@@ -685,7 +702,12 @@ export class SceneRenderer {
           const region = this.#backdropRegion(i, width, height, scale);
           backdrops.set(i, region);
           backdropRows.set(i, this.#backdropRows(i, width, height, scale));
-          rowsSize = [Math.max(rowsSize[0], region.width), Math.max(rowsSize[1], region.height)];
+          const step = this.#records[at + fields.color * 4]! >= this.#halfBlur ? 2 : 1;
+          backdropSteps.set(i, step);
+          rowsSize = [
+            Math.max(rowsSize[0], Math.ceil(region.width / step)),
+            Math.max(rowsSize[1], Math.ceil(region.height / step)),
+          ];
           slots += 2;
         }
       }
@@ -829,18 +851,25 @@ export class SceneRenderer {
     const frame = this.#frame;
     const screen = whole(width, height);
     let used = 0;
-    /** A uniform slot for drawing into `texture` at `into`, reading what lies at `from`. */
-    const slot = (texture: Texture, into: Region, from: Region = into): number => {
+    /**
+     * A uniform slot for drawing into `texture` at `into`, reading what lies at `from`; a texel of
+     * the texture spans `draws` pixels, one of what is read `reads`.
+     */
+    const slot = (texture: Texture, into: Region, from: Region = into, draws = 1, reads = 1) => {
       const data = this.#slotData;
       const o = used * SLOT_FLOATS;
-      data[o] = texture.width / scale;
-      data[o + 1] = texture.height / scale;
+      data[o] = (texture.width * draws) / scale;
+      data[o + 1] = (texture.height * draws) / scale;
       data[o + 2] = into.x / scale;
       data[o + 3] = into.y / scale;
       data[o + 4] = into.x;
       data[o + 5] = into.y;
       data[o + 6] = into.x - from.x;
       data[o + 7] = into.y - from.y;
+      data[o + 8] = draws;
+      data[o + 9] = reads;
+      data[o + 10] = 0;
+      data[o + 11] = 0;
       return used++;
     };
     let drawCalls = 0;
@@ -923,14 +952,17 @@ export class SceneRenderer {
     /** Blur the rows backdrop `i` reads, out of `source` at `from`, into the rows texture. */
     const blurRows = (i: number, source: Texture, from: Region) => {
       const read = backdrops.get(i)!;
+      const step = backdropSteps.get(i)!;
       const wanted = meet(backdropRows.get(i)!, read);
-      this.#begin(encoder, this.#rows!.view, slot(this.#rows!, read, from), [0, 0, 0, 0]);
+      this.#begin(encoder, this.#rows!.view, slot(this.#rows!, read, from, step), [0, 0, 0, 0]);
       if (wanted.width > 0) {
+        const x = Math.floor((wanted.x - read.x) / step);
+        const y = Math.floor((wanted.y - read.y) / step);
         encoder.renderSetScissorRect(
-          wanted.x - read.x,
-          wanted.y - read.y,
-          wanted.width,
-          wanted.height,
+          x,
+          y,
+          Math.ceil((wanted.x + wanted.width - read.x) / step) - x,
+          Math.ceil((wanted.y + wanted.height - read.y) / step) - y,
         );
         this.#draw(encoder, -1, i, 1, source.view);
       }
@@ -990,7 +1022,11 @@ export class SceneRenderer {
       } else if (kind === 42) {
         encoder.renderEnd();
         const region = blurRows(i, current.texture, current.region);
-        this.#begin(encoder, current.texture.view, slot(current.texture, current.region, region));
+        this.#begin(
+          encoder,
+          current.texture.view,
+          slot(current.texture, current.region, region, 1, backdropSteps.get(i)),
+        );
         this.#draw(encoder, 42, i, 1, this.#rows!.view);
         this.#use(current.base);
         drawCalls += 2;
@@ -1182,7 +1218,7 @@ export class SceneRenderer {
       entries: [
         {
           binding: 0,
-          resource: { kind: 'BufferBinding', value: { buffer: this.#viewport!, size: 32n } },
+          resource: { kind: 'BufferBinding', value: { buffer: this.#viewport!, size: 48n } },
         },
         { binding: 1, resource: { kind: 'Buffer', value: this.#buffer! } },
       ],

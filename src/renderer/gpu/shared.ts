@@ -6,8 +6,10 @@ import { sdShapedRect, halfPixel } from './sdf.js';
  * What a pass draws into. `frame` is the target's size and origin on screen, in layout pixels;
  * `offsets` is its origin in device pixels, and how far a texel of the texture it reads is from
  * the same point in the target, in device pixels: zero unless the two have different origins.
+ * `steps.x` is how many device pixels a texel of the target spans, `steps.y` one of the texture
+ * it reads: 1, or 2 for a blur kept at half resolution.
  */
-export const Viewport = d.struct({ frame: d.vec4f, offsets: d.vec4f });
+export const Viewport = d.struct({ frame: d.vec4f, offsets: d.vec4f, steps: d.vec4f });
 export const scene = tgpu
   .bindGroupLayout({
     viewport: { uniform: Viewport },
