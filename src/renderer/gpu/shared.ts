@@ -30,6 +30,24 @@ export const field = tgpu.fn(
   [d.u32, d.u32],
   d.vec4f,
 )((record, row) => scene.$.records[record * sceneSchema.recordRows + row]!);
+/**
+ * How soft a record's local clip is at its edge, in its own units: as the screen clip is, three
+ * quarters of a layout pixel, when the record is only moved; `aa`, half a device pixel, when it
+ * is turned or scaled, where the screen's measure does not hold.
+ */
+export const clipFringe = tgpu
+  .fn(
+    [d.u32, d.f32],
+    d.f32,
+  )((record, aa) => {
+    const m = field(record, fields.affine);
+    let fringe = aa;
+    if (m.x === 1 && m.y === 0 && m.z === 0 && m.w === 1) {
+      fringe = 0.75;
+    }
+    return fringe;
+  })
+  .$name('clipFringe');
 export const crossing = tgpu
   .fn(
     [d.vec2f, d.vec2f, d.vec2f],

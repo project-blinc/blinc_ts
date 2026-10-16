@@ -1,6 +1,13 @@
 import { fields } from '../../src/renderer/records.js';
 import { tgpu, d, std } from 'typegpu';
-import { inputs, field, shapeCoverage, scene, textures } from '../../src/renderer/gpu/shared.js';
+import {
+  inputs,
+  field,
+  shapeCoverage,
+  scene,
+  textures,
+  clipFringe,
+} from '../../src/renderer/gpu/shared.js';
 import {
   quadCorner,
   placed,
@@ -44,7 +51,7 @@ const fragment = tgpu
         field(input.record, fields.shadowColor),
         field(input.record, fields.typeInfo).z,
         field(input.record, fields.typeInfo).w,
-        aa,
+        clipFringe(input.record, aa),
       ) *
       fadeCoverage(
         pixel,
