@@ -456,12 +456,8 @@ export class SceneRenderer {
   }
 
   /** Empty the image atlas, putting the fixed slots back. */
-  #resetImages(width?: number): void {
-    const revision = this.#images.revision;
-    this.#images.reset(width);
-    if (revision !== this.#images.revision) {
-      this.#clearGroups();
-    }
+  #resetImages(): void {
+    this.#images.reset();
     this.#imageRects.clear();
     this.#imageUsed.clear();
     for (const [slot, { image, width, height, fit }] of this.#fixedImages) {
@@ -1383,38 +1379,28 @@ export class SceneRenderer {
   }
   /**
    * Let go of what the last frame did not draw with: layers deeper than it went, scratch
-   * textures it did not use, and, when the images it drew fill little of the image atlas, the
-   * atlas, which the next frame fills afresh at the size those images need. For a window that
-   * has gone quiet; frames release what they have not needed for a while on their own.
+   * textures it did not use, and image atlas entries it did not draw, when the ones it did fit
+   * in a good deal less. Those are moved into an atlas packed for them, their pixels copied as
+   * they are. For a window that has gone quiet; frames release what they have not needed for a
+   * while on their own.
    */
   trim(): void {
     this.#assertLive();
     this.#assertIdle();
     this.#release(this.#frameCount - 1);
     this.#scratch = new Uint8Array(0);
-    let live = 0;
-    let widest = 0;
-    const take = (width: number, height: number) => {
-      live += (width + 1) * (height + 1);
-      widest = Math.max(widest, width + 1);
-    };
-    for (const [key, used] of this.#imageUsed) {
-      const rect = this.#imageRects.get(key);
-      if (used === this.#frameCount && rect) {
-        take(rect.width, rect.height);
+    const fixed = new Set(this.#imageSlots.values());
+    const keep = [...this.#imageRects].filter(
+      ([key, rect]) => fixed.has(rect) || this.#imageUsed.get(key) === this.#frameCount,
+    );
+    if (this.#images.repack(keep.map(([, rect]) => rect))) {
+      this.#clearGroups();
+      this.#imageRects.clear();
+      this.#imageUsed.clear();
+      for (const [key, rect] of keep) {
+        this.#imageRects.set(key, rect);
+        this.#imageUsed.set(key, this.#frameCount);
       }
-    }
-    for (const { width, height } of this.#fixedImages.values()) {
-      take(width, height);
-    }
-    // As wide as the widest image shown; when it holds four times what is shown, start it again.
-    let width = 256;
-    while (width < widest) {
-      width *= 2;
-    }
-    const held = this.#images.width * this.#images.height;
-    if (held > Math.max(live * 4, width * 256)) {
-      this.#resetImages(width);
     }
   }
   /** Drop the scratch textures last needed at or before frame `before`. */

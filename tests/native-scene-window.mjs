@@ -153,6 +153,20 @@ try {
   await delay(1600);
   assert.ok(withLayer > withoutLayer, 'The group was drawn through a layer');
   assert.equal(host.stats.textureBytes, withoutLayer, 'and let go once the window has been quiet');
+  // Frames that move nothing, a readout changing say, do not keep it.
+  root.setChildren([group]);
+  const beforeRegroup = host.frames;
+  await waitFor(() => host.frames > beforeRegroup && host.stats?.primitives > 2, 'Regrouped frame');
+  root.setChildren([]);
+  for (let i = 0; i < 6; i++) {
+    root.setPaint({ background: Brush.solid(i % 2 ? 0x174e65 : 0x174e66) });
+    await delay(300);
+  }
+  assert.equal(
+    host.stats.textureBytes,
+    withoutLayer,
+    'nor while it draws frames that move nothing',
+  );
   const beforeDetach = host.frames;
   replacement.dispose(); // Disposing a caller-owned scene detaches its renderer.
   await waitFor(() => host.frames > beforeDetach, 'Detached scene clears the window');

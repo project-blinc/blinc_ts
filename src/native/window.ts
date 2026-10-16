@@ -312,17 +312,20 @@ export class NativeWindowHost {
         this.#tap?.record(encoder, draw, w, h, time);
         clearTimeout(this.#motionTimer);
         this.#motionTimer = undefined;
-        clearTimeout(trimTimer);
-        trimTimer = undefined;
         const wake = layout.motionWake;
+        if (moving || wake !== null) {
+          clearTimeout(trimTimer);
+          trimTimer = undefined;
+        }
         if (moving) {
           this.requestFrame();
         } else if (wake === null) {
-          // Quiet: once no frame has come for a while, the renderer lets go of what this one did not use.
-          trimTimer = setTimeout(() => {
+          // Still: a while after motion stops, the renderer lets go of what the last frame did not
+          // use. Frames that move nothing, such as a readout updating, do not put it off.
+          trimTimer ??= setTimeout(() => {
             trimTimer = undefined;
             renderer.trim();
-            // The GPU frees what was destroyed only when the device is polled, and no frame follows.
+            // The GPU frees what was destroyed only when the device is polled; no frame may follow.
             this.#gpu?.device.poll();
             this.bindings.releaseFreeMemory();
             if (this.#stats) {
