@@ -21,6 +21,7 @@ xgpu-core = { path = "../../xgpu/crates/xgpu-core" }
 xwindow-core = { path = "../../xwindow/crates/xwindow-core" }
 xwindow-clipboard = { path = "../../xwindow/crates/xwindow-clipboard" }
 xwindow-gamepad = { path = "../../xwindow/crates/xwindow-gamepad" }
+xwindow-appicon = { path = "../../xwindow/crates/xwindow-appicon" }
 pollster = "0.4"
 winit = "0.30"
 raw-window-handle = "0.6"
